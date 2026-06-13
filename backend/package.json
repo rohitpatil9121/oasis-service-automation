@@ -7,7 +7,6 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "worker": "node src/workers/notificationWorker.js",
     "hash": "node scripts/hash.js",
     "smoke": "node scripts/smoke.js",
     "test:twilio": "node scripts/test-twilio.js"

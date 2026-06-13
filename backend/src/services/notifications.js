@@ -38,27 +38,3 @@ export async function queueNotification({ recipient, body, audience, ticketId })
   if (error) { log.error("queueNotification insert failed:", error.message); return null; }
   return data.id;
 }
-
-// Kept for the optional standalone worker. With inline sending above there are
-// normally no PENDING rows, so this is a no-op safety net.
-export async function retryPending(limit = 25) {
-  const { data } = await supabase
-    .from("notifications").select("*")
-    .eq("status", "PENDING")
-    .lt("attempts", 5)
-    .limit(limit);
-  for (const n of data || []) {
-    try {
-      const res = await sendWhatsApp(n.recipient, n.body);
-      await supabase.from("notifications").update({
-        status: "SENT", provider_sid: res.sid, sent_at: new Date().toISOString(),
-        attempts: n.attempts + 1,
-      }).eq("id", n.id);
-    } catch (e) {
-      await supabase.from("notifications").update({
-        status: "FAILED", last_error: e.message, attempts: n.attempts + 1,
-      }).eq("id", n.id);
-    }
-  }
-  return (data || []).length;
-}

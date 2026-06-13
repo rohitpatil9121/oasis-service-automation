@@ -6,6 +6,6 @@ checkEnv(log);
 const app = createApp();
 
 app.listen(env.port, () => {
-  log.info(`Oasis Globe backend on :${env.port} (mock WhatsApp: ${env.whatsappMock})`);
-  log.info(`Webhook URL for Twilio: ${env.publicBaseUrl}/webhook/whatsapp`);
+  log.info(`Oasis Globe backend on :${env.port} (provider: ${env.whatsappProvider}, mock: ${env.whatsappMock})`);
+  log.info(`Webhook URL: ${env.publicBaseUrl}/webhook/whatsapp`);
 });

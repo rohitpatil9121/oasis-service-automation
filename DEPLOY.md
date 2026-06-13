@@ -2,10 +2,9 @@
 
 Architecture split:
 - **Backend** (`/backend`, Express API) → **Render Web Service**
-- **Notification worker** (`/backend`, optional) → **Render Background Worker**
 - **Frontend** (`/frontend`, Vite/React static site) → **Vercel**
 
-Prerequisites: code pushed to a GitHub repo, a Supabase project, and (optionally) Twilio WhatsApp credentials.
+Prerequisites: code pushed to a GitHub repo, a Supabase project, and Meta WhatsApp Cloud API (or Twilio) credentials.
 
 ---
 
@@ -33,10 +32,14 @@ Add these under **Environment** (copy values from `backend/.env.example`):
 | `SUPABASE_URL` | your Supabase URL |
 | `SUPABASE_ANON_KEY` | your anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | your service-role key |
-| `WHATSAPP_MOCK` | `true` (or `false` for real Twilio) |
-| `TWILIO_ACCOUNT_SID` | Twilio SID (if not mock) |
-| `TWILIO_AUTH_TOKEN` | Twilio token (if not mock) |
-| `TWILIO_WHATSAPP_FROM` | `whatsapp:+14155238886` |
+| `WHATSAPP_MOCK` | `false` (real sends) or `true` (log only) |
+| `WHATSAPP_PROVIDER` | `meta` (or `twilio`) |
+| `META_PHONE_NUMBER_ID` | from Meta → WhatsApp → API Setup |
+| `META_ACCESS_TOKEN` | a System User token (never expires) |
+| `META_VERIFY_TOKEN` | any string you choose (used in the Meta callback) |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_WHATSAPP_FROM` | only if `WHATSAPP_PROVIDER=twilio` |
+| `AI_INTAKE` | `true` for the Groq AI agent |
+| `GROQ_API_KEY` | from console.groq.com (if `AI_INTAKE=true`) |
 | `MANAGER_WHATSAPP` | `+91XXXXXXXXXX` |
 | `DEFAULT_COUNTRY_CODE` | `+91` |
 | `CORS_ORIGIN` | **your Vercel URL** (fill in after Part B) |
@@ -48,14 +51,11 @@ Add these under **Environment** (copy values from `backend/.env.example`):
 Click **Create Web Service**. After it builds, note the URL, e.g.
 `https://oasis-globe-api.onrender.com`. Test: visit `/` or any health route.
 
-### 4. (Optional) Notification worker
-1. **New** → **Background Worker**, same repo.
-2. **Root Directory:** `backend`, **Build:** `npm install`, **Start:** `npm run worker`.
-3. Give it the **same environment variables** as the web service.
-
-### 5. (Optional) Twilio webhook
-If using real WhatsApp, set the Twilio sandbox/number webhook to:
-`https://<your-render-url>/webhook/whatsapp`
+### 4. WhatsApp webhook
+In **Meta → your app → WhatsApp → Configuration**, set the Callback URL to
+`https://<your-render-url>/webhook/whatsapp` and the Verify token to your
+`META_VERIFY_TOKEN`, then subscribe to the **messages** field.
+(For Twilio, set the sandbox/number webhook to the same URL.)
 
 ---
 
@@ -98,8 +98,7 @@ Click **Deploy**. Note the URL, e.g. `https://oasis-globe.vercel.app`.
 
 | Piece | Host | Root dir | Start command | Key env |
 |-------|------|----------|---------------|---------|
-| Backend API | Render Web Service | `backend` | `npm start` | `CORS_ORIGIN`, `PUBLIC_BASE_URL`, Supabase keys |
-| Worker | Render Worker | `backend` | `npm run worker` | same as backend |
+| Backend API | Render Web Service | `backend` | `npm start` | `CORS_ORIGIN`, `PUBLIC_BASE_URL`, Supabase keys, `META_*` |
 | Frontend | Vercel | `frontend` | (build) `npm run build` | `VITE_API_BASE` |
 
 ### Common gotchas

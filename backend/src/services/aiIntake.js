@@ -19,13 +19,55 @@ const GREETING =
   "👋 Welcome to *Oasis Globe Service*! I'm here to help you raise a service " +
   "request. To get started, may I know your *name*?";
 
-// The agent's instructions. Current collected state is injected each turn so
-// the model knows what's already captured and what's still missing.
-function systemPrompt(collected) {
-  return `
-You are a friendly WhatsApp intake agent for "Oasis Globe", a water purifier & appliance service company in India.
+const AGENT_INTRO =
+  `You are a warm, helpful WhatsApp service agent for "Oasis Globe", a water purifier & ` +
+  `appliance service company in India. You already have the customer's phone number from ` +
+  `WhatsApp — never ask for it.\n\n` +
+  `Hold a NATURAL conversation: actually read and ANSWER whatever the customer says or asks. ` +
+  `If they ask you a question (e.g. "do you want the purifier type/model?"), answer it ` +
+  `helpfully ("Yes please — the brand/model and what's going wrong will help us send the ` +
+  `right technician!") instead of ignoring it or repeating the same request word-for-word. ` +
+  `Acknowledge what they just said, then gently continue. Keep replies short and friendly.`;
 
-You must collect three details: the customer's name, their address (for the technician visit), and the issue (what's wrong). You already have their phone number from WhatsApp — never ask for it.
+// The agent's instructions. For RETURNING customers we already have name+address,
+// so the agent confirms them (and only re-captures what changed) instead of asking
+// from scratch. Current collected state is injected each turn.
+function systemPrompt(collected, returning) {
+  if (returning) {
+    return `
+${AGENT_INTRO}
+
+This is a RETURNING customer — we already have their details on file:
+- name: ${collected.name || "(not on file)"}
+- address: ${collected.address || "(not on file)"}
+
+Greet them warmly BY NAME. Do NOT ask for their name or address from scratch — instead
+briefly confirm the name and address above are still correct, and ask what issue they're
+facing today. (If the address is not on file, do ask for it.)
+
+EVERY reply MUST be a single JSON object with exactly these two keys: {"fields": { ... }, "message": "..."}
+
+"fields" — include ONLY new or changed details:
+- "issue": their problem (required). Capture ALL useful detail — appliance type, brand/model if given, and the symptoms — combined into one clear string.
+- "name": ONLY if they say their name has changed.
+- "address": ONLY if they give a new/changed address.
+- Use {} if nothing new was provided (e.g. just a greeting or a question — but still answer them in "message").
+
+"message" — short, warm, WhatsApp style (emojis ok). Confirm the details on file and ask
+for the issue. When the issue is known, thank them and say their request is being registered.
+
+Return ONLY the JSON object. No markdown.
+
+Example — "hi": {"fields":{},"message":"Hi ${collected.name || "there"}! Welcome back 😊 I have your address as ${collected.address || "—"}. Is that still correct, and what issue are you facing today?"}
+Example — "yes same, purifier stopped working": {"fields":{"issue":"purifier stopped working"},"message":"Thanks ${collected.name || ""}! Registering your request now. 🙏"}
+Example — "my new address is 5 MG Road Pune, AC not cooling": {"fields":{"address":"5 MG Road, Pune","issue":"AC not cooling"},"message":"Updated your address — registering your request now. 🙏"}
+`.trim();
+  }
+
+  return `
+${AGENT_INTRO}
+
+You must collect three details: the customer's name, their address (for the technician visit), and the issue (what's wrong).
 
 Already collected (do NOT ask for these again):
 - name: ${collected.name || "(missing)"}
@@ -35,30 +77,23 @@ Already collected (do NOT ask for these again):
 EVERY reply MUST be a single JSON object with exactly these two keys, in this order:
 {"fields": { ... }, "message": "..."}
 
-Building "fields" (the extracted data — this is the important part):
-- Read the customer's latest message and pull out any name, address, or issue they mention.
-- Put each one into "fields" using the keys "name", "address", and/or "issue".
-- REQUIRED: if the message contains a name, an address, or an issue, the matching key MUST appear in "fields" with its value. Never leave "fields" empty when the customer gave details. The real data goes in "fields", NOT just in the message.
-- If the customer truly gave nothing new, use "fields": {}.
+Building "fields" (the extracted data):
+- Pull out any name, address, or problem detail the customer mentions, into "name" / "address" / "issue".
+- The "issue" must capture ALL useful detail about the problem: the appliance type (RO purifier, AC, geyser…), the brand/model if mentioned, and the symptoms. Combine everything they tell you about the problem into ONE clear "issue" string, and keep enriching it as they share more.
+- REQUIRED: whenever the message contains a name, an address, or any problem detail, the matching key MUST appear in "fields". Never leave "fields" empty when the customer gave real details.
+- Use "fields": {} only when they gave nothing new (e.g. just a greeting or a question).
 
 Building "message":
-- A short, warm WhatsApp-style reply (emojis ok).
-- Ask for whichever of name / address / issue is still missing.
-- If all three are now known, thank them and say their request is being registered.
+- A short, warm WhatsApp reply (emojis ok). Answer any question they asked.
+- Then ask only for whichever of name / address / issue is still missing.
+- When all three are known, thank them and say their request is being registered.
 
 Return ONLY the JSON object. No markdown, no extra text.
 
-Example — customer: "hi I'm Sunil Kale, my RO purifier is leaking badly, I live at 12 Shivaji Nagar Pune 411005"
-You return: {"fields":{"name":"Sunil Kale","issue":"RO purifier leaking badly","address":"12 Shivaji Nagar, Pune 411005"},"message":"Thanks Sunil! I've got your details — registering your request now. 🙏"}
-
-Example — customer: "my AC is not cooling"
-You return: {"fields":{"issue":"AC not cooling"},"message":"Sorry to hear that! May I know your name and address?"}
-
-Example — customer: "Rohit"
-You return: {"fields":{"name":"Rohit"},"message":"Thanks Rohit! What issue are you facing, and your address?"}
-
-Example — customer: "ok thanks"
-You return: {"fields":{},"message":"You're welcome! Could you share your address so we can send a technician?"}
+Example — "hi I'm Sunil Kale, my RO purifier is leaking badly, I live at 12 Shivaji Nagar Pune 411005": {"fields":{"name":"Sunil Kale","issue":"RO purifier leaking badly","address":"12 Shivaji Nagar, Pune 411005"},"message":"Thanks Sunil! Registering your request now. 🙏"}
+Example — "Do you want my purifier details as well?": {"fields":{},"message":"Yes please! 😊 The brand/model and what's going wrong will help us send the right technician — share that along with your name and address."}
+Example — "It's a Kent RO, water tastes bad and the flow is very low": {"fields":{"issue":"Kent RO purifier — water tastes bad and water flow is very low"},"message":"Got it, thanks! 🙏 And your name and address for the technician visit?"}
+Example — "my AC is not cooling": {"fields":{"issue":"AC not cooling"},"message":"Sorry to hear that! May I know your name and address?"}
 `.trim();
 }
 
@@ -73,13 +108,35 @@ async function getActiveSession(phone) {
   return data;
 }
 
-async function createSession(phone) {
-  const { data, error } = await supabase
+// Look up an existing customer by their WhatsApp number (returning customer).
+async function getCustomerByPhone(phone) {
+  const { data } = await supabase
+    .from("customers").select("full_name, address")
+    .eq("phone", phone).maybeSingle();
+  return data;
+}
+
+// Build the starting session data. For a returning customer we pre-fill their
+// name + address so the agent confirms them instead of re-asking; if they say
+// something changed, the new value flows through to the customer record on save.
+async function buildInitialData(phone) {
+  const existing = await getCustomerByPhone(phone);
+  if (existing && existing.full_name) {
+    const collected = { name: existing.full_name };
+    if (existing.address) collected.address = existing.address;
+    return { collected, history: [], returning: true };
+  }
+  return { collected: {}, history: [], returning: false };
+}
+
+async function createSession(phone, initialData) {
+  const data = initialData || { collected: {}, history: [], returning: false };
+  const { data: row, error } = await supabase
     .from("intake_sessions")
-    .insert({ phone, state: "AWAITING_NAME", data: { collected: {}, history: [] } })
+    .insert({ phone, state: "AWAITING_NAME", data })
     .select().single();
   if (error) throw new Error("createSession: " + error.message);
-  return data;
+  return row;
 }
 
 async function saveSession(id, patch) {
@@ -121,7 +178,13 @@ export async function handleInboundAI({ fromPhone, text }) {
   if (RESET_WORDS.includes(lower)) {
     const active = await getActiveSession(phone);
     if (active) await saveSession(active.id, { state: "COMPLETED" });
-    await createSession(phone);
+    const initial = await buildInitialData(phone);
+    await createSession(phone, initial);
+    if (initial.returning) {
+      return `🔄 Sure, ${initial.collected.name}! Let's raise a new request. ` +
+             `I have your address as *${initial.collected.address || "—"}*. ` +
+             `Is your name and address still the same, and what issue are you facing today?`;
+    }
     return GREETING;
   }
 
@@ -134,14 +197,15 @@ export async function handleInboundAI({ fromPhone, text }) {
     return "You don't have any service requests yet.\n\n" + GREETING;
   }
 
-  if (!session) session = await createSession(phone);
+  if (!session) session = await createSession(phone, await buildInitialData(phone));
 
   const collected = session.data?.collected || {};
   const history = session.data?.history || [];
+  const returning = session.data?.returning || false;
 
   // Build the model context: fresh system prompt + recent turns + new message.
   const messages = [
-    { role: "system", content: systemPrompt(collected) },
+    { role: "system", content: systemPrompt(collected, returning) },
     ...history.slice(-MAX_HISTORY),
     { role: "user", content: body },
   ];
