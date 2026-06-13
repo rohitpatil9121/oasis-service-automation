@@ -144,6 +144,17 @@ completes** until the field is valid. Send `restart` / `cancel` to reset.
 Outside an active intake, send `status` / `track` to get the latest ticket's
 status and assigned technician.
 
+### Optional: AI conversational intake (Groq)
+
+Set `AI_INTAKE=true` and `GROQ_API_KEY=<your key>` to swap the step-by-step
+flow for a natural-language LLM agent (`services/aiIntake.js` + `services/ai.js`).
+It chats freely, extracts name/address/issue via function-calls
+(`setName`/`setAddress`/`setIssue`), and creates the ticket once all three are
+captured (phone comes from the WhatsApp number). Get a free key at
+console.groq.com. If the LLM is unavailable it asks the customer to resend, and
+the raw inbound is always logged first — so nothing is lost. Leave `AI_INTAKE`
+unset/false to use the deterministic state machine (no API key needed).
+
 ---
 
 ## 7. Setup — run it locally
