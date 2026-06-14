@@ -4,6 +4,7 @@ import { api } from "../api/client.js";
 import StatusBadge from "../components/StatusBadge.jsx";
 import AssignModal from "../components/AssignModal.jsx";
 import IssueStockModal from "../components/IssueStockModal.jsx";
+import ReconcileModal from "../components/ReconcileModal.jsx";
 import { Card, Button, Icon, Select, Spinner, Alert } from "../components/ui.jsx";
 
 const fmt = (d) => (d ? new Date(d).toLocaleString() : "—");
@@ -17,6 +18,7 @@ export default function TicketView() {
   const [stockIssues, setStockIssues] = useState([]);
   const [showAssign, setShowAssign] = useState(false);
   const [showIssue, setShowIssue] = useState(false);
+  const [reconcileIssue, setReconcileIssue] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -107,27 +109,61 @@ export default function TicketView() {
           <p className="text-sm text-slate-400">No parts issued for this job yet.</p>
         ) : (
           <ul className="space-y-3">
-            {stockIssues.map((iss) => (
-              <li key={iss.id} className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
-                <div className="mb-1.5 flex items-center justify-between text-xs text-slate-400">
-                  <span>
-                    {iss.technician?.full_name ? <>To <b className="text-slate-600">{iss.technician.full_name}</b> · </> : null}
-                    {iss.status === "RECONCILED"
-                      ? <span className="font-medium text-emerald-600">Reconciled</span>
-                      : <span className="font-medium text-amber-600">Issued</span>}
-                  </span>
-                  <span>{fmt(iss.issued_at)}</span>
-                </div>
-                <ul className="space-y-1">
-                  {(iss.lines || []).map((l) => (
-                    <li key={l.id} className="flex items-center justify-between text-sm">
-                      <span className="text-slate-700">{l.item?.name || "Item"}</span>
-                      <span className="font-mono text-xs text-slate-500">{l.qty_issued} {l.item?.unit || ""}</span>
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ))}
+            {stockIssues.map((iss) => {
+              const reconciled = iss.status === "RECONCILED";
+              const totalVar = (iss.lines || []).reduce((s, l) =>
+                s + Math.max(0, Number(l.qty_issued) - Number(l.qty_used) - Number(l.qty_returned)), 0);
+              return (
+                <li key={iss.id} className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                  <div className="mb-1.5 flex items-center justify-between text-xs text-slate-400">
+                    <span>
+                      {iss.technician?.full_name ? <>To <b className="text-slate-600">{iss.technician.full_name}</b> · </> : null}
+                      {reconciled
+                        ? <span className="font-medium text-emerald-600">Reconciled</span>
+                        : <span className="font-medium text-amber-600">Issued</span>}
+                      {reconciled && totalVar > 0 && (
+                        <span className="ml-1.5 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-600 ring-1 ring-inset ring-red-600/20">⚠ Variance {totalVar}</span>
+                      )}
+                    </span>
+                    <span>{fmt(iss.issued_at)}</span>
+                  </div>
+                  {reconciled && (
+                    <div className="mb-1 grid grid-cols-[1fr_auto_auto_auto] gap-x-4 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                      <span /><span>Issued</span><span>Used</span><span>Ret.</span>
+                    </div>
+                  )}
+                  <ul className="space-y-1">
+                    {(iss.lines || []).map((l) => {
+                      const v = Number(l.qty_issued) - Number(l.qty_used) - Number(l.qty_returned);
+                      return (
+                        <li key={l.id} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-4 text-sm">
+                          <span className="text-slate-700">
+                            {l.item?.name || "Item"}
+                            {reconciled && v > 0 && <span className="ml-1.5 text-xs text-red-500">−{v} missing</span>}
+                          </span>
+                          {reconciled ? (
+                            <>
+                              <span className="text-right font-mono text-xs text-slate-500">{l.qty_issued}</span>
+                              <span className="text-right font-mono text-xs text-slate-700">{l.qty_used}</span>
+                              <span className="text-right font-mono text-xs text-emerald-600">{l.qty_returned}</span>
+                            </>
+                          ) : (
+                            <span className="col-span-3 text-right font-mono text-xs text-slate-500">{l.qty_issued} {l.item?.unit || ""}</span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {!reconciled && !closed && (
+                    <div className="mt-2.5 flex justify-end border-t border-slate-100 pt-2.5">
+                      <Button variant="secondary" onClick={() => setReconcileIssue(iss)} className="px-3 py-1.5 text-xs">
+                        <Icon name="check" className="h-3.5 w-3.5" /> Reconcile stock
+                      </Button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </Card>
@@ -180,6 +216,11 @@ export default function TicketView() {
       {showIssue && (
         <IssueStockModal ticket={ticket} onClose={() => setShowIssue(false)}
           onIssued={() => { setShowIssue(false); load(); }} />
+      )}
+
+      {reconcileIssue && (
+        <ReconcileModal issue={reconcileIssue} onClose={() => setReconcileIssue(null)}
+          onDone={() => { setReconcileIssue(null); load(); }} />
       )}
     </div>
   );

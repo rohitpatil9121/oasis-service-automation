@@ -42,4 +42,6 @@ export const api = {
   listStockIssues: (ticketId) => request(`/tickets/${ticketId}/stock-issues`),
   issueStock: (ticketId, technician_id, lines) =>
     request(`/tickets/${ticketId}/stock-issue`, { method: "POST", body: { technician_id, lines } }),
+  reconcileStock: (issueId, lines) =>
+    request(`/stock/issues/${issueId}/reconcile`, { method: "POST", body: { lines } }),
 };

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/rbac.js";
-import { listStockItems, createStockItem } from "../services/stock.js";
+import { listStockItems, createStockItem, reconcileStock } from "../services/stock.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -17,6 +17,16 @@ router.post("/", requireRole("owner", "manager"), async (req, res, next) => {
   try {
     const item = await createStockItem(req.body || {}, req.user.id);
     res.status(201).json({ item });
+  } catch (e) { next(e); }
+});
+
+// Reconcile an issue: record used/returned per line; variance is flagged.
+router.post("/issues/:id/reconcile", requireRole("owner", "manager"), async (req, res, next) => {
+  try {
+    const result = await reconcileStock({
+      stockIssueId: req.params.id, lines: req.body?.lines, actorId: req.user.id,
+    });
+    res.json(result);
   } catch (e) { next(e); }
 });
 
