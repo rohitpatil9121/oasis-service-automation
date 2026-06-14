@@ -123,6 +123,74 @@ export async function createTicket({ customer, issue_description, source = "what
   return { ...ticket, customer: cust };
 }
 
+// ---------- live WhatsApp intake ----------
+// A request shows on the dashboard from the customer's first message and fills
+// in as details arrive. createDraftTicket starts it; updateTicketIntake/
+// upsertCustomerByPhone patch it each turn; completeIntake finishes it.
+
+// Create/patch a customer by phone with only the fields we have so far.
+export async function upsertCustomerByPhone(phone, { full_name, address } = {}) {
+  const { data: existing } = await supabase
+    .from("customers").select("*").eq("phone", phone).maybeSingle();
+  if (existing) {
+    const patch = {};
+    if (full_name && full_name !== existing.full_name) patch.full_name = full_name;
+    if (address && address !== existing.address) patch.address = address;
+    if (!Object.keys(patch).length) return existing;
+    const { data } = await supabase.from("customers").update(patch).eq("id", existing.id).select().single();
+    return data;
+  }
+  const { data, error } = await supabase
+    .from("customers").insert({ phone, full_name: full_name || "", address: address || null }).select().single();
+  if (error) throw new Error("upsertCustomerByPhone: " + error.message);
+  return data;
+}
+
+// Early "draft" ticket — appears on the dashboard immediately, no alerts yet.
+export async function createDraftTicket({ customerId, source = "whatsapp" }) {
+  const { data: ticket, error } = await supabase
+    .from("tickets")
+    .insert({ customer_id: customerId, issue_description: "", status: "NEW", intake_complete: false, source })
+    .select("*").single();
+  if (error) throw new Error("createDraftTicket: " + error.message);
+  await logEvent(ticket.id, "created", { to_status: "NEW", meta: { source, draft: true } });
+  return ticket;
+}
+
+// Patch the issue / appliance as the agent collects them.
+export async function updateTicketIntake(ticketId, { issue, appliance } = {}) {
+  const patch = {};
+  if (issue) patch.issue_description = issue;
+  if (appliance) patch.appliance = appliance;
+  if (!Object.keys(patch).length) return;
+  await supabase.from("tickets").update(patch).eq("id", ticketId);
+}
+
+// Required fields all in → mark complete and fire the one-time alerts.
+export async function completeIntake(ticketId) {
+  const ticket = await getTicket(ticketId);
+  if (ticket.intake_complete) return ticket;
+  await supabase.from("tickets").update({ intake_complete: true }).eq("id", ticketId);
+
+  await queueNotification({
+    recipient: ticket.customer.phone, audience: "customer", ticketId,
+    body: `✅ Thanks ${ticket.customer.full_name}! Your request is logged.\n` +
+          `Ticket: *${ticket.ticket_number}*\nIssue: ${ticket.issue_description}\n` +
+          `Our team will assign a technician shortly.`,
+  });
+
+  const managers = await getManagerRecipients();
+  const mgrTpl = managerNewRequest({
+    ticketNumber: ticket.ticket_number, customerName: ticket.customer.full_name,
+    customerPhone: ticket.customer.phone, address: ticket.customer.address, issue: ticket.issue_description,
+  });
+  for (const phone of managers) {
+    await queueNotification({ recipient: phone, audience: "manager", ticketId, body: mgrTpl.body, template: mgrTpl.template });
+  }
+  log.info(`Intake complete for ${ticket.ticket_number}`);
+  return { ...ticket, intake_complete: true };
+}
+
 export async function listTickets({ status } = {}) {
   let q = supabase
     .from("tickets")

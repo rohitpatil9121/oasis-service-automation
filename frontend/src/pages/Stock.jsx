@@ -18,12 +18,17 @@ export default function Stock() {
 
   useEffect(() => { load(); }, [load]);
 
+  async function remove(it) {
+    if (!window.confirm(`Remove "${it.name}" from inventory?`)) return;
+    try { await api.removeStockItem(it.id); load(); } catch (e) { setErr(e.message); }
+  }
+
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Inventory</h1>
-          <p className="mt-0.5 text-sm text-slate-400">Parts in stock. Issue them to a technician from a service request.</p>
+          <p className="mt-0.5 text-sm text-slate-400">Parts in stock. Issue them to a technician from their page.</p>
         </div>
         <Button onClick={() => setShowAdd(true)}><Icon name="plus" /> Add item</Button>
       </div>
@@ -44,6 +49,7 @@ export default function Stock() {
                   <th className="px-4 py-3 font-semibold">SKU</th>
                   <th className="px-4 py-3 font-semibold">In stock</th>
                   <th className="px-4 py-3 font-semibold">Unit price</th>
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -60,6 +66,12 @@ export default function Stock() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-600">₹{it.unit_price}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => remove(it)} title="Remove item"
+                          className="text-slate-300 transition hover:text-red-500">
+                          <Icon name="trash" className="h-4 w-4" />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}

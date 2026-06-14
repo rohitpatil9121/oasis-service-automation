@@ -3,8 +3,6 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import StatusBadge from "../components/StatusBadge.jsx";
 import AssignModal from "../components/AssignModal.jsx";
-import IssueStockModal from "../components/IssueStockModal.jsx";
-import ReconcileModal from "../components/ReconcileModal.jsx";
 import ScheduleModal from "../components/ScheduleModal.jsx";
 import ChatPanel from "../components/ChatPanel.jsx";
 import EditCustomerModal from "../components/EditCustomerModal.jsx";
@@ -25,24 +23,19 @@ export default function TicketView() {
   const { id } = useParams();
   const [ticket, setTicket] = useState(null);
   const [history, setHistory] = useState({ events: [], assignments: [] });
-  const [stockIssues, setStockIssues] = useState([]);
   const [showAssign, setShowAssign] = useState(false);
-  const [showIssue, setShowIssue] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showEditCustomer, setShowEditCustomer] = useState(false);
   const [editIssue, setEditIssue] = useState(false);
   const [issueText, setIssueText] = useState("");
   const [issueErr, setIssueErr] = useState("");
-  const [reconcileIssue, setReconcileIssue] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [{ ticket }, h, s] = await Promise.all([
-        api.getTicket(id), api.getHistory(id), api.listStockIssues(id),
-      ]);
-      setTicket(ticket); setHistory(h); setStockIssues(s.issues || []); setErr("");
+      const [{ ticket }, h] = await Promise.all([api.getTicket(id), api.getHistory(id)]);
+      setTicket(ticket); setHistory(h); setErr("");
     } catch (e) { setErr(e.message); }
   }, [id]);
 
@@ -98,6 +91,13 @@ export default function TicketView() {
 
       {err && <div className="mb-4"><Alert>{err}</Alert></div>}
 
+      {ticket.intake_complete === false && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+          Collecting details from the customer on WhatsApp — this request updates live as they reply.
+        </div>
+      )}
+
       {/* Details */}
       <Card className="mb-5">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
@@ -108,9 +108,10 @@ export default function TicketView() {
           </button>
         </div>
         <dl className="grid sm:grid-cols-2">
-          <Row label="Customer" value={ticket.customer?.full_name} />
+          <Row label="Customer" value={ticket.customer?.full_name || "—"} />
           <Row label="Phone" value={ticket.customer?.phone} mono />
           <Row label="Address" value={ticket.customer?.address || "—"} />
+          <Row label="Appliance" value={ticket.appliance || "—"} />
           <Row label="Source" value={ticket.source === "whatsapp" ? "WhatsApp" : "Manual entry"} />
           <Row label="Technician" value={ticket.technician?.full_name || "Unassigned"} />
           <Row label="Created" value={fmt(ticket.created_at)} />
@@ -171,74 +172,6 @@ export default function TicketView() {
         </div>
       </Card>
 
-      {/* Stock issued */}
-      <Card className="mb-5 p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Stock issued</h3>
-          {!closed && (
-            <Button variant="secondary" onClick={() => setShowIssue(true)}>
-              <Icon name="box" /> Issue stock
-            </Button>
-          )}
-        </div>
-        {stockIssues.length === 0 ? (
-          <p className="text-sm text-slate-400">No parts issued for this job yet.</p>
-        ) : (
-          <ul className="space-y-3">
-            {stockIssues.map((iss) => {
-              const reconciled = iss.status === "RECONCILED";
-              return (
-                <li key={iss.id} className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
-                  <div className="mb-1.5 flex items-center justify-between text-xs text-slate-400">
-                    <span>
-                      {iss.technician?.full_name ? <>To <b className="text-slate-600">{iss.technician.full_name}</b> · </> : null}
-                      {reconciled
-                        ? <span className="font-medium text-emerald-600">Reconciled</span>
-                        : <span className="font-medium text-amber-600">Issued</span>}
-                    </span>
-                    <span>{fmt(iss.issued_at)}</span>
-                  </div>
-                  {reconciled && (
-                    <div className="mb-1 grid grid-cols-[1fr_auto_auto_auto] gap-x-4 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                      <span /><span>Issued</span><span>Used</span><span>Ret.</span>
-                    </div>
-                  )}
-                  <ul className="space-y-1">
-                    {(iss.lines || []).map((l) => {
-                      const v = Number(l.qty_issued) - Number(l.qty_used) - Number(l.qty_returned);
-                      return (
-                        <li key={l.id} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-4 text-sm">
-                          <span className="text-slate-700">
-                            {l.item?.name || "Item"}
-                            {reconciled && v > 0 && <span className="ml-1.5 text-xs text-red-500">−{v} missing</span>}
-                          </span>
-                          {reconciled ? (
-                            <>
-                              <span className="text-right font-mono text-xs text-slate-500">{l.qty_issued}</span>
-                              <span className="text-right font-mono text-xs text-slate-700">{l.qty_used}</span>
-                              <span className="text-right font-mono text-xs text-emerald-600">{l.qty_returned}</span>
-                            </>
-                          ) : (
-                            <span className="col-span-3 text-right font-mono text-xs text-slate-500">{l.qty_issued} {l.item?.unit || ""}</span>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {!reconciled && !closed && (
-                    <div className="mt-2.5 flex justify-end border-t border-slate-100 pt-2.5">
-                      <Button variant="secondary" onClick={() => setReconcileIssue(iss)} className="px-3 py-1.5 text-xs">
-                        <Icon name="check" className="h-3.5 w-3.5" /> Reconcile stock
-                      </Button>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
-
       {/* History + Activity */}
       <div className="grid gap-5 lg:grid-cols-2">
         <Card className="p-5">
@@ -282,16 +215,6 @@ export default function TicketView() {
       {showAssign && (
         <AssignModal ticket={ticket} onClose={() => setShowAssign(false)}
           onAssigned={() => { setShowAssign(false); load(); }} />
-      )}
-
-      {showIssue && (
-        <IssueStockModal ticket={ticket} onClose={() => setShowIssue(false)}
-          onIssued={() => { setShowIssue(false); load(); }} />
-      )}
-
-      {reconcileIssue && (
-        <ReconcileModal issue={reconcileIssue} onClose={() => setReconcileIssue(null)}
-          onDone={() => { setReconcileIssue(null); load(); }} />
       )}
 
       {showSchedule && (

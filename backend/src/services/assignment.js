@@ -15,6 +15,25 @@ export async function listTechnicians() {
   return data;
 }
 
+export async function getTechnicianById(id) {
+  const { data, error } = await supabase
+    .from("users").select("id, full_name, phone, email, is_active, role")
+    .eq("id", id).eq("role", "technician").maybeSingle();
+  if (error) throw new Error("getTechnicianById: " + error.message);
+  return data;
+}
+
+// Soft-remove: deactivate so they drop off the list and can't be assigned, but
+// their history (assignments, stock) stays intact.
+export async function deactivateTechnician(id) {
+  const { data, error } = await supabase
+    .from("users").update({ is_active: false })
+    .eq("id", id).eq("role", "technician").select("id").maybeSingle();
+  if (error) throw new Error("deactivateTechnician: " + error.message);
+  if (!data) { const e = new Error("Technician not found"); e.status = 404; throw e; }
+  return data;
+}
+
 export async function createTechnician({ full_name, phone, email }) {
   const name = (full_name || "").trim();
   if (!name) { const e = new Error("Full name is required"); e.status = 400; throw e; }

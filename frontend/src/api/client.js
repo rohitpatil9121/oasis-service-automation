@@ -42,12 +42,15 @@ export const api = {
   // technicians
   listTechnicians: () => request("/technicians"),
   createTechnician: (payload) => request("/technicians", { method: "POST", body: payload }),
-  // stock
+  getTechnician: (id) => request(`/technicians/${id}`),
+  removeTechnician: (id) => request(`/technicians/${id}`, { method: "DELETE" }),
+  // stock (bulk, per technician)
   listStock: () => request("/stock"),
   createStockItem: (payload) => request("/stock", { method: "POST", body: payload }),
-  listStockIssues: (ticketId) => request(`/tickets/${ticketId}/stock-issues`),
-  issueStock: (ticketId, technician_id, lines) =>
-    request(`/tickets/${ticketId}/stock-issue`, { method: "POST", body: { technician_id, lines } }),
+  removeStockItem: (id) => request(`/stock/${id}`, { method: "DELETE" }),
+  getTechnicianStock: (techId) => request(`/technicians/${techId}/stock-issues`),
+  issueStockToTechnician: (techId, lines) =>
+    request(`/technicians/${techId}/stock-issue`, { method: "POST", body: { lines } }),
   reconcileStock: (issueId, lines) =>
     request(`/stock/issues/${issueId}/reconcile`, { method: "POST", body: { lines } }),
 };

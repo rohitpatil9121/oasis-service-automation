@@ -7,7 +7,10 @@
 // logged first (in the webhook), so no inquiry is ever lost.
 import { supabase } from "../config/supabase.js";
 import { getAIResponse } from "./ai.js";
-import { createTicket, getLatestTicketByCustomerPhone } from "./tickets.js";
+import {
+  upsertCustomerByPhone, createDraftTicket, updateTicketIntake, completeIntake,
+  getLatestTicketByCustomerPhone,
+} from "./tickets.js";
 import { normalizePhone } from "../lib/phone.js";
 import { log } from "../lib/logger.js";
 
@@ -40,60 +43,63 @@ ${AGENT_INTRO}
 This is a RETURNING customer — we already have their details on file:
 - name: ${collected.name || "(not on file)"}
 - address: ${collected.address || "(not on file)"}
+- appliance: ${collected.appliance || "(not on file)"}
 
 Greet them warmly BY NAME. Do NOT ask for their name or address from scratch — instead
-briefly confirm the name and address above are still correct, and ask what issue they're
-facing today. (If the address is not on file, do ask for it.)
+briefly confirm the name and address above are still correct, ask what issue they're facing
+today, and which water purifier it is (brand/model) if not on file.
 
 EVERY reply MUST be a single JSON object with exactly these two keys: {"fields": { ... }, "message": "..."}
 
 "fields" — include ONLY new or changed details:
-- "issue": their problem (required). Capture ALL useful detail — appliance type, brand/model if given, and the symptoms — combined into one clear string.
+- "issue": their problem (required) — the symptoms / what's wrong.
+- "appliance": which water purifier it is — brand + model (e.g. "Kent RO", "Aquaguard UV"). Ask for this if not on file.
 - "name": ONLY if they say their name has changed.
 - "address": ONLY if they give a new/changed address.
-- Use {} if nothing new was provided (e.g. just a greeting or a question — but still answer them in "message").
+- Use {} if nothing new was provided.
 
-"message" — short, warm, WhatsApp style (emojis ok). Confirm the details on file and ask
-for the issue. When the issue is known, thank them and say their request is being registered.
+"message" — short, warm, WhatsApp style. Confirm the details on file, ask for the issue and
+the purifier brand/model. When you have the issue, thank them and say it's being registered.
 
 Return ONLY the JSON object. No markdown.
 
-Example — "hi": {"fields":{},"message":"Hi ${collected.name || "there"}! Welcome back 😊 I have your address as ${collected.address || "—"}. Is that still correct, and what issue are you facing today?"}
-Example — "yes same, purifier stopped working": {"fields":{"issue":"purifier stopped working"},"message":"Thanks ${collected.name || ""}! Registering your request now. 🙏"}
-Example — "my new address is 5 MG Road Pune, AC not cooling": {"fields":{"address":"5 MG Road, Pune","issue":"AC not cooling"},"message":"Updated your address — registering your request now. 🙏"}
+Example — "hi": {"fields":{},"message":"Hi ${collected.name || "there"}! Welcome back 😊 Address still ${collected.address || "—"}? What issue are you facing, and which purifier is it (brand/model)?"}
+Example — "yes same, Kent RO not working": {"fields":{"issue":"purifier not working","appliance":"Kent RO"},"message":"Thanks ${collected.name || ""}! Registering your request now. 🙏"}
 `.trim();
   }
 
   return `
 ${AGENT_INTRO}
 
-You must collect three details: the customer's name, their address (for the technician visit), and the issue (what's wrong).
+Collect FOUR details: the customer's name, their address (for the technician visit), the issue
+(what's wrong), and the appliance — which water purifier it is (brand + model).
 
 Already collected (do NOT ask for these again):
 - name: ${collected.name || "(missing)"}
 - address: ${collected.address || "(missing)"}
 - issue: ${collected.issue || "(missing)"}
+- appliance: ${collected.appliance || "(missing)"}
 
 EVERY reply MUST be a single JSON object with exactly these two keys, in this order:
 {"fields": { ... }, "message": "..."}
 
 Building "fields" (the extracted data):
-- Pull out any name, address, or problem detail the customer mentions, into "name" / "address" / "issue".
-- The "issue" must capture ALL useful detail about the problem: the appliance type (RO purifier, AC, geyser…), the brand/model if mentioned, and the symptoms. Combine everything they tell you about the problem into ONE clear "issue" string, and keep enriching it as they share more.
-- REQUIRED: whenever the message contains a name, an address, or any problem detail, the matching key MUST appear in "fields". Never leave "fields" empty when the customer gave real details.
-- Use "fields": {} only when they gave nothing new (e.g. just a greeting or a question).
+- Pull any name / address / problem / purifier detail the customer mentions into "name" / "address" / "issue" / "appliance".
+- "issue" = the symptoms / what's wrong (e.g. "water leaking", "low flow", "not working").
+- "appliance" = the water purifier brand + model (e.g. "Kent RO", "Aquaguard UV", "Pureit"). Always ask which purifier it is.
+- REQUIRED: whenever the message contains one of these, the matching key MUST appear in "fields". Never leave "fields" empty when the customer gave real details.
+- Use "fields": {} only when they gave nothing new (just a greeting or a question).
 
 Building "message":
 - A short, warm WhatsApp reply (emojis ok). Answer any question they asked.
-- Then ask only for whichever of name / address / issue is still missing.
-- When all three are known, thank them and say their request is being registered.
+- Then ask only for whichever of name / address / issue / purifier brand-model is still missing.
+- When you have the name, address and issue, thank them and say their request is being registered.
 
 Return ONLY the JSON object. No markdown, no extra text.
 
-Example — "hi I'm Sunil Kale, my RO purifier is leaking badly, I live at 12 Shivaji Nagar Pune 411005": {"fields":{"name":"Sunil Kale","issue":"RO purifier leaking badly","address":"12 Shivaji Nagar, Pune 411005"},"message":"Thanks Sunil! Registering your request now. 🙏"}
-Example — "Do you want my purifier details as well?": {"fields":{},"message":"Yes please! 😊 The brand/model and what's going wrong will help us send the right technician — share that along with your name and address."}
-Example — "It's a Kent RO, water tastes bad and the flow is very low": {"fields":{"issue":"Kent RO purifier — water tastes bad and water flow is very low"},"message":"Got it, thanks! 🙏 And your name and address for the technician visit?"}
-Example — "my AC is not cooling": {"fields":{"issue":"AC not cooling"},"message":"Sorry to hear that! May I know your name and address?"}
+Example — "hi I'm Sunil Kale, my Kent RO is leaking badly, I live at 12 Shivaji Nagar Pune 411005": {"fields":{"name":"Sunil Kale","issue":"RO purifier leaking badly","appliance":"Kent RO","address":"12 Shivaji Nagar, Pune 411005"},"message":"Thanks Sunil! Registering your request now. 🙏"}
+Example — "my purifier is not working": {"fields":{"issue":"purifier not working"},"message":"Sorry to hear that! 🙏 May I know your name, address, and which purifier it is (brand/model)?"}
+Example — "it's an Aquaguard": {"fields":{"appliance":"Aquaguard"},"message":"Got it — Aquaguard. 👍 And your name and address for the technician visit?"}
 `.trim();
 }
 
@@ -150,7 +156,7 @@ async function saveSession(id, patch) {
 // collected state. Only accepts the three known string fields.
 function mergeFields(collected, fields) {
   if (!fields || typeof fields !== "object") return;
-  for (const key of ["name", "address", "issue"]) {
+  for (const key of ["name", "address", "issue", "appliance"]) {
     if (typeof fields[key] === "string" && fields[key].trim()) {
       collected[key] = fields[key].trim();
     }
@@ -203,6 +209,19 @@ export async function handleInboundAI({ fromPhone, text }) {
   const history = session.data?.history || [];
   const returning = session.data?.returning || false;
 
+  // Create the dashboard request on the very FIRST message so the Service Manager
+  // can watch it fill in live as the customer shares details.
+  if (!session.ticket_id) {
+    try {
+      const customer = await upsertCustomerByPhone(phone, { full_name: collected.name, address: collected.address });
+      const ticket = await createDraftTicket({ customerId: customer.id });
+      session.customer_id = customer.id;
+      session.ticket_id = ticket.id;
+      await saveSession(session.id, { customer_id: customer.id, ticket_id: ticket.id });
+      log.info(`Draft request created for ${phone} -> ${ticket.ticket_number}`);
+    } catch (e) { log.error("draft creation failed:", e.message); }
+  }
+
   // Build the model context: fresh system prompt + recent turns + new message.
   const messages = [
     { role: "system", content: systemPrompt(collected, returning) },
@@ -229,34 +248,29 @@ export async function handleInboundAI({ fromPhone, text }) {
   history.push({ role: "user", content: body });
   history.push({ role: "assistant", content: reply });
 
-  // All three fields collected -> create the ticket once.
+  // Live-update the request with whatever we have so far (shows on the dashboard).
+  try {
+    await upsertCustomerByPhone(phone, { full_name: collected.name, address: collected.address });
+    if (session.ticket_id) await updateTicketIntake(session.ticket_id, { issue: collected.issue, appliance: collected.appliance });
+  } catch (e) { log.error("live intake update failed:", e.message); }
+
+  // Required fields all in -> finalise once (alerts + customer confirmation).
   const complete = collected.name && collected.address && collected.issue;
-  if (complete && !session.ticket_id) {
+  if (complete && session.ticket_id && !session.data?.completed) {
     try {
-      const ticket = await createTicket({
-        customer: { full_name: collected.name, phone, address: collected.address },
-        issue_description: collected.issue,
-        source: "whatsapp",
-      });
-      await saveSession(session.id, {
-        state: "COMPLETED",
-        data: { collected, history },
-        customer_id: ticket.customer.id,
-        ticket_id: ticket.id,
-      });
+      const ticket = await completeIntake(session.ticket_id);
+      await saveSession(session.id, { state: "COMPLETED", data: { collected, history, returning, completed: true } });
       log.info(`AI intake complete for ${phone} -> ${ticket.ticket_number}`);
       return `${reply}\n\n✅ Your request is logged. Ticket ID: *${ticket.ticket_number}*.\n` +
              `You'll get a WhatsApp update when a technician is assigned.\n` +
              `(Send *status* anytime to check it.)`;
     } catch (e) {
-      log.error("AI intake ticket creation failed:", e.message);
-      // Keep the session open so the next message can retry.
-      await saveSession(session.id, { data: { collected, history } });
-      return "I've got all your details — just finishing up registering your request. " +
-             "Please send any message to confirm.";
+      log.error("completeIntake failed:", e.message);
+      await saveSession(session.id, { data: { collected, history, returning } });
+      return reply;
     }
   }
 
-  await saveSession(session.id, { data: { collected, history } });
+  await saveSession(session.id, { data: { collected, history, returning } });
   return reply;
 }

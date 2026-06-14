@@ -51,6 +51,16 @@ export async function createStockItem({ name, sku, unit, qty_on_hand, reorder_le
   return data;
 }
 
+// Soft-remove an item so it drops off inventory but its movement history stays.
+export async function deactivateStockItem(id) {
+  const { data, error } = await supabase
+    .from("stock_items").update({ is_active: false })
+    .eq("id", id).select("id").maybeSingle();
+  if (error) throw new Error("deactivateStockItem: " + error.message);
+  if (!data) { const e = new Error("Item not found"); e.status = 404; throw e; }
+  return data;
+}
+
 // ---------- the ledger ----------
 
 // Append one movement row. `qty` is signed (+ into store, − out of store).
@@ -70,10 +80,12 @@ async function logMovement({ stockItemId, type, qty, balanceAfter, ticketId, sto
 
 // ---------- digital stock issue ----------
 
-// Issue parts to the assigned technician for a ticket. `lines` = [{ stock_item_id, qty }].
-// Creates the issue header + lines, decrements each item's qty_on_hand, and logs
-// an ISSUE movement per line. Validates availability before touching anything.
-export async function issueStock({ ticketId, technicianId, issuedBy, lines }) {
+// Issue parts to a TECHNICIAN in bulk (not tied to a ticket). `lines` =
+// [{ stock_item_id, qty }]. Reuses the technician's open batch so multiple
+// pickups accumulate into one batch they reconcile later (e.g. next day).
+// Decrements each item's qty_on_hand and logs an ISSUE movement per line.
+export async function issueStock({ technicianId, issuedBy, lines }) {
+  if (!technicianId) { const e = new Error("Select a technician"); e.status = 400; throw e; }
   const clean = (lines || [])
     .map((l) => ({ stock_item_id: l.stock_item_id, qty: Number(l.qty) }))
     .filter((l) => l.stock_item_id && l.qty > 0);
@@ -95,19 +107,18 @@ export async function issueStock({ ticketId, technicianId, issuedBy, lines }) {
     }
   }
 
-  // Reuse the ticket's OPEN (un-reconciled) issue if there is one, so issuing
-  // stock again just adds to the SAME batch — one batch + one reconcile per job.
-  // Only create a new header when no open batch exists.
+  // Reuse the technician's OPEN (un-reconciled) batch so bulk pickups accumulate
+  // into one batch they reconcile later. Only create one when none is open.
   let { data: issue } = await supabase
     .from("stock_issues")
     .select("*, lines:stock_issue_lines(*)")
-    .eq("ticket_id", ticketId).eq("status", "ISSUED")
+    .eq("technician_id", technicianId).eq("status", "ISSUED")
     .order("issued_at", { ascending: true }).limit(1).maybeSingle();
 
   if (!issue) {
     const { data: created, error: issueErr } = await supabase
       .from("stock_issues")
-      .insert({ ticket_id: ticketId, technician_id: technicianId || null, issued_by: issuedBy || null })
+      .insert({ technician_id: technicianId, issued_by: issuedBy || null })
       .select("*").single();
     if (issueErr) throw new Error("issueStock header: " + issueErr.message);
     issue = { ...created, lines: [] };
@@ -136,13 +147,13 @@ export async function issueStock({ ticketId, technicianId, issuedBy, lines }) {
     await supabase.from("stock_items").update({ qty_on_hand: newQty }).eq("id", l.stock_item_id);
     await logMovement({
       stockItemId: l.stock_item_id, type: "ISSUE", qty: -l.qty, balanceAfter: newQty,
-      ticketId, stockIssueId: issue.id, actorId: issuedBy, note: "Issued for ticket",
+      stockIssueId: issue.id, actorId: issuedBy, note: "Issued to technician",
     });
     item.qty_on_hand = newQty; // keep local copy correct if same item appears twice
   }
 
-  log.info(`Stock issued for ticket ${ticketId}: ${clean.length} line(s)`);
-  return getStockIssuesForTicket(ticketId);
+  log.info(`Stock issued to technician ${technicianId}: ${clean.length} line(s)`);
+  return getStockIssuesForTechnician(technicianId);
 }
 
 // ---------- reconciliation (return) ----------
@@ -227,17 +238,17 @@ export async function reconcileStock({ stockIssueId, lines, actorId }) {
     log.warn(`⚠️ Stock variance on issue ${issue.id}: ${variances.map((v) => v.item + " x" + v.qty).join(", ")}`);
   }
   log.info(`Stock reconciled for issue ${issue.id} (variance ${totalVariance})`);
-  return { issues: await getStockIssuesForTicket(issue.ticket_id), variance: totalVariance, variances };
+  return { issues: await getStockIssuesForTechnician(issue.technician_id), variance: totalVariance, variances };
 }
 
-// All issues (with their lines + item names) for a ticket — powers the ticket view.
-export async function getStockIssuesForTicket(ticketId) {
+// All stock batches (with their lines + item names) for a technician — powers
+// the technician page.
+export async function getStockIssuesForTechnician(technicianId) {
   const { data, error } = await supabase
     .from("stock_issues")
-    .select("*, technician:users!stock_issues_technician_id_fkey(id,full_name), " +
-            "lines:stock_issue_lines(*, item:stock_items(id,name,unit))")
-    .eq("ticket_id", ticketId)
+    .select("*, lines:stock_issue_lines(*, item:stock_items(id,name,unit))")
+    .eq("technician_id", technicianId)
     .order("issued_at", { ascending: false });
-  if (error) throw new Error("getStockIssuesForTicket: " + error.message);
+  if (error) throw new Error("getStockIssuesForTechnician: " + error.message);
   return data;
 }

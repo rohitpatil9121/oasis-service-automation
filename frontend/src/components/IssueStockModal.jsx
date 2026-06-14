@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
 import { Modal, Button, Field, Select, Input, Icon, Alert } from "./ui.jsx";
 
-// Manager records the parts a technician is taking for this ticket (replaces the
-// paper register). Each row = one part + quantity. On submit the backend issues
-// the stock, decrements inventory, and logs an ISSUE movement per line.
-export default function IssueStockModal({ ticket, onClose, onIssued }) {
+// Manager records the parts a technician is taking in bulk (replaces the paper
+// register). Each row = one part + quantity. On submit the backend issues the
+// stock to the technician, decrements inventory, and logs an ISSUE per line.
+export default function IssueStockModal({ technician, onClose, onIssued }) {
   const [items, setItems] = useState([]);
   const [rows, setRows] = useState([{ stock_item_id: "", qty: "" }]);
   const [busy, setBusy] = useState(false);
@@ -33,21 +33,15 @@ export default function IssueStockModal({ ticket, onClose, onIssued }) {
     if (!lines.length) return setErr("Add at least one part with a quantity.");
     setBusy(true); setErr("");
     try {
-      await api.issueStock(ticket.id, ticket.technician?.id, lines);
+      await api.issueStockToTechnician(technician.id, lines);
       onIssued();
     } catch (e) { setErr(e.message); setBusy(false); }
   }
 
   return (
-    <Modal title="Issue stock" subtitle={`Ticket ${ticket.ticket_number} · ${ticket.technician?.full_name || "no technician assigned"}`} onClose={onClose}>
+    <Modal title="Issue stock" subtitle={`To ${technician.full_name}`} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <Alert>{err}</Alert>
-
-        {!ticket.technician && (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 ring-1 ring-inset ring-amber-600/20">
-            No technician assigned yet — assign one so the parts are tracked against them.
-          </p>
-        )}
 
         <div className="space-y-2">
           {rows.map((r, i) => {

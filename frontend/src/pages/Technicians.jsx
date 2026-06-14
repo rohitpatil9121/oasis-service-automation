@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
 import { Button, Card, Icon, Input, Field, Alert, EmptyState, Modal } from "../components/ui.jsx";
 
 export default function Technicians() {
+  const navigate = useNavigate();
   const [techs, setTechs] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState("");
@@ -18,12 +20,18 @@ export default function Technicians() {
 
   useEffect(() => { load(); }, [load]);
 
+  async function remove(t, e) {
+    e.stopPropagation();
+    if (!window.confirm(`Remove ${t.full_name}? They'll no longer appear or receive new jobs.`)) return;
+    try { await api.removeTechnician(t.id); load(); } catch (e) { setErr(e.message); }
+  }
+
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Technicians</h1>
-          <p className="mt-0.5 text-sm text-slate-400">Technicians get a WhatsApp alert when a job is assigned to them.</p>
+          <p className="mt-0.5 text-sm text-slate-400">Click a technician to issue & reconcile their bulk stock.</p>
         </div>
         <Button onClick={() => setShowAdd(true)}><Icon name="plus" /> Add technician</Button>
       </div>
@@ -44,11 +52,13 @@ export default function Technicians() {
                   <th className="px-4 py-3 font-semibold">Phone</th>
                   <th className="px-4 py-3 font-semibold">Email</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {techs.map((t) => (
-                  <tr key={t.id} className="hover:bg-slate-50">
+                  <tr key={t.id} onClick={() => navigate(`/technicians/${t.id}`)}
+                    className="cursor-pointer hover:bg-slate-50">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand">
@@ -63,6 +73,12 @@ export default function Technicians() {
                       {t.is_active
                         ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">Active</span>
                         : <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-500 ring-1 ring-inset ring-slate-500/20">Inactive</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button onClick={(e) => remove(t, e)} title="Remove technician"
+                        className="text-slate-300 transition hover:text-red-500">
+                        <Icon name="trash" className="h-4 w-4" />
+                      </button>
                     </td>
                   </tr>
                 ))}
