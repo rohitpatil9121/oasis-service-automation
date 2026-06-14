@@ -31,6 +31,12 @@ export const api = {
   createTicket: (payload) => request("/tickets", { method: "POST", body: payload }),
   assign: (id, technician_id, note) =>
     request(`/tickets/${id}/assign`, { method: "POST", body: { technician_id, note } }),
+  scheduleVisit: (id, start, end) =>
+    request(`/tickets/${id}/schedule`, { method: "POST", body: { start, end } }),
+  updateCustomer: (id, payload) => request(`/tickets/${id}/customer`, { method: "PATCH", body: payload }),
+  updateIssue: (id, issue_description) => request(`/tickets/${id}/issue`, { method: "PATCH", body: { issue_description } }),
+  getConversation: (id) => request(`/tickets/${id}/conversation`),
+  sendMessage: (id, body) => request(`/tickets/${id}/message`, { method: "POST", body: { body } }),
   setStatus: (id, status) =>
     request(`/tickets/${id}/status`, { method: "PATCH", body: { status } }),
   // technicians

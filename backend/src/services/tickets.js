@@ -1,8 +1,26 @@
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
-import { managerNewRequest } from "./waTemplates.js";
+import { managerNewRequest, visitScheduledTechnician, visitScheduledCustomer } from "./waTemplates.js";
+import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
+
+const TICKET_SELECT =
+  "*, customer:customers(*), technician:users!tickets_assigned_technician_id_fkey(id,full_name,phone)";
+
+// Human-readable slot for notifications, e.g. "14 Jun 2026, 9:00 am – 11:00 am" (IST).
+function formatSlot(startISO, endISO) {
+  const tz = "Asia/Kolkata";
+  const start = new Date(startISO).toLocaleString("en-IN", {
+    timeZone: tz, day: "2-digit", month: "short", year: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+  });
+  if (!endISO) return start;
+  const end = new Date(endISO).toLocaleTimeString("en-IN", {
+    timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true,
+  });
+  return `${start} – ${end}`;
+}
 
 export async function upsertCustomer({ full_name, phone, address }) {
   const { data: existing } = await supabase
@@ -15,6 +33,43 @@ export async function upsertCustomer({ full_name, phone, address }) {
   const { data, error } = await supabase
     .from("customers").insert({ full_name, phone, address }).select().single();
   if (error) throw new Error("customer upsert: " + error.message);
+  return data;
+}
+
+// Service Manager edits the customer's details (e.g. after confirming on chat).
+export async function updateCustomer({ customerId, full_name, phone, address }) {
+  const name = (full_name || "").trim();
+  if (!name) { const e = new Error("Customer name is required"); e.status = 400; throw e; }
+
+  const patch = { full_name: name, address: (address || "").trim() || null };
+
+  // Phone is the WhatsApp identity — only change it when given, validate, and
+  // make sure it doesn't collide with another customer.
+  if (phone != null && String(phone).trim()) {
+    if (!isValidPhone(phone)) { const e = new Error("Enter a valid phone number"); e.status = 400; throw e; }
+    const norm = normalizePhone(phone);
+    const { data: clash } = await supabase
+      .from("customers").select("id").eq("phone", norm).neq("id", customerId).maybeSingle();
+    if (clash) { const e = new Error("Another customer already uses this phone number"); e.status = 409; throw e; }
+    patch.phone = norm;
+  }
+
+  const { data, error } = await supabase
+    .from("customers").update(patch).eq("id", customerId).select().single();
+  if (error) throw new Error("updateCustomer: " + error.message);
+  log.info(`Customer ${customerId} updated`);
+  return data;
+}
+
+// Edit the ticket's issue description (e.g. after clarifying with the customer).
+export async function updateIssue({ ticketId, issue_description, actorId }) {
+  const desc = (issue_description || "").trim();
+  if (!desc) { const e = new Error("Issue description can't be empty"); e.status = 400; throw e; }
+  const { data, error } = await supabase
+    .from("tickets").update({ issue_description: desc }).eq("id", ticketId).select(TICKET_SELECT).single();
+  if (error) throw new Error("updateIssue: " + error.message);
+  await logEvent(ticketId, "issue_updated", { actor_id: actorId });
+  log.info(`Issue updated for ticket ${ticketId}`);
   return data;
 }
 
@@ -111,6 +166,56 @@ export async function getLatestTicketByCustomerPhone(phone) {
     .order("created_at", { ascending: false })
     .limit(1).maybeSingle();
   return data;
+}
+
+// Service Manager sets (or changes) the visit slot. Notifies the assigned
+// technician (where + when to go) and the customer. Used for both schedule and
+// reschedule — the only difference is the audit event type + message wording.
+export async function scheduleVisit({ ticketId, start, end, actorId }) {
+  if (!start) { const e = new Error("Pick a date and start time"); e.status = 400; throw e; }
+  const startISO = new Date(start).toISOString();
+  const endISO = end ? new Date(end).toISOString() : null;
+  if (Number.isNaN(Date.parse(startISO))) { const e = new Error("Invalid start time"); e.status = 400; throw e; }
+  if (endISO && endISO <= startISO) { const e = new Error("End time must be after the start time"); e.status = 400; throw e; }
+
+  const current = await getTicket(ticketId);
+  const rescheduling = !!current.scheduled_start;
+
+  const { data: ticket, error } = await supabase
+    .from("tickets").update({ scheduled_start: startISO, scheduled_end: endISO })
+    .eq("id", ticketId).select(TICKET_SELECT).single();
+  if (error) throw new Error("scheduleVisit: " + error.message);
+
+  // Audit (non-fatal — logEvent swallows errors if the event_type isn't allowed).
+  await logEvent(ticketId, rescheduling ? "rescheduled" : "scheduled", {
+    actor_id: actorId, meta: { scheduled_start: startISO, scheduled_end: endISO },
+  });
+
+  const when = formatSlot(startISO, endISO);
+
+  // Technician: where + when to go (template so it delivers outside the 24h window).
+  if (ticket.technician?.phone) {
+    const tpl = visitScheduledTechnician({
+      ticketNumber: ticket.ticket_number, customerName: ticket.customer.full_name,
+      customerPhone: ticket.customer.phone, address: ticket.customer.address, when,
+    });
+    await queueNotification({
+      recipient: ticket.technician.phone, audience: "technician", ticketId,
+      body: tpl.body, template: tpl.template,
+    });
+  }
+
+  // Customer: their confirmed slot.
+  const ctpl = visitScheduledCustomer({
+    ticketNumber: ticket.ticket_number, customerName: ticket.customer.full_name, when,
+  });
+  await queueNotification({
+    recipient: ticket.customer.phone, audience: "customer", ticketId,
+    body: ctpl.body, template: ctpl.template,
+  });
+
+  log.info(`Visit ${rescheduling ? "rescheduled" : "scheduled"} for ${ticket.ticket_number}: ${when}`);
+  return ticket;
 }
 
 export async function updateStatus(id, toStatus, actorId) {

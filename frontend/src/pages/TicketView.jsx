@@ -5,9 +5,19 @@ import StatusBadge from "../components/StatusBadge.jsx";
 import AssignModal from "../components/AssignModal.jsx";
 import IssueStockModal from "../components/IssueStockModal.jsx";
 import ReconcileModal from "../components/ReconcileModal.jsx";
-import { Card, Button, Icon, Select, Spinner, Alert } from "../components/ui.jsx";
+import ScheduleModal from "../components/ScheduleModal.jsx";
+import ChatPanel from "../components/ChatPanel.jsx";
+import EditCustomerModal from "../components/EditCustomerModal.jsx";
+import { Card, Button, Icon, Select, Spinner, Alert, Textarea } from "../components/ui.jsx";
 
 const fmt = (d) => (d ? new Date(d).toLocaleString() : "—");
+const fmtSlot = (s, e) => {
+  if (!s) return "—";
+  const start = new Date(s).toLocaleString([], { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+  if (!e) return start;
+  const end = new Date(e).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
+  return `${start} – ${end}`;
+};
 const STATUSES = ["NEW", "ASSIGNED", "IN_PROGRESS", "CLOSED", "CANCELLED"];
 const STATUS_LABEL = { NEW: "New", ASSIGNED: "Assigned", IN_PROGRESS: "In progress", CLOSED: "Closed", CANCELLED: "Cancelled" };
 
@@ -18,6 +28,11 @@ export default function TicketView() {
   const [stockIssues, setStockIssues] = useState([]);
   const [showAssign, setShowAssign] = useState(false);
   const [showIssue, setShowIssue] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [showEditCustomer, setShowEditCustomer] = useState(false);
+  const [editIssue, setEditIssue] = useState(false);
+  const [issueText, setIssueText] = useState("");
+  const [issueErr, setIssueErr] = useState("");
   const [reconcileIssue, setReconcileIssue] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -36,6 +51,14 @@ export default function TicketView() {
   async function changeStatus(s) {
     setBusy(true);
     try { await api.setStatus(id, s); await load(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  function startEditIssue() { setIssueText(ticket.issue_description || ""); setIssueErr(""); setEditIssue(true); }
+  async function saveIssue() {
+    if (!issueText.trim()) return setIssueErr("Issue can't be empty.");
+    setBusy(true); setIssueErr("");
+    try { await api.updateIssue(id, issueText); setEditIssue(false); await load(); }
+    catch (e) { setIssueErr(e.message); } finally { setBusy(false); }
   }
 
   if (err && !ticket) return <div><BackLink /><div className="mt-3"><Alert>{err}</Alert></div></div>;
@@ -77,7 +100,13 @@ export default function TicketView() {
 
       {/* Details */}
       <Card className="mb-5">
-        <div className="border-b border-slate-100 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Details</div>
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Details</span>
+          <button onClick={() => setShowEditCustomer(true)}
+            className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
+            <Icon name="edit" className="h-3.5 w-3.5" /> Edit
+          </button>
+        </div>
         <dl className="grid sm:grid-cols-2">
           <Row label="Customer" value={ticket.customer?.full_name} />
           <Row label="Phone" value={ticket.customer?.phone} mono />
@@ -89,10 +118,57 @@ export default function TicketView() {
         </dl>
       </Card>
 
-      {/* Issue */}
+      {/* Issue + Customer chat side by side */}
+      <div className="mb-5 grid gap-5 lg:grid-cols-2">
+        <Card className="p-5">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Issue</h3>
+            {!editIssue && (
+              <button onClick={startEditIssue}
+                className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
+                <Icon name="edit" className="h-3.5 w-3.5" /> Edit
+              </button>
+            )}
+          </div>
+          {editIssue ? (
+            <div>
+              <Textarea value={issueText} onChange={(e) => setIssueText(e.target.value)} rows={4} autoFocus />
+              {issueErr && <p className="mt-1 text-xs text-red-600">{issueErr}</p>}
+              <div className="mt-2 flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setEditIssue(false)}>Cancel</Button>
+                <Button onClick={saveIssue} disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
+              </div>
+            </div>
+          ) : (
+            <p className="whitespace-pre-wrap text-slate-700">{ticket.issue_description}</p>
+          )}
+          <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-400">
+            Missing or unclear details? Message the customer on the right to confirm before assigning.
+          </div>
+        </Card>
+        <ChatPanel ticket={ticket} />
+      </div>
+
+      {/* Visit schedule */}
       <Card className="mb-5 p-5">
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Issue</h3>
-        <p className="whitespace-pre-wrap text-slate-700">{ticket.issue_description}</p>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Visit schedule</h3>
+            {ticket.scheduled_start ? (
+              <p className="mt-1 flex items-center gap-1.5 font-medium text-slate-700">
+                <Icon name="calendar" className="h-4 w-4 text-brand" />
+                {fmtSlot(ticket.scheduled_start, ticket.scheduled_end)}
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-slate-400">Not scheduled yet.</p>
+            )}
+          </div>
+          {!closed && (
+            <Button variant="secondary" onClick={() => setShowSchedule(true)}>
+              <Icon name="calendar" /> {ticket.scheduled_start ? "Reschedule" : "Schedule visit"}
+            </Button>
+          )}
+        </div>
       </Card>
 
       {/* Stock issued */}
@@ -111,8 +187,6 @@ export default function TicketView() {
           <ul className="space-y-3">
             {stockIssues.map((iss) => {
               const reconciled = iss.status === "RECONCILED";
-              const totalVar = (iss.lines || []).reduce((s, l) =>
-                s + Math.max(0, Number(l.qty_issued) - Number(l.qty_used) - Number(l.qty_returned)), 0);
               return (
                 <li key={iss.id} className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
                   <div className="mb-1.5 flex items-center justify-between text-xs text-slate-400">
@@ -121,9 +195,6 @@ export default function TicketView() {
                       {reconciled
                         ? <span className="font-medium text-emerald-600">Reconciled</span>
                         : <span className="font-medium text-amber-600">Issued</span>}
-                      {reconciled && totalVar > 0 && (
-                        <span className="ml-1.5 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-600 ring-1 ring-inset ring-red-600/20">⚠ Variance {totalVar}</span>
-                      )}
                     </span>
                     <span>{fmt(iss.issued_at)}</span>
                   </div>
@@ -221,6 +292,16 @@ export default function TicketView() {
       {reconcileIssue && (
         <ReconcileModal issue={reconcileIssue} onClose={() => setReconcileIssue(null)}
           onDone={() => { setReconcileIssue(null); load(); }} />
+      )}
+
+      {showSchedule && (
+        <ScheduleModal ticket={ticket} onClose={() => setShowSchedule(false)}
+          onScheduled={() => { setShowSchedule(false); load(); }} />
+      )}
+
+      {showEditCustomer && (
+        <EditCustomerModal ticket={ticket} onClose={() => setShowEditCustomer(false)}
+          onUpdated={() => { setShowEditCustomer(false); load(); }} />
       )}
     </div>
   );

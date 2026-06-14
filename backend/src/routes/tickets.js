@@ -4,6 +4,7 @@ import { requireRole } from "../middleware/rbac.js";
 import * as tickets from "../services/tickets.js";
 import { assignTechnician } from "../services/assignment.js";
 import { issueStock, getStockIssuesForTicket } from "../services/stock.js";
+import { getConversation, sendCustomerMessage } from "../services/conversation.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -49,6 +50,50 @@ router.post("/:id/assign", requireRole("owner", "manager"), async (req, res, nex
     const ticket = await assignTechnician({
       ticketId: req.params.id, technicianId: technician_id,
       assignedBy: req.user.id, note,
+    });
+    res.json({ ticket });
+  } catch (e) { next(e); }
+});
+
+// Edit the issue description.
+router.patch("/:id/issue", requireRole("owner", "manager"), async (req, res, next) => {
+  try {
+    const ticket = await tickets.updateIssue({
+      ticketId: req.params.id, issue_description: req.body?.issue_description, actorId: req.user.id,
+    });
+    res.json({ ticket });
+  } catch (e) { next(e); }
+});
+
+// Update the customer's details (name / phone / address) for this ticket.
+router.patch("/:id/customer", requireRole("owner", "manager"), async (req, res, next) => {
+  try {
+    const ticket = await tickets.getTicket(req.params.id);
+    const { full_name, phone, address } = req.body || {};
+    await tickets.updateCustomer({ customerId: ticket.customer.id, full_name, phone, address });
+    res.json({ ticket: await tickets.getTicket(req.params.id) });
+  } catch (e) { next(e); }
+});
+
+// Customer WhatsApp conversation for this ticket.
+router.get("/:id/conversation", requireRole("owner", "manager", "technician"), async (req, res, next) => {
+  try { res.json(await getConversation(req.params.id)); }
+  catch (e) { next(e); }
+});
+
+router.post("/:id/message", requireRole("owner", "manager"), async (req, res, next) => {
+  try {
+    const result = await sendCustomerMessage({ ticketId: req.params.id, body: req.body?.body, actorId: req.user.id });
+    res.json(result);
+  } catch (e) { next(e); }
+});
+
+// Schedule (or reschedule) the visit slot.
+router.post("/:id/schedule", requireRole("owner", "manager"), async (req, res, next) => {
+  try {
+    const { start, end } = req.body || {};
+    const ticket = await tickets.scheduleVisit({
+      ticketId: req.params.id, start, end, actorId: req.user.id,
     });
     res.json({ ticket });
   } catch (e) { next(e); }

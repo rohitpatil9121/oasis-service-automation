@@ -101,6 +101,36 @@ Please contact the customer and proceed with the visit.
 
 ---
 
+## Template 3 — `visit_scheduled_technician`
+
+Sent to the assigned technician when the manager schedules/reschedules the visit.
+
+- **Name:** `visit_scheduled_technician` · **Category:** `Utility` · **Language:** `English` (`en`)
+
+**Body:**
+```
+Visit scheduled {{1}}
+
+Customer: {{2}} ({{3}})
+When: {{4}}
+Address: {{5}}
+```
+Samples: {{1}} `OG-140625-0001`, {{2}} `Mohit Sharma`, {{3}} `+919812345678`, {{4}} `14 Jun 2026, 9:00 am – 11:00 am`, {{5}} `12 Shivaji Nagar, Pune`
+
+## Template 4 — `visit_scheduled_customer`
+
+Sent to the customer with their confirmed slot.
+
+- **Name:** `visit_scheduled_customer` · **Category:** `Utility` · **Language:** `English` (`en`)
+
+**Body:**
+```
+Hi {{1}}, your Oasis Globe service visit is scheduled for {{2}}. Ref: {{3}}
+```
+Samples: {{1}} `Mohit Sharma`, {{2}} `14 Jun 2026, 9:00 am – 11:00 am`, {{3}} `OG-140625-0001`
+
+---
+
 ## After approval — nothing to deploy
 
 The code already references these names. Once both show **Approved** in Meta:

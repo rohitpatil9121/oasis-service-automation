@@ -1,5 +1,6 @@
 // Notification dispatch. We send the WhatsApp message INLINE and record the
-
+// outcome (SENT/FAILED) — no PENDING row for any external worker to grab.
+import { supabase } from "../config/supabase.js";
 import { sendWhatsApp, sendWhatsAppTemplate } from "./whatsapp.js";
 import { log } from "../lib/logger.js";
 

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { handleInbound } from "../services/intake.js";
 import { handleInboundAI } from "../services/aiIntake.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
+import { isAgentHandling } from "../services/conversation.js";
 import { supabase } from "../config/supabase.js";
 import { normalizePhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
@@ -12,10 +13,19 @@ const router = Router();
 // Persist the inbound message FIRST (so the inquiry is never lost even if intake
 // errors), then route to the AI agent or the deterministic state machine.
 async function getReply(from, text) {
+  const phone = normalizePhone(from);
   const { error } = await supabase
     .from("wa_inbound")
-    .insert({ from_phone: normalizePhone(from), body: text });
+    .insert({ from_phone: phone, body: text });
   if (error) log.error("wa_inbound insert failed:", error.message);
+
+  // Human handoff: if a manager messaged this customer in the last 12h, stay
+  // silent and let them handle it. The inbound is still logged above, so the
+  // reply shows in the dashboard chat. AI auto-resumes once the window lapses.
+  if (await isAgentHandling(phone)) {
+    log.info(`[handoff] AI paused for ${phone} — manager is handling`);
+    return null;
+  }
 
   return env.aiIntake
     ? await handleInboundAI({ fromPhone: from, text })
@@ -50,7 +60,7 @@ router.post("/whatsapp", async (req, res) => {
       log.info(`[WA IN] ${from}: ${text || "(non-text message)"}`);
 
       const reply = await getReply(from, text);
-      await sendWhatsApp(from, reply);
+      if (reply) await sendWhatsApp(from, reply); // null = manager handoff, stay quiet
     } catch (e) {
       log.error("meta webhook error:", e.message);
     }
@@ -67,7 +77,7 @@ router.post("/whatsapp", async (req, res) => {
 
     // Real Twilio mode: reply via the REST API; empty TwiML avoids a duplicate.
     if (!env.whatsappMock) {
-      await sendWhatsApp(from, reply);
+      if (reply) await sendWhatsApp(from, reply); // null = manager handoff, stay quiet
       res.set("Content-Type", "text/xml").send("<Response></Response>");
     } else {
       // Mock mode: return the reply as JSON so you can test with curl/Postman.
