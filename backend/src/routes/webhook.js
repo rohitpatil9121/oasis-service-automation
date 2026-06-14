@@ -9,7 +9,7 @@ import { log } from "../lib/logger.js";
 
 const router = Router();
 
-// Persist the raw inbound FIRST (so the inquiry is never lost even if intake
+// Persist the inbound message FIRST (so the inquiry is never lost even if intake
 // errors), then route to the AI agent or the deterministic state machine.
 async function getReply(from, text) {
   const { error } = await supabase

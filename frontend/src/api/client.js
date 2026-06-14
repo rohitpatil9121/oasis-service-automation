@@ -35,4 +35,5 @@ export const api = {
     request(`/tickets/${id}/status`, { method: "PATCH", body: { status } }),
   // technicians
   listTechnicians: () => request("/technicians"),
+  createTechnician: (payload) => request("/technicians", { method: "POST", body: payload }),
 };

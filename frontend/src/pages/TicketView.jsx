@@ -3,9 +3,11 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import StatusBadge from "../components/StatusBadge.jsx";
 import AssignModal from "../components/AssignModal.jsx";
+import { Card, Button, Icon, Select, Spinner, Alert } from "../components/ui.jsx";
 
-const fmt = (d) => new Date(d).toLocaleString();
+const fmt = (d) => (d ? new Date(d).toLocaleString() : "—");
 const STATUSES = ["NEW", "ASSIGNED", "IN_PROGRESS", "CLOSED", "CANCELLED"];
+const STATUS_LABEL = { NEW: "New", ASSIGNED: "Assigned", IN_PROGRESS: "In progress", CLOSED: "Closed", CANCELLED: "Cancelled" };
 
 export default function TicketView() {
   const { id } = useParams();
@@ -13,6 +15,7 @@ export default function TicketView() {
   const [history, setHistory] = useState({ events: [], assignments: [] });
   const [showAssign, setShowAssign] = useState(false);
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -24,95 +27,105 @@ export default function TicketView() {
   useEffect(() => { load(); }, [load]);
 
   async function changeStatus(s) {
-    try { await api.setStatus(id, s); await load(); } catch (e) { setErr(e.message); }
+    setBusy(true);
+    try { await api.setStatus(id, s); await load(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
 
-  if (err) return <p className="rounded bg-red-50 p-3 text-red-600">{err}</p>;
-  if (!ticket) return <p className="text-slate-400">Loading…</p>;
+  if (err && !ticket) return <div><BackLink /><div className="mt-3"><Alert>{err}</Alert></div></div>;
+  if (!ticket) return <div className="flex justify-center py-20"><Spinner className="h-7 w-7" /></div>;
+
+  const assignments = [...(history.assignments || [])].reverse();
+  const initials = (ticket.customer?.full_name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  const closed = ticket.status === "CLOSED" || ticket.status === "CANCELLED";
 
   return (
     <div>
-      <Link to="/" className="text-sm text-brand hover:underline">← Back to inbox</Link>
+      <BackLink />
 
-      <div className="mt-3 grid gap-5 md:grid-cols-3">
-        {/* Main */}
-        <div className="md:col-span-2 space-y-5">
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-mono text-xl font-bold text-brand">{ticket.ticket_number}</h2>
+      {/* Header */}
+      <div className="mt-3 mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand/10 text-base font-bold text-brand">{initials}</span>
+          <div>
+            <h1 className="text-xl font-bold leading-tight text-slate-900">{ticket.customer?.full_name || "Customer"}</h1>
+            <div className="mt-0.5 flex items-center gap-2">
+              <span className="font-mono text-xs font-semibold text-brand">{ticket.ticket_number}</span>
               <StatusBadge status={ticket.status} />
             </div>
-            <dl className="grid grid-cols-2 gap-3 text-sm">
-              <Field label="Customer" value={ticket.customer?.full_name} />
-              <Field label="Phone" value={ticket.customer?.phone} />
-              <Field label="Address" value={ticket.customer?.address || "—"} full />
-              <Field label="Issue" value={ticket.issue_description} full />
-              <Field label="Source" value={ticket.source} />
-              <Field label="Created" value={fmt(ticket.created_at)} />
-            </dl>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Select value={ticket.status} disabled={busy} onChange={(e) => changeStatus(e.target.value)} className="w-auto">
+            {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+          </Select>
+          {!closed && (
+            <Button onClick={() => setShowAssign(true)}>
+              <Icon name="wrench" /> {ticket.technician ? "Reassign" : "Assign"}
+            </Button>
+          )}
+        </div>
+      </div>
 
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <h3 className="mb-3 font-semibold">Assignment history</h3>
-            {history.assignments.length === 0 ? (
-              <p className="text-sm text-slate-400">Not assigned yet.</p>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {history.assignments.map((a) => (
-                  <li key={a.id} className="flex justify-between border-b border-slate-100 pb-2">
-                    <span><b>{a.technician?.full_name}</b>{a.note ? ` — ${a.note}` : ""}</span>
-                    <span className="text-slate-400">{fmt(a.assigned_at)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+      {err && <div className="mb-4"><Alert>{err}</Alert></div>}
 
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <h3 className="mb-3 font-semibold">Activity log</h3>
-            <ul className="space-y-2 text-sm">
-              {history.events.map((e) => (
-                <li key={e.id} className="flex justify-between border-b border-slate-100 pb-2">
-                  <span>
-                    <span className="font-medium">{e.event_type}</span>
-                    {e.to_status ? ` → ${e.to_status}` : ""}
-                    {e.actor?.full_name ? ` by ${e.actor.full_name}` : " (system/customer)"}
+      {/* Details */}
+      <Card className="mb-5">
+        <div className="border-b border-slate-100 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Details</div>
+        <dl className="grid sm:grid-cols-2">
+          <Row label="Customer" value={ticket.customer?.full_name} />
+          <Row label="Phone" value={ticket.customer?.phone} mono />
+          <Row label="Address" value={ticket.customer?.address || "—"} />
+          <Row label="Source" value={ticket.source === "whatsapp" ? "WhatsApp" : "Manual entry"} />
+          <Row label="Technician" value={ticket.technician?.full_name || "Unassigned"} />
+          <Row label="Created" value={fmt(ticket.created_at)} />
+          {ticket.closed_at && <Row label="Closed" value={fmt(ticket.closed_at)} />}
+        </dl>
+      </Card>
+
+      {/* Issue */}
+      <Card className="mb-5 p-5">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Issue</h3>
+        <p className="whitespace-pre-wrap text-slate-700">{ticket.issue_description}</p>
+      </Card>
+
+      {/* History + Activity */}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card className="p-5">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Assignment history</h3>
+          {assignments.length === 0 ? (
+            <p className="text-sm text-slate-400">Not assigned yet.</p>
+          ) : (
+            <ul className="space-y-2.5">
+              {assignments.map((a) => (
+                <li key={a.id} className="flex items-center justify-between text-sm">
+                  <span className="text-slate-700">
+                    <Icon name="wrench" className="mr-1.5 inline h-3.5 w-3.5 text-slate-400" />
+                    <b>{a.technician?.full_name}</b>
+                    {a.assigner?.full_name ? <span className="text-slate-400"> · by {a.assigner.full_name}</span> : null}
+                    {a.note ? <span className="text-slate-400"> — {a.note}</span> : null}
                   </span>
-                  <span className="text-slate-400">{fmt(e.created_at)}</span>
+                  <span className="shrink-0 text-xs text-slate-400">{fmt(a.assigned_at)}</span>
                 </li>
               ))}
             </ul>
-          </div>
-        </div>
+          )}
+        </Card>
 
-        {/* Side actions */}
-        <div className="space-y-5">
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <h3 className="mb-3 font-semibold">Technician</h3>
-            <p className="mb-3 text-sm">
-              {ticket.technician ? (
-                <><b>{ticket.technician.full_name}</b><br />
-                  <span className="text-slate-400">{ticket.technician.phone}</span></>
-              ) : <span className="text-slate-400">Unassigned</span>}
-            </p>
-            <button onClick={() => setShowAssign(true)}
-              className="w-full rounded bg-brand py-2 font-medium text-white hover:bg-brand-dark">
-              {ticket.technician ? "Reassign" : "Assign technician"}
-            </button>
-          </div>
-
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <h3 className="mb-3 font-semibold">Update status</h3>
-            <div className="flex flex-wrap gap-2">
-              {STATUSES.map((s) => (
-                <button key={s} onClick={() => changeStatus(s)} disabled={s === ticket.status}
-                  className="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 disabled:opacity-40">
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+        <Card className="p-5">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Activity log</h3>
+          <ul className="space-y-2.5">
+            {history.events.map((e) => (
+              <li key={e.id} className="flex items-center justify-between text-sm">
+                <span className="text-slate-700">
+                  <span className="font-medium capitalize">{e.event_type.replace("_", " ")}</span>
+                  {e.to_status ? <span className="text-slate-400"> → {STATUS_LABEL[e.to_status] || e.to_status}</span> : null}
+                  <span className="text-slate-400"> · {e.actor?.full_name || "system/customer"}</span>
+                </span>
+                <span className="shrink-0 text-xs text-slate-400">{fmt(e.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
       </div>
 
       {showAssign && (
@@ -123,11 +136,19 @@ export default function TicketView() {
   );
 }
 
-function Field({ label, value, full }) {
+function BackLink() {
   return (
-    <div className={full ? "col-span-2" : ""}>
-      <dt className="text-xs uppercase tracking-wide text-slate-400">{label}</dt>
-      <dd className="mt-0.5">{value}</dd>
+    <Link to="/" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
+      <Icon name="back" /> Back to inbox
+    </Link>
+  );
+}
+
+function Row({ label, value, mono }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-3 sm:odd:border-r">
+      <dt className="shrink-0 text-sm text-slate-400">{label}</dt>
+      <dd className={`text-right text-sm text-slate-700 ${mono ? "font-mono" : ""}`}>{value}</dd>
     </div>
   );
 }

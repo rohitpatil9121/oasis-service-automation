@@ -1,53 +1,52 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
+import { Modal, Button, Field, Select, Textarea, Alert } from "./ui.jsx";
+import { Link } from "react-router-dom";
 
 export default function AssignModal({ ticket, onClose, onAssigned }) {
   const [techs, setTechs] = useState([]);
-  const [techId, setTechId] = useState("");
+  const [techId, setTechId] = useState(ticket.technician?.id || "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    api.listTechnicians().then((r) => setTechs(r.technicians)).catch((e) => setErr(e.message));
+    api.listTechnicians()
+      .then((r) => setTechs(r.technicians.filter((t) => t.is_active)))
+      .catch((e) => setErr(e.message));
   }, []);
 
-  async function submit() {
-    if (!techId) return setErr("Select a technician");
+  async function submit(e) {
+    e.preventDefault();
+    if (!techId) return setErr("Please select a technician.");
     setBusy(true); setErr("");
     try {
       await api.assign(ticket.id, techId, note);
       onAssigned();
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    } catch (e) { setErr(e.message); setBusy(false); }
   }
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
-        <h3 className="mb-1 text-lg font-semibold">Assign technician</h3>
-        <p className="mb-4 text-sm text-slate-500">Ticket {ticket.ticket_number}</p>
-        {err && <p className="mb-3 rounded bg-red-50 p-2 text-sm text-red-600">{err}</p>}
-        <label className="block text-sm font-medium text-slate-600">Technician</label>
-        <select value={techId} onChange={(e) => setTechId(e.target.value)}
-          className="mt-1 mb-3 w-full rounded border border-slate-300 px-3 py-2">
-          <option value="">— Select —</option>
-          {techs.map((t) => (
-            <option key={t.id} value={t.id}>{t.full_name} ({t.phone})</option>
-          ))}
-        </select>
-        <label className="block text-sm font-medium text-slate-600">Note (optional)</label>
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
-          className="mt-1 mb-4 w-full rounded border border-slate-300 px-3 py-2"
-          placeholder="e.g. priority customer" />
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose}
-            className="rounded px-4 py-2 text-slate-600 hover:bg-slate-100">Cancel</button>
-          <button onClick={submit} disabled={busy}
-            className="rounded bg-brand px-4 py-2 font-medium text-white hover:bg-brand-dark disabled:opacity-50">
-            {busy ? "Assigning…" : "Assign"}
-          </button>
+    <Modal title="Assign technician" subtitle={`Ticket ${ticket.ticket_number}`} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-3">
+        <Alert>{err}</Alert>
+        <Field label="Technician">
+          <Select value={techId} onChange={(e) => setTechId(e.target.value)}>
+            <option value="">— Select a technician —</option>
+            {techs.map((t) => <option key={t.id} value={t.id}>{t.full_name} ({t.phone})</option>)}
+          </Select>
+        </Field>
+        {techs.length === 0 && (
+          <p className="text-sm text-slate-500">No active technicians. <Link to="/technicians" className="font-medium text-brand hover:underline">Add one →</Link></p>
+        )}
+        <Field label="Note (optional)">
+          <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="e.g. priority customer" />
+        </Field>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={busy || !techId}>{busy ? "Assigning…" : "Assign"}</Button>
         </div>
-      </div>
-    </div>
+      </form>
+    </Modal>
   );
 }

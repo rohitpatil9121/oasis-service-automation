@@ -1,11 +1,9 @@
-// Ticket domain logic. Every state change writes a ticket_event for audit,
-// so an inquiry's full history is reconstructable and nothing is lost.
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
+import { managerNewRequest } from "./waTemplates.js";
 import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
 
-// Upsert a customer by phone (WhatsApp intake or manual).
 export async function upsertCustomer({ full_name, phone, address }) {
   const { data: existing } = await supabase
     .from("customers").select("*").eq("phone", phone).maybeSingle();
@@ -26,8 +24,6 @@ async function logEvent(ticketId, type, extra = {}) {
   });
 }
 
-// All active managers from the users table, plus MANAGER_WHATSAPP from env
-// as a fallback/extra recipient (deduplicated).
 async function getManagerRecipients() {
   const { data } = await supabase
     .from("users").select("phone")
@@ -37,7 +33,6 @@ async function getManagerRecipients() {
   return [...phones];
 }
 
-// Create a ticket + customer notification + manager alert.
 export async function createTicket({ customer, issue_description, source = "whatsapp", created_by = null }) {
   const cust = customer.id ? customer : await upsertCustomer(customer);
   const { data: ticket, error } = await supabase
@@ -57,15 +52,16 @@ export async function createTicket({ customer, issue_description, source = "what
           `Issue: ${issue_description}\n` +
           `Our team will assign a technician shortly.`,
   });
-  // 2) Alert the Service Manager(s).
+  // 2) Alert the Service Manager(s). Managers rarely have an open 24-hour
   const managers = await getManagerRecipients();
+  const mgrTpl = managerNewRequest({
+    ticketNumber: ticket.ticket_number, customerName: cust.full_name,
+    customerPhone: cust.phone, address: cust.address, issue: issue_description,
+  });
   for (const phone of managers) {
     await queueNotification({
       recipient: phone, audience: "manager", ticketId: ticket.id,
-      body: `🆕 New service request ${ticket.ticket_number}\n` +
-            `Customer: ${cust.full_name} (${cust.phone})\n` +
-            `Address: ${cust.address || "N/A"}\n` +
-            `Issue: ${issue_description}`,
+      body: mgrTpl.body, template: mgrTpl.template,
     });
   }
   log.info(`Ticket ${ticket.ticket_number} created for ${cust.phone}`);

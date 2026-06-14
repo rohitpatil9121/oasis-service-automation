@@ -3,4 +3,8 @@
 @tailwind utilities;
 
 html, body, #root { height: 100%; }
-body { @apply bg-slate-100 text-slate-800; }
+body { @apply bg-slate-50 text-slate-800 antialiased; }
+
+/* subtle fade-in for modals / page content */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.animate-in { animation: fadeIn 0.15s ease-out; }

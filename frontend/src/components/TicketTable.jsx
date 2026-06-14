@@ -1,42 +1,46 @@
 import { useNavigate } from "react-router-dom";
 import StatusBadge from "./StatusBadge.jsx";
+import { EmptyState, timeAgo } from "./ui.jsx";
 
-const fmt = (d) => new Date(d).toLocaleString();
-
-export default function TicketTable({ tickets }) {
+export default function TicketTable({ tickets, emptyHint }) {
   const nav = useNavigate();
   if (!tickets.length)
-    return <p className="rounded border border-dashed border-slate-300 p-8 text-center text-slate-400">No requests yet.</p>;
+    return <EmptyState title="No requests here" hint={emptyHint || "New WhatsApp requests will show up automatically."} />;
+
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-left text-slate-500">
-          <tr>
-            <th className="px-4 py-3">Ticket</th>
-            <th className="px-4 py-3">Customer</th>
-            <th className="px-4 py-3">Issue</th>
-            <th className="px-4 py-3">Technician</th>
-            <th className="px-4 py-3">Status</th>
-            <th className="px-4 py-3">Created</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tickets.map((t) => (
-            <tr key={t.id} onClick={() => nav(`/tickets/${t.id}`)}
-              className="cursor-pointer border-t border-slate-100 hover:bg-slate-50">
-              <td className="px-4 py-3 font-mono font-semibold text-brand">{t.ticket_number}</td>
-              <td className="px-4 py-3">
-                <div className="font-medium">{t.customer?.full_name}</div>
-                <div className="text-xs text-slate-400">{t.customer?.phone}</div>
-              </td>
-              <td className="px-4 py-3 max-w-xs truncate">{t.issue_description}</td>
-              <td className="px-4 py-3">{t.technician?.full_name || <span className="text-slate-400">—</span>}</td>
-              <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
-              <td className="px-4 py-3 text-xs text-slate-400">{fmt(t.created_at)}</td>
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
+              <th className="px-4 py-3 font-semibold">Ticket</th>
+              <th className="px-4 py-3 font-semibold">Customer</th>
+              <th className="px-4 py-3 font-semibold">Issue</th>
+              <th className="px-4 py-3 font-semibold">Technician</th>
+              <th className="px-4 py-3 font-semibold">Status</th>
+              <th className="px-4 py-3 font-semibold text-right">Created</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {tickets.map((t) => (
+              <tr key={t.id} onClick={() => nav(`/tickets/${t.id}`)}
+                className="cursor-pointer transition hover:bg-slate-50">
+                <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-semibold text-brand">{t.ticket_number}</td>
+                <td className="px-4 py-3">
+                  <div className="font-medium text-slate-800">{t.customer?.full_name || "—"}</div>
+                  <div className="font-mono text-xs text-slate-400">{t.customer?.phone}</div>
+                </td>
+                <td className="max-w-[18rem] truncate px-4 py-3 text-slate-600">{t.issue_description}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                  {t.technician?.full_name || <span className="text-slate-300">Unassigned</span>}
+                </td>
+                <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
+                <td className="whitespace-nowrap px-4 py-3 text-right text-xs text-slate-400">{timeAgo(t.created_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

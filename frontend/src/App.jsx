@@ -3,11 +3,14 @@ import { useAuth } from "./context/AuthContext.jsx";
 import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import TicketView from "./pages/TicketView.jsx";
+import Technicians from "./pages/Technicians.jsx";
 import Layout from "./components/Layout.jsx";
+import { Spinner } from "./components/ui.jsx";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="p-8 text-slate-500">Loading…</div>;
+  if (loading)
+    return <div className="flex min-h-screen items-center justify-center"><Spinner className="h-8 w-8" /></div>;
   if (!user) return <Navigate to="/login" replace />;
   return <Layout>{children}</Layout>;
 }
@@ -18,6 +21,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<Protected><Dashboard /></Protected>} />
       <Route path="/tickets/:id" element={<Protected><TicketView /></Protected>} />
+      <Route path="/technicians" element={<Protected><Technicians /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { Button, Input, Field, Alert, Icon } from "../components/ui.jsx";
 
 export default function Login() {
   const { loginPassword, requestOtp, loginOtp, user } = useAuth();
@@ -15,72 +16,57 @@ export default function Login() {
 
   if (user) { nav("/"); return null; }
 
-  async function run(fn) {
+  const run = (fn) => async (e) => {
+    e?.preventDefault();
     setBusy(true); setErr("");
     try { await fn(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
-  }
-
-  const doPassword = () => run(async () => { await loginPassword(phone, password); nav("/"); });
-  const doRequestOtp = () => run(async () => { await requestOtp(phone); setOtpSent(true); });
-  const doVerifyOtp = () => run(async () => { await loginOtp(phone, code); nav("/"); });
+  };
+  const doPassword = run(async () => { await loginPassword(phone, password); nav("/"); });
+  const doRequestOtp = run(async () => { await requestOtp(phone); setOtpSent(true); });
+  const doVerifyOtp = run(async () => { await loginOtp(phone, code); nav("/"); });
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand to-brand-dark p-4">
-      <div className="w-full max-w-sm rounded-xl bg-white p-7 shadow-2xl">
+      <div className="w-full max-w-sm animate-in rounded-2xl bg-white p-7 shadow-pop">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-2 h-10 w-10 rounded-full bg-brand" />
-          <h1 className="text-xl font-bold">Oasis Globe</h1>
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand text-sm font-extrabold text-white">OG</div>
+          <h1 className="text-xl font-bold text-slate-900">Oasis Globe</h1>
           <p className="text-sm text-slate-400">Service Manager Login</p>
         </div>
 
-        <div className="mb-4 flex rounded-lg bg-slate-100 p-1 text-sm">
+        <div className="mb-5 flex rounded-lg bg-slate-100 p-1 text-sm">
           {["password", "otp"].map((m) => (
             <button key={m} onClick={() => { setMode(m); setErr(""); setOtpSent(false); }}
-              className={`flex-1 rounded-md py-1.5 font-medium capitalize ${mode === m ? "bg-white shadow text-brand" : "text-slate-500"}`}>
+              className={`flex-1 rounded-md py-1.5 font-medium transition ${mode === m ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
               {m === "otp" ? "OTP" : "Password"}
             </button>
           ))}
         </div>
 
-        {err && <p className="mb-3 rounded bg-red-50 p-2 text-sm text-red-600">{err}</p>}
-
-        <label className="block text-sm font-medium text-slate-600">Phone</label>
-        <input value={phone} onChange={(e) => setPhone(e.target.value)}
-          placeholder="+9190000..." className="mb-3 mt-1 w-full rounded border border-slate-300 px-3 py-2" />
+        {err && <div className="mb-3"><Alert>{err}</Alert></div>}
 
         {mode === "password" ? (
-          <>
-            <label className="block text-sm font-medium text-slate-600">Password</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-              className="mb-4 mt-1 w-full rounded border border-slate-300 px-3 py-2"
-              onKeyDown={(e) => e.key === "Enter" && doPassword()} />
-            <button onClick={doPassword} disabled={busy}
-              className="w-full rounded bg-brand py-2.5 font-medium text-white hover:bg-brand-dark disabled:opacity-50">
-              {busy ? "Signing in…" : "Sign in"}
-            </button>
-          </>
+          <form onSubmit={doPassword} className="space-y-3">
+            <Field label="Phone"><Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+9190000…" autoFocus /></Field>
+            <Field label="Password"><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" /></Field>
+            <Button type="submit" className="mt-1 w-full" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</Button>
+          </form>
         ) : (
-          <>
+          <form onSubmit={otpSent ? doVerifyOtp : doRequestOtp} className="space-y-3">
+            <Field label="Phone"><Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+9190000…" autoFocus /></Field>
             {!otpSent ? (
-              <button onClick={doRequestOtp} disabled={busy}
-                className="w-full rounded bg-brand py-2.5 font-medium text-white hover:bg-brand-dark disabled:opacity-50">
-                {busy ? "Sending…" : "Send OTP via WhatsApp"}
-              </button>
+              <Button type="submit" className="w-full" disabled={busy}>
+                {busy ? "Sending…" : <><Icon name="phone" /> Send OTP via WhatsApp</>}
+              </Button>
             ) : (
               <>
-                <label className="block text-sm font-medium text-slate-600">6-digit code</label>
-                <input value={code} onChange={(e) => setCode(e.target.value)}
-                  className="mb-4 mt-1 w-full rounded border border-slate-300 px-3 py-2 tracking-widest"
-                  onKeyDown={(e) => e.key === "Enter" && doVerifyOtp()} />
-                <button onClick={doVerifyOtp} disabled={busy}
-                  className="w-full rounded bg-brand py-2.5 font-medium text-white hover:bg-brand-dark disabled:opacity-50">
-                  {busy ? "Verifying…" : "Verify & sign in"}
-                </button>
-                <button onClick={doRequestOtp} disabled={busy}
-                  className="mt-2 w-full text-sm text-slate-400 hover:text-slate-600">Resend code</button>
+                <Field label="6-digit code"><Input value={code} onChange={(e) => setCode(e.target.value)} className="tracking-[0.3em]" placeholder="••••••" /></Field>
+                <Button type="submit" className="w-full" disabled={busy}>{busy ? "Verifying…" : "Verify & sign in"}</Button>
+                <button type="button" onClick={doRequestOtp} disabled={busy}
+                  className="w-full text-center text-sm text-slate-400 hover:text-slate-600">Resend code</button>
               </>
             )}
-          </>
+          </form>
         )}
       </div>
     </div>
