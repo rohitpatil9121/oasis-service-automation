@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import StatusBadge from "../components/StatusBadge.jsx";
 import AssignModal from "../components/AssignModal.jsx";
+import IssueStockModal from "../components/IssueStockModal.jsx";
 import { Card, Button, Icon, Select, Spinner, Alert } from "../components/ui.jsx";
 
 const fmt = (d) => (d ? new Date(d).toLocaleString() : "—");
@@ -13,14 +14,18 @@ export default function TicketView() {
   const { id } = useParams();
   const [ticket, setTicket] = useState(null);
   const [history, setHistory] = useState({ events: [], assignments: [] });
+  const [stockIssues, setStockIssues] = useState([]);
   const [showAssign, setShowAssign] = useState(false);
+  const [showIssue, setShowIssue] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [{ ticket }, h] = await Promise.all([api.getTicket(id), api.getHistory(id)]);
-      setTicket(ticket); setHistory(h); setErr("");
+      const [{ ticket }, h, s] = await Promise.all([
+        api.getTicket(id), api.getHistory(id), api.listStockIssues(id),
+      ]);
+      setTicket(ticket); setHistory(h); setStockIssues(s.issues || []); setErr("");
     } catch (e) { setErr(e.message); }
   }, [id]);
 
@@ -88,6 +93,45 @@ export default function TicketView() {
         <p className="whitespace-pre-wrap text-slate-700">{ticket.issue_description}</p>
       </Card>
 
+      {/* Stock issued */}
+      <Card className="mb-5 p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Stock issued</h3>
+          {!closed && (
+            <Button variant="secondary" onClick={() => setShowIssue(true)}>
+              <Icon name="box" /> Issue stock
+            </Button>
+          )}
+        </div>
+        {stockIssues.length === 0 ? (
+          <p className="text-sm text-slate-400">No parts issued for this job yet.</p>
+        ) : (
+          <ul className="space-y-3">
+            {stockIssues.map((iss) => (
+              <li key={iss.id} className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                <div className="mb-1.5 flex items-center justify-between text-xs text-slate-400">
+                  <span>
+                    {iss.technician?.full_name ? <>To <b className="text-slate-600">{iss.technician.full_name}</b> · </> : null}
+                    {iss.status === "RECONCILED"
+                      ? <span className="font-medium text-emerald-600">Reconciled</span>
+                      : <span className="font-medium text-amber-600">Issued</span>}
+                  </span>
+                  <span>{fmt(iss.issued_at)}</span>
+                </div>
+                <ul className="space-y-1">
+                  {(iss.lines || []).map((l) => (
+                    <li key={l.id} className="flex items-center justify-between text-sm">
+                      <span className="text-slate-700">{l.item?.name || "Item"}</span>
+                      <span className="font-mono text-xs text-slate-500">{l.qty_issued} {l.item?.unit || ""}</span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
       {/* History + Activity */}
       <div className="grid gap-5 lg:grid-cols-2">
         <Card className="p-5">
@@ -131,6 +175,11 @@ export default function TicketView() {
       {showAssign && (
         <AssignModal ticket={ticket} onClose={() => setShowAssign(false)}
           onAssigned={() => { setShowAssign(false); load(); }} />
+      )}
+
+      {showIssue && (
+        <IssueStockModal ticket={ticket} onClose={() => setShowIssue(false)}
+          onIssued={() => { setShowIssue(false); load(); }} />
       )}
     </div>
   );

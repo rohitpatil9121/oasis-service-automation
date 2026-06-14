@@ -3,6 +3,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/rbac.js";
 import * as tickets from "../services/tickets.js";
 import { assignTechnician } from "../services/assignment.js";
+import { issueStock, getStockIssuesForTicket } from "../services/stock.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -50,6 +51,23 @@ router.post("/:id/assign", requireRole("owner", "manager"), async (req, res, nex
       assignedBy: req.user.id, note,
     });
     res.json({ ticket });
+  } catch (e) { next(e); }
+});
+
+// Stock issued to the technician for this ticket (manager records it).
+router.get("/:id/stock-issues", requireRole("owner", "manager", "technician"), async (req, res, next) => {
+  try { res.json({ issues: await getStockIssuesForTicket(req.params.id) }); }
+  catch (e) { next(e); }
+});
+
+router.post("/:id/stock-issue", requireRole("owner", "manager"), async (req, res, next) => {
+  try {
+    const { technician_id, lines } = req.body || {};
+    const issues = await issueStock({
+      ticketId: req.params.id, technicianId: technician_id,
+      issuedBy: req.user.id, lines,
+    });
+    res.status(201).json({ issues });
   } catch (e) { next(e); }
 });
 

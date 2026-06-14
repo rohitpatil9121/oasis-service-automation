@@ -4,6 +4,7 @@ import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import TicketView from "./pages/TicketView.jsx";
 import Technicians from "./pages/Technicians.jsx";
+import Stock from "./pages/Stock.jsx";
 import Layout from "./components/Layout.jsx";
 import { Spinner } from "./components/ui.jsx";
 
@@ -22,6 +23,7 @@ export default function App() {
       <Route path="/" element={<Protected><Dashboard /></Protected>} />
       <Route path="/tickets/:id" element={<Protected><TicketView /></Protected>} />
       <Route path="/technicians" element={<Protected><Technicians /></Protected>} />
+      <Route path="/stock" element={<Protected><Stock /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

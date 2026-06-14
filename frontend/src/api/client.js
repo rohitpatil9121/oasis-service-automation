@@ -36,4 +36,10 @@ export const api = {
   // technicians
   listTechnicians: () => request("/technicians"),
   createTechnician: (payload) => request("/technicians", { method: "POST", body: payload }),
+  // stock
+  listStock: () => request("/stock"),
+  createStockItem: (payload) => request("/stock", { method: "POST", body: payload }),
+  listStockIssues: (ticketId) => request(`/tickets/${ticketId}/stock-issues`),
+  issueStock: (ticketId, technician_id, lines) =>
+    request(`/tickets/${ticketId}/stock-issue`, { method: "POST", body: { technician_id, lines } }),
 };
