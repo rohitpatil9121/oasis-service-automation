@@ -76,7 +76,6 @@ export default function Layout({ children }) {
           ))}
         </nav>
 
-        <div className="px-5 py-4 text-[10px] text-slate-600">Phase 2 · Capture → Stock</div>
       </aside>
 
       {/* ---------- Main column ---------- */}
