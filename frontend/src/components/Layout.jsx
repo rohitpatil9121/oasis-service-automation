@@ -50,7 +50,7 @@ export default function Layout({ children }) {
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-sm font-extrabold text-white">OG</span>
           <div className="leading-tight">
             <div className="text-sm font-bold text-white">Oasis Globe</div>
-            <div className="text-[10px] font-medium uppercase tracking-wider text-slate-500">Service ERP</div>
+            <div className="text-[10px] font-medium uppercase tracking-wider text-slate-500">Service</div>
           </div>
         </div>
 
