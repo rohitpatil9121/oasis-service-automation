@@ -9,7 +9,7 @@ import { supabase } from "../config/supabase.js";
 import { getAIResponse } from "./ai.js";
 import {
   upsertCustomerByPhone, createDraftTicket, updateTicketIntake, completeIntake,
-  getLatestTicketByCustomerPhone,
+  getLatestTicketByCustomerPhone, getOpenTicketForCustomer,
 } from "./tickets.js";
 import { normalizePhone } from "../lib/phone.js";
 import { log } from "../lib/logger.js";
@@ -40,10 +40,11 @@ function systemPrompt(collected, returning) {
     return `
 ${AGENT_INTRO}
 
-This is a RETURNING customer — we already have their details on file:
+This is a RETURNING customer — details we have on file:
 - name: ${collected.name || "(not on file)"}
 - address: ${collected.address || "(not on file)"}
 - appliance: ${collected.appliance || "(not on file)"}
+- issue so far: ${collected.issue || "(none yet)"}
 
 Greet them warmly BY NAME. Do NOT ask for their name or address from scratch — instead
 briefly confirm the name and address above are still correct, ask what issue they're facing
@@ -52,7 +53,9 @@ today, and which water purifier it is (brand/model) if not on file.
 EVERY reply MUST be a single JSON object with exactly these two keys: {"fields": { ... }, "message": "..."}
 
 "fields" — include ONLY new or changed details:
-- "issue": their problem (required) — the symptoms / what's wrong.
+- "issue": their problem. IMPORTANT: if there is already an "issue so far" above, ADD any new
+  problem they mention to it and return the FULL combined issue — keep the earlier problems too,
+  NEVER drop them (e.g. "water leaking; excess water").
 - "appliance": which water purifier it is — brand + model (e.g. "Kent RO", "Aquaguard UV"). Ask for this if not on file.
 - "name": ONLY if they say their name has changed.
 - "address": ONLY if they give a new/changed address.
@@ -214,12 +217,20 @@ export async function handleInboundAI({ fromPhone, text }) {
   if (!session.ticket_id) {
     try {
       const customer = await upsertCustomerByPhone(phone, { full_name: collected.name, address: collected.address });
-      const ticket = await createDraftTicket({ customerId: customer.id });
+      // One ticket at a time: reuse the customer's existing OPEN request so new
+      // messages fold into it instead of creating a duplicate. Seed what's already
+      // on it so the agent ADDS to the issue rather than starting over.
+      const open = await getOpenTicketForCustomer(customer.id);
+      const ticket = open || await createDraftTicket({ customerId: customer.id });
+      if (open) {
+        if (!collected.issue && open.issue_description) collected.issue = open.issue_description;
+        if (!collected.appliance && open.appliance) collected.appliance = open.appliance;
+      }
       session.customer_id = customer.id;
       session.ticket_id = ticket.id;
-      await saveSession(session.id, { customer_id: customer.id, ticket_id: ticket.id });
-      log.info(`Draft request created for ${phone} -> ${ticket.ticket_number}`);
-    } catch (e) { log.error("draft creation failed:", e.message); }
+      await saveSession(session.id, { customer_id: customer.id, ticket_id: ticket.id, data: { collected, history, returning } });
+      log.info(`Intake -> ${ticket.ticket_number} for ${phone} (${open ? "existing open" : "new"})`);
+    } catch (e) { log.error("draft attach failed:", e.message); }
   }
 
   // Build the model context: fresh system prompt + recent turns + new message.

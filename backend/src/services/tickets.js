@@ -248,6 +248,19 @@ export async function getTicketHistory(id) {
   return { events: events || [], assignments: assignments || [] };
 }
 
+// The customer's current OPEN request (not closed/cancelled), latest first.
+// Live intake reuses this so a customer only ever has one active ticket — new
+// messages fold into it instead of spawning duplicates.
+export async function getOpenTicketForCustomer(customerId) {
+  const { data } = await supabase
+    .from("tickets").select("*")
+    .eq("customer_id", customerId)
+    .neq("status", "CLOSED").neq("status", "CANCELLED")
+    .order("created_at", { ascending: false })
+    .limit(1).maybeSingle();
+  return data;
+}
+
 // Latest ticket for a WhatsApp number - powers the customer "status" command.
 export async function getLatestTicketByCustomerPhone(phone) {
   const { data: cust } = await supabase
