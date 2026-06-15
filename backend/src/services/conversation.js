@@ -12,7 +12,7 @@ import { getTicket } from "./tickets.js";
 // How long the AI agent stays quiet after a manager manually messages a customer.
 // Rolling: each manual message resets the window. After this gap with no manual
 // message, the AI auto-resumes (so a fresh request another day is handled normally).
-const HANDOFF_WINDOW_MS = 12 * 60 * 60 * 1000; // 12 hours
+const HANDOFF_WINDOW_MS = 2 * 60 * 60 * 1000; // 12 hours
 
 // True if a manager messaged this customer within the handoff window — the AI
 // agent should stay silent (a human is handling the conversation).

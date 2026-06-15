@@ -48,7 +48,7 @@ export default function Stock() {
                   <th className="px-4 py-3 font-semibold">Item</th>
                   <th className="px-4 py-3 font-semibold">SKU</th>
                   <th className="px-4 py-3 font-semibold">In stock</th>
-                  <th className="px-4 py-3 font-semibold">Unit price</th>
+                  <th className="px-4 py-3 font-semibold">MRP</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -115,7 +115,7 @@ function AddItem({ onClose, onAdded }) {
         <div className="grid grid-cols-3 gap-3">
           <Field label="Opening qty"><Input type="number" min="0" value={form.qty_on_hand} onChange={set("qty_on_hand")} placeholder="0" /></Field>
           <Field label="Reorder at"><Input type="number" min="0" value={form.reorder_level} onChange={set("reorder_level")} placeholder="0" /></Field>
-          <Field label="Unit price ₹"><Input type="number" min="0" value={form.unit_price} onChange={set("unit_price")} placeholder="0" /></Field>
+          <Field label="MRP ₹"><Input type="number" min="0" value={form.unit_price} onChange={set("unit_price")} placeholder="0" /></Field>
         </div>
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
