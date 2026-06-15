@@ -7,6 +7,7 @@ export default function Stock() {
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [editItem, setEditItem] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -66,11 +67,17 @@ export default function Stock() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-600">₹{it.unit_price}</td>
-                      <td className="px-4 py-3 text-right">
-                        <button onClick={() => remove(it)} title="Remove item"
-                          className="text-slate-300 transition hover:text-red-500">
-                          <Icon name="trash" className="h-4 w-4" />
-                        </button>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-3">
+                          <button onClick={() => setEditItem(it)} title="Edit item"
+                            className="text-slate-300 transition hover:text-brand">
+                            <Icon name="edit" className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => remove(it)} title="Remove item"
+                            className="text-slate-300 transition hover:text-red-500">
+                            <Icon name="trash" className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -82,14 +89,26 @@ export default function Stock() {
       )}
 
       {showAdd && (
-        <AddItem onClose={() => setShowAdd(false)} onAdded={() => { setShowAdd(false); load(); }} />
+        <ItemModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
+      )}
+      {editItem && (
+        <ItemModal item={editItem} onClose={() => setEditItem(null)} onSaved={() => { setEditItem(null); load(); }} />
       )}
     </div>
   );
 }
 
-function AddItem({ onClose, onAdded }) {
-  const [form, setForm] = useState({ name: "", sku: "", unit: "pcs", qty_on_hand: "", reorder_level: "", unit_price: "" });
+// Shared add / edit modal. `item` present = edit mode.
+function ItemModal({ item, onClose, onSaved }) {
+  const editing = !!item;
+  const [form, setForm] = useState({
+    name: item?.name || "",
+    sku: item?.sku || "",
+    unit: item?.unit || "pcs",
+    qty_on_hand: editing ? String(item.qty_on_hand) : "",
+    reorder_level: editing ? String(item.reorder_level) : "",
+    unit_price: editing ? String(item.unit_price) : "",
+  });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
@@ -98,13 +117,15 @@ function AddItem({ onClose, onAdded }) {
     e.preventDefault();
     setBusy(true); setErr("");
     try {
-      await api.createStockItem(form);
-      onAdded();
+      if (editing) await api.updateStockItem(item.id, form);
+      else await api.createStockItem(form);
+      onSaved();
     } catch (e) { setErr(e.message); setBusy(false); }
   }
 
   return (
-    <Modal title="Add inventory item" subtitle="It becomes available to issue right away." onClose={onClose}>
+    <Modal title={editing ? "Edit item" : "Add inventory item"}
+      subtitle={editing ? item.name : "It becomes available to issue right away."} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <Alert>{err}</Alert>
         <Field label="Item name"><Input value={form.name} onChange={set("name")} required autoFocus placeholder="RO Sediment Filter" /></Field>
@@ -113,13 +134,13 @@ function AddItem({ onClose, onAdded }) {
           <Field label="Unit"><Input value={form.unit} onChange={set("unit")} placeholder="pcs" /></Field>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          <Field label="Opening qty"><Input type="number" min="0" value={form.qty_on_hand} onChange={set("qty_on_hand")} placeholder="0" /></Field>
+          <Field label={editing ? "In stock" : "Opening qty"}><Input type="number" min="0" value={form.qty_on_hand} onChange={set("qty_on_hand")} placeholder="0" /></Field>
           <Field label="Reorder at"><Input type="number" min="0" value={form.reorder_level} onChange={set("reorder_level")} placeholder="0" /></Field>
           <Field label="MRP ₹"><Input type="number" min="0" value={form.unit_price} onChange={set("unit_price")} placeholder="0" /></Field>
         </div>
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={busy}>{busy ? "Adding…" : "Add item"}</Button>
+          <Button type="submit" disabled={busy}>{busy ? "Saving…" : editing ? "Save changes" : "Add item"}</Button>
         </div>
       </form>
     </Modal>

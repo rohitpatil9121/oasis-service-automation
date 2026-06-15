@@ -9,6 +9,7 @@ const NAV = [
     group: "Service",
     items: [
       { to: "/", label: "Service Requests", icon: "inbox", end: true },
+      { to: "/clients", label: "Clients", icon: "user" },
       { to: "/technicians", label: "Technicians", icon: "users" },
     ],
   },

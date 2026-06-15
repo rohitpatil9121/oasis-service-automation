@@ -102,7 +102,6 @@ export default function ChatPanel({ ticket }) {
           <Icon name="send" className="h-4 w-4" />
         </button>
       </form>
-      <p className="px-3 pb-2 text-[10px] text-slate-400">Sent from company WhatsApp Business</p>
     </div>
   );
 }

@@ -191,6 +191,32 @@ export async function completeIntake(ticketId) {
   return { ...ticket, intake_complete: true };
 }
 
+// All customers for the Clients page.
+export async function listCustomers() {
+  const { data, error } = await supabase
+    .from("customers").select("id, full_name, phone, address, created_at")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error("listCustomers: " + error.message);
+  return data;
+}
+
+// One client + their full request history (powers the client detail page).
+export async function getCustomerWithHistory(id) {
+  const { data: customer, error } = await supabase
+    .from("customers").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error("getCustomer: " + error.message);
+  if (!customer) return null;
+
+  const { data: tickets } = await supabase
+    .from("tickets")
+    .select("id, ticket_number, issue_description, status, appliance, created_at, " +
+            "technician:users!tickets_assigned_technician_id_fkey(id,full_name)")
+    .eq("customer_id", id)
+    .order("created_at", { ascending: false });
+
+  return { customer, tickets: tickets || [] };
+}
+
 export async function listTickets({ status } = {}) {
   let q = supabase
     .from("tickets")

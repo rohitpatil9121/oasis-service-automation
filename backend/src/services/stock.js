@@ -51,6 +51,43 @@ export async function createStockItem({ name, sku, unit, qty_on_hand, reorder_le
   return data;
 }
 
+// Edit an inventory item. A qty change is logged as an ADJUST movement for audit.
+export async function updateStockItem(id, { name, sku, unit, qty_on_hand, reorder_level, unit_price }, actorId) {
+  const { data: item, error: e0 } = await supabase.from("stock_items").select("*").eq("id", id).maybeSingle();
+  if (e0) throw new Error("updateStockItem load: " + e0.message);
+  if (!item) { const e = new Error("Item not found"); e.status = 404; throw e; }
+
+  const patch = {};
+  if (name != null) {
+    const n = String(name).trim();
+    if (!n) { const e = new Error("Item name is required"); e.status = 400; throw e; }
+    patch.name = n;
+  }
+  if (sku !== undefined) patch.sku = (sku || "").trim() || null;
+  if (unit != null && String(unit).trim()) patch.unit = String(unit).trim();
+  if (reorder_level !== undefined && reorder_level !== "") patch.reorder_level = Number(reorder_level) || 0;
+  if (unit_price !== undefined && unit_price !== "") patch.unit_price = Number(unit_price) || 0;
+
+  let newQty = Number(item.qty_on_hand);
+  if (qty_on_hand !== undefined && qty_on_hand !== null && qty_on_hand !== "") {
+    newQty = Number(qty_on_hand);
+    patch.qty_on_hand = newQty;
+  }
+
+  const { data, error } = await supabase.from("stock_items").update(patch).eq("id", id).select("*").single();
+  if (error) {
+    if (error.code === "23505") { const e = new Error("An item with this SKU already exists"); e.status = 409; throw e; }
+    throw new Error("updateStockItem: " + error.message);
+  }
+
+  const delta = newQty - Number(item.qty_on_hand);
+  if (delta !== 0) {
+    await logMovement({ stockItemId: id, type: "ADJUST", qty: delta, balanceAfter: newQty, actorId, note: "Manual edit" });
+  }
+  log.info(`Stock item updated: ${data.name}`);
+  return data;
+}
+
 // Soft-remove an item so it drops off inventory but its movement history stays.
 export async function deactivateStockItem(id) {
   const { data, error } = await supabase

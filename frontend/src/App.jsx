@@ -6,6 +6,8 @@ import TicketView from "./pages/TicketView.jsx";
 import Technicians from "./pages/Technicians.jsx";
 import TechnicianView from "./pages/TechnicianView.jsx";
 import Stock from "./pages/Stock.jsx";
+import Customers from "./pages/Customers.jsx";
+import CustomerView from "./pages/CustomerView.jsx";
 import Layout from "./components/Layout.jsx";
 import { Spinner } from "./components/ui.jsx";
 
@@ -26,6 +28,8 @@ export default function App() {
       <Route path="/technicians" element={<Protected><Technicians /></Protected>} />
       <Route path="/technicians/:id" element={<Protected><TechnicianView /></Protected>} />
       <Route path="/stock" element={<Protected><Stock /></Protected>} />
+      <Route path="/clients" element={<Protected><Customers /></Protected>} />
+      <Route path="/clients/:id" element={<Protected><CustomerView /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

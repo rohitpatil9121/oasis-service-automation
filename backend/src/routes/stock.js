@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/rbac.js";
-import { listStockItems, createStockItem, reconcileStock, deactivateStockItem } from "../services/stock.js";
+import { listStockItems, createStockItem, updateStockItem, reconcileStock, deactivateStockItem } from "../services/stock.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -18,6 +18,12 @@ router.post("/", requireRole("owner", "manager"), async (req, res, next) => {
     const item = await createStockItem(req.body || {}, req.user.id);
     res.status(201).json({ item });
   } catch (e) { next(e); }
+});
+
+// Edit an inventory item.
+router.patch("/:id", requireRole("owner", "manager"), async (req, res, next) => {
+  try { res.json({ item: await updateStockItem(req.params.id, req.body || {}, req.user.id) }); }
+  catch (e) { next(e); }
 });
 
 // Remove (deactivate) an inventory item.

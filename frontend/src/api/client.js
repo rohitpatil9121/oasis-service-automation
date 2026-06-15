@@ -39,6 +39,9 @@ export const api = {
   sendMessage: (id, body) => request(`/tickets/${id}/message`, { method: "POST", body: { body } }),
   setStatus: (id, status) =>
     request(`/tickets/${id}/status`, { method: "PATCH", body: { status } }),
+  // customers
+  listCustomers: () => request("/customers"),
+  getCustomer: (id) => request(`/customers/${id}`),
   // technicians
   listTechnicians: () => request("/technicians"),
   createTechnician: (payload) => request("/technicians", { method: "POST", body: payload }),
@@ -47,6 +50,7 @@ export const api = {
   // stock (bulk, per technician)
   listStock: () => request("/stock"),
   createStockItem: (payload) => request("/stock", { method: "POST", body: payload }),
+  updateStockItem: (id, payload) => request(`/stock/${id}`, { method: "PATCH", body: payload }),
   removeStockItem: (id) => request(`/stock/${id}`, { method: "DELETE" }),
   getTechnicianStock: (techId) => request(`/technicians/${techId}/stock-issues`),
   issueStockToTechnician: (techId, lines) =>

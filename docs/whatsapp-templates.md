@@ -107,13 +107,15 @@ Sent to the assigned technician when the manager schedules/reschedules the visit
 
 - **Name:** `visit_scheduled_technician` · **Category:** `Utility` · **Language:** `English` (`en`)
 
-**Body:**
+**Body:** (must NOT end with a variable, and needs enough static text — Meta rejects too-many-variables-for-length)
 ```
-Visit scheduled {{1}}
+New visit scheduled for ticket {{1}}.
 
 Customer: {{2}} ({{3}})
 When: {{4}}
 Address: {{5}}
+
+Please contact the customer and complete the service on time.
 ```
 Samples: {{1}} `OG-140625-0001`, {{2}} `Mohit Sharma`, {{3}} `+919812345678`, {{4}} `14 Jun 2026, 9:00 am – 11:00 am`, {{5}} `12 Shivaji Nagar, Pune`
 
@@ -123,9 +125,9 @@ Sent to the customer with their confirmed slot.
 
 - **Name:** `visit_scheduled_customer` · **Category:** `Utility` · **Language:** `English` (`en`)
 
-**Body:**
+**Body:** (must NOT end with a variable)
 ```
-Hi {{1}}, your Oasis Globe service visit is scheduled for {{2}}. Ref: {{3}}
+Hi {{1}}, your Oasis Globe service visit is scheduled for {{2}} (Ref {{3}}). Our technician will reach you then. Thank you!
 ```
 Samples: {{1}} `Mohit Sharma`, {{2}} `14 Jun 2026, 9:00 am – 11:00 am`, {{3}} `OG-140625-0001`
 
