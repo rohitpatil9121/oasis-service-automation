@@ -6,6 +6,7 @@ export default function Stock() {
   const [items, setItems] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState("");
+  const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [editItem, setEditItem] = useState(null);
 
@@ -24,6 +25,12 @@ export default function Stock() {
     try { await api.removeStockItem(it.id); load(); } catch (e) { setErr(e.message); }
   }
 
+  const visible = items.filter((it) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return it.name?.toLowerCase().includes(q) || it.sku?.toLowerCase().includes(q);
+  });
+
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
@@ -34,12 +41,21 @@ export default function Stock() {
         <Button onClick={() => setShowAdd(true)}><Icon name="plus" /> Add item</Button>
       </div>
 
+      <div className="mb-4 relative max-w-sm">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+          <Icon name="search" />
+        </span>
+        <Input value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search item name or SKU…" className="pl-9" />
+      </div>
+
       {err && <Alert>{err}</Alert>}
 
       {!loaded ? (
         <div className="rounded-xl border border-slate-200 bg-white py-14 text-center text-slate-400">Loading…</div>
-      ) : items.length === 0 ? (
-        <EmptyState icon="box" title="No items yet" hint="Add your first inventory item to start issuing stock." />
+      ) : visible.length === 0 ? (
+        <EmptyState icon="box" title={search ? "No matching items" : "No items yet"}
+          hint={search ? "Try a different search." : "Add your first inventory item to start issuing stock."} />
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
@@ -54,7 +70,7 @@ export default function Stock() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {items.map((it) => {
+                {visible.map((it) => {
                   const low = Number(it.qty_on_hand) <= Number(it.reorder_level);
                   return (
                     <tr key={it.id} className="hover:bg-slate-50">
