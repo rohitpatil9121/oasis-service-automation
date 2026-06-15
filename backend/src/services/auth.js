@@ -62,7 +62,7 @@ export async function getById(id) {
 }
 
 export async function setPassword(phone, password) {
-  const hash = await bcrypt.hash(password, 10);
+  const hash = await bcrypt.hash(password, 12);
   const { data } = await supabase.from("users")
     .update({ password_hash: hash }).eq("phone", normalizePhone(phone))
     .select("id").maybeSingle();

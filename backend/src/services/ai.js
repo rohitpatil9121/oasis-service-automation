@@ -14,6 +14,7 @@ export async function getAIResponse(messages) {
     model: env.groqModel,
     messages,
     temperature: 0.5,
+    max_tokens: 500, // cap output so a prompt-injection/abuse can't run up cost
     response_format: { type: "json_object" },
   });
   return completion.choices[0].message.content;

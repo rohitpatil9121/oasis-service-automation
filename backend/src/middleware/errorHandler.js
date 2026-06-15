@@ -6,6 +6,11 @@ export function notFound(req, res) {
 
 // eslint-disable-next-line no-unused-vars
 export function errorHandler(err, req, res, next) {
-  log.error("Unhandled:", err.message, err.stack);
-  res.status(err.status || 500).json({ error: err.message || "Internal error" });
+  const status = err.status || 500;
+  // Full context server-side only.
+  log.error("Unhandled:", status, req.method, req.path, "-", err.message, err.stack);
+  // Intentional client errors (4xx) carry a safe, user-facing message. For 5xx
+  // return a generic message so we never leak internals (DB schema, stack, etc.).
+  const message = status < 500 ? err.message : "Something went wrong. Please try again.";
+  res.status(status).json({ error: message });
 }

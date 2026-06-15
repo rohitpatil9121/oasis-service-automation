@@ -37,6 +37,7 @@ export const api = {
   updateIssue: (id, issue_description) => request(`/tickets/${id}/issue`, { method: "PATCH", body: { issue_description } }),
   getConversation: (id) => request(`/tickets/${id}/conversation`),
   sendMessage: (id, body) => request(`/tickets/${id}/message`, { method: "POST", body: { body } }),
+  setBot: (id, on) => request(`/tickets/${id}/bot`, { method: "POST", body: { on } }),
   setStatus: (id, status) =>
     request(`/tickets/${id}/status`, { method: "PATCH", body: { status } }),
   // customers

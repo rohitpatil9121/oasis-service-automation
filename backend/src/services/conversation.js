@@ -9,21 +9,30 @@ import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
 import { getTicket } from "./tickets.js";
 
-// How long the AI agent stays quiet after a manager manually messages a customer.
-// Rolling: each manual message resets the window. After this gap with no manual
-// message, the AI auto-resumes (so a fresh request another day is handled normally).
-const HANDOFF_WINDOW_MS = 2 * 60 * 60 * 1000; // 12 hours
+// AI bot on/off is stored per customer in `customers.ai_paused_until`:
+//   null / past timestamp  => bot ON (auto-replies)
+//   future timestamp       => bot OFF (manager is handling)
+// Sending a manual message auto-pauses for 12h (rolling); the chat toggle sets it
+// explicitly (ON = clear, OFF = far future).
+const HANDOFF_WINDOW_MS = 12 * 60 * 60 * 1000; // 12 hours
+const OFF_UNTIL = "2099-01-01T00:00:00.000Z"; // "indefinitely off" until toggled on
 
-// True if a manager messaged this customer within the handoff window — the AI
-// agent should stay silent (a human is handling the conversation).
+const isPaused = (ts) => !!ts && new Date(ts).getTime() > Date.now();
+
+// True if the AI bot is currently paused for this customer (manager handling).
 export async function isAgentHandling(phone) {
   if (!phone) return false;
-  const since = new Date(Date.now() - HANDOFF_WINDOW_MS).toISOString();
   const { data } = await supabase
-    .from("notifications").select("id")
-    .eq("recipient", phone).eq("audience", "agent")
-    .gte("created_at", since).limit(1);
-  return (data || []).length > 0;
+    .from("customers").select("ai_paused_until").eq("phone", phone).maybeSingle();
+  return isPaused(data?.ai_paused_until);
+}
+
+// Manager toggles the bot for a customer. on=true clears the pause (bot replies);
+// on=false pauses it until they turn it back on.
+export async function setCustomerBot(customerId, on) {
+  await supabase.from("customers")
+    .update({ ai_paused_until: on ? null : OFF_UNTIL }).eq("id", customerId);
+  return { on };
 }
 
 export async function getConversation(ticketId) {
@@ -49,7 +58,10 @@ export async function getConversation(ticketId) {
     .filter((m) => m.body)
     .sort((a, b) => new Date(a.at) - new Date(b.at));
 
-  return { phone, customer: ticket.customer.full_name, messages };
+  return {
+    phone, customer: ticket.customer.full_name, messages,
+    botOn: !isPaused(ticket.customer.ai_paused_until),
+  };
 }
 
 // Manager sends a free-form WhatsApp message to the customer (e.g. to ask for a
@@ -65,6 +77,15 @@ export async function sendCustomerMessage({ ticketId, body, actorId }) {
   const id = await queueNotification({
     recipient: ticket.customer.phone, audience: "agent", ticketId, body: text,
   });
+
+  // Auto-pause the AI for 12h so it doesn't talk over the manager — unless it's
+  // already paused for longer (e.g. toggled off). Keeps the longer pause.
+  const next = new Date(Date.now() + HANDOFF_WINDOW_MS);
+  const cur = ticket.customer.ai_paused_until ? new Date(ticket.customer.ai_paused_until) : null;
+  await supabase.from("customers")
+    .update({ ai_paused_until: (cur && cur > next ? cur : next).toISOString() })
+    .eq("id", ticket.customer.id);
+
   const { data } = await supabase
     .from("notifications").select("status, last_error").eq("id", id).maybeSingle();
 

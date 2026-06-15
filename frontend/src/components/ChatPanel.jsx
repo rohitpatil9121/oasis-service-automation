@@ -14,14 +14,22 @@ export default function ChatPanel({ ticket }) {
   const [sending, setSending] = useState(false);
   const [warn, setWarn] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [botOn, setBotOn] = useState(true);
   const scrollRef = useRef(null);
 
   const load = useCallback(async () => {
     try {
-      const { messages } = await api.getConversation(ticket.id);
+      const { messages, botOn } = await api.getConversation(ticket.id);
       setMessages(messages);
+      if (typeof botOn === "boolean") setBotOn(botOn);
     } catch { /* ignore transient */ } finally { setLoaded(true); }
   }, [ticket.id]);
+
+  async function toggleBot() {
+    const next = !botOn;
+    setBotOn(next);
+    try { await api.setBot(ticket.id, next); } catch { setBotOn(!next); }
+  }
 
   useEffect(() => {
     load();
@@ -59,7 +67,11 @@ export default function ChatPanel({ ticket }) {
           <div className="text-sm font-semibold">{ticket.customer?.full_name || "Customer"}</div>
           <div className="font-mono text-xs text-emerald-100">{ticket.customer?.phone}</div>
         </div>
-        <span className="ml-auto text-[11px] font-medium text-emerald-100">WhatsApp</span>
+        <button onClick={toggleBot} title="AI auto-reply for this customer"
+          className="ml-auto flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold transition hover:bg-white/25">
+          <span className={`h-1.5 w-1.5 rounded-full ${botOn ? "bg-emerald-300" : "bg-white/40"}`} />
+          Bot {botOn ? "On" : "Off"}
+        </button>
       </div>
 
       {/* messages */}

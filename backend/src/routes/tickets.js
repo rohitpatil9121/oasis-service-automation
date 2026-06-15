@@ -3,7 +3,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/rbac.js";
 import * as tickets from "../services/tickets.js";
 import { assignTechnician } from "../services/assignment.js";
-import { getConversation, sendCustomerMessage } from "../services/conversation.js";
+import { getConversation, sendCustomerMessage, setCustomerBot } from "../services/conversation.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -84,6 +84,14 @@ router.post("/:id/message", requireRole("owner", "manager"), async (req, res, ne
   try {
     const result = await sendCustomerMessage({ ticketId: req.params.id, body: req.body?.body, actorId: req.user.id });
     res.json(result);
+  } catch (e) { next(e); }
+});
+
+// Toggle the AI bot on/off for this ticket's customer.
+router.post("/:id/bot", requireRole("owner", "manager"), async (req, res, next) => {
+  try {
+    const ticket = await tickets.getTicket(req.params.id);
+    res.json(await setCustomerBot(ticket.customer.id, !!req.body?.on));
   } catch (e) { next(e); }
 });
 
