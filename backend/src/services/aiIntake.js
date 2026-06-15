@@ -155,14 +155,31 @@ async function saveSession(id, patch) {
 
 // ---------- function-call parsing ----------
 
-// Merge any newly-provided fields from the model's "fields" object into the
-// collected state. Only accepts the three known string fields.
+// Combine all problems the customer mentions into one issue string instead of
+// overwriting. Handles both model behaviours: if it returns the full enriched
+// issue we keep that; if it returns just the new problem we append it.
+function mergeIssue(prev, incoming) {
+  const a = (prev || "").trim();
+  const b = (incoming || "").trim();
+  if (!b) return a;
+  if (!a) return b;
+  const al = a.toLowerCase(), bl = b.toLowerCase();
+  if (bl.includes(al)) return b;     // model already combined / enriched
+  if (al.includes(bl)) return a;     // nothing new
+  return `${a}; ${b}`;               // a genuinely new problem — add it
+}
+
+// Merge newly-provided fields from the model's "fields" object into collected.
+// name/address/appliance replace; issue accumulates (never drops earlier problems).
 function mergeFields(collected, fields) {
   if (!fields || typeof fields !== "object") return;
-  for (const key of ["name", "address", "issue", "appliance"]) {
+  for (const key of ["name", "address", "appliance"]) {
     if (typeof fields[key] === "string" && fields[key].trim()) {
       collected[key] = fields[key].trim();
     }
+  }
+  if (typeof fields.issue === "string" && fields.issue.trim()) {
+    collected.issue = mergeIssue(collected.issue, fields.issue);
   }
 }
 
