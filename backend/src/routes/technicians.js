@@ -3,6 +3,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/rbac.js";
 import { listTechnicians, createTechnician, getTechnicianById, deactivateTechnician } from "../services/assignment.js";
 import { issueStock, getStockIssuesForTechnician } from "../services/stock.js";
+import { getTechnicianConversation, sendTechnicianMessage } from "../services/conversation.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -27,6 +28,17 @@ router.get("/:id", requireRole("owner", "manager"), async (req, res, next) => {
     if (!technician) return res.status(404).json({ error: "Technician not found" });
     res.json({ technician });
   } catch (e) { next(e); }
+});
+
+// WhatsApp conversation with this technician (92 number).
+router.get("/:id/conversation", requireRole("owner", "manager"), async (req, res, next) => {
+  try { res.json(await getTechnicianConversation(req.params.id)); }
+  catch (e) { next(e); }
+});
+
+router.post("/:id/message", requireRole("owner", "manager"), async (req, res, next) => {
+  try { res.json(await sendTechnicianMessage({ technicianId: req.params.id, body: req.body?.body })); }
+  catch (e) { next(e); }
 });
 
 // Remove (deactivate) a technician.

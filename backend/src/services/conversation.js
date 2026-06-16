@@ -77,6 +77,47 @@ export async function getConversation(ticketId) {
   };
 }
 
+// Same thread, but with a TECHNICIAN — what the company (92 number) has sent
+// them (job alerts, schedules, manual messages) plus anything they replied.
+export async function getTechnicianConversation(technicianId) {
+  const { data: tech } = await supabase
+    .from("users").select("id, full_name, phone").eq("id", technicianId).maybeSingle();
+  if (!tech?.phone) return { phone: null, name: tech?.full_name || null, messages: [] };
+  const phone = tech.phone;
+
+  const [inbound, outbound] = await Promise.all([
+    supabase.from("wa_inbound").select("id, body, created_at").eq("from_phone", phone),
+    supabase.from("notifications").select("id, body, sent_at, created_at, status, audience")
+      .eq("recipient", phone).in("audience", ["technician", "agent"]),
+  ]);
+
+  const messages = [
+    ...(inbound.data || []).map((m) => ({ id: "in-" + m.id, dir: "in", body: m.body, at: m.created_at })),
+    ...(outbound.data || []).map((m) => ({
+      id: "out-" + m.id, dir: "out", body: m.body,
+      at: m.sent_at || m.created_at, status: m.status, audience: m.audience,
+    })),
+  ]
+    .filter((m) => m.body)
+    .sort((a, b) => new Date(a.at) - new Date(b.at));
+
+  return { phone, name: tech.full_name, messages };
+}
+
+// Manager replies to a technician on WhatsApp.
+export async function sendTechnicianMessage({ technicianId, body }) {
+  const text = (body || "").trim();
+  if (!text) { const e = new Error("Message is empty"); e.status = 400; throw e; }
+  const { data: tech } = await supabase
+    .from("users").select("id, phone").eq("id", technicianId).maybeSingle();
+  if (!tech?.phone) { const e = new Error("Technician has no phone"); e.status = 400; throw e; }
+
+  const id = await queueNotification({ recipient: tech.phone, audience: "agent", body: text });
+  const { data } = await supabase
+    .from("notifications").select("status, last_error").eq("id", id).maybeSingle();
+  return { ok: data?.status === "SENT", status: data?.status, error: data?.last_error || null };
+}
+
 // Manager sends a free-form WhatsApp message to the customer (e.g. to ask for a
 // missing/clearer detail). Returns the delivery status so the UI can warn if it
 // couldn't be delivered (e.g. outside WhatsApp's 24-hour window).

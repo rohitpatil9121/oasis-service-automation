@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import IssueStockModal from "../components/IssueStockModal.jsx";
 import ReconcileModal from "../components/ReconcileModal.jsx";
+import TechnicianChatPanel from "../components/TechnicianChatPanel.jsx";
 import { Card, Button, Icon, Spinner, Alert } from "../components/ui.jsx";
 
 const fmt = (d) => (d ? new Date(d).toLocaleString() : "—");
@@ -47,6 +48,14 @@ export default function TechnicianView() {
       </div>
 
       {err && <div className="mb-4"><Alert>{err}</Alert></div>}
+
+      {/* WhatsApp chat with this technician (92 number) */}
+      <div className="mb-5">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">WhatsApp chat</h3>
+        <div className="max-w-xl">
+          <TechnicianChatPanel technician={tech} />
+        </div>
+      </div>
 
       {/* Stock issued (bulk) */}
       <Card className="p-5">
