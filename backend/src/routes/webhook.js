@@ -2,7 +2,7 @@ import { Router } from "express";
 import { handleInbound } from "../services/intake.js";
 import { handleInboundAI } from "../services/aiIntake.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
-import { isAgentHandling } from "../services/conversation.js";
+import { isAgentHandling, storeBotMessage } from "../services/conversation.js";
 import { supabase } from "../config/supabase.js";
 import { normalizePhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
@@ -27,9 +27,13 @@ async function getReply(from, text) {
     return null;
   }
 
-  return env.aiIntake
+  const reply = env.aiIntake
     ? await handleInboundAI({ fromPhone: from, text })
     : await handleInbound({ fromPhone: from, text });
+
+  // Store the bot's reply so the Service Manager sees the full thread on the dashboard.
+  if (reply) await storeBotMessage(phone, reply);
+  return reply;
 }
 
 // ---- Meta webhook verification (GET) ----
