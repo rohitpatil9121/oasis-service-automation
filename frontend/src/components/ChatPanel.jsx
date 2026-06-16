@@ -90,6 +90,7 @@ export default function ChatPanel({ ticket }) {
               }`}>
                 <p className="whitespace-pre-wrap break-words">{m.body}</p>
                 <div className={`mt-0.5 text-right text-[10px] ${m.dir === "out" ? "text-emerald-100" : "text-slate-400"}`}>
+                  {m.dir === "out" && m.audience === "bot" ? "🤖 Bot · " : ""}
                   {m.pending ? "sending…" : time(m.at)}{m.status === "FAILED" ? " · failed" : ""}
                 </div>
               </div>

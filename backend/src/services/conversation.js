@@ -8,6 +8,7 @@
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
 import { getTicket } from "./tickets.js";
+import { log } from "../lib/logger.js";
 
 // AI bot on/off is stored per customer in `customers.ai_paused_until`:
 //   null / past timestamp  => bot ON (auto-replies)
@@ -25,6 +26,18 @@ export async function isAgentHandling(phone) {
   const { data } = await supabase
     .from("customers").select("ai_paused_until").eq("phone", phone).maybeSingle();
   return isPaused(data?.ai_paused_until);
+}
+
+// Record an AI bot reply (sent straight to WhatsApp by the webhook) so it shows
+// in the dashboard chat — the Service Manager monitors the full conversation.
+export async function storeBotMessage(phone, body) {
+  const text = (body || "").trim();
+  if (!phone || !text) return;
+  const { error } = await supabase.from("notifications").insert({
+    channel: "whatsapp", recipient: phone, body: text, audience: "bot",
+    status: "SENT", attempts: 1, sent_at: new Date().toISOString(),
+  });
+  if (error) log.error("storeBotMessage failed:", error.message);
 }
 
 // Manager toggles the bot for a customer. on=true clears the pause (bot replies);
@@ -45,7 +58,7 @@ export async function getConversation(ticketId) {
     // Only customer-facing outbound (confirmations + manual agent replies). Staff
     // alerts (manager/technician) can share a phone in testing — keep them out.
     supabase.from("notifications").select("id, body, sent_at, created_at, status, audience")
-      .eq("recipient", phone).in("audience", ["customer", "agent"]),
+      .eq("recipient", phone).in("audience", ["customer", "agent", "bot"]),
   ]);
 
   const messages = [
