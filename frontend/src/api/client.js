@@ -48,6 +48,8 @@ export const api = {
   createTechnician: (payload) => request("/technicians", { method: "POST", body: payload }),
   getTechnician: (id) => request(`/technicians/${id}`),
   removeTechnician: (id) => request(`/technicians/${id}`, { method: "DELETE" }),
+  getTechnicianConversation: (id) => request(`/technicians/${id}/conversation`),
+  sendTechnicianMessage: (id, body) => request(`/technicians/${id}/message`, { method: "POST", body: { body } }),
   // stock (bulk, per technician)
   listStock: () => request("/stock"),
   createStockItem: (payload) => request("/stock", { method: "POST", body: payload }),

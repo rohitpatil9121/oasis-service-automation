@@ -19,6 +19,17 @@ async function getReply(from, text) {
     .insert({ from_phone: phone, body: text });
   if (error) log.error("wa_inbound insert failed:", error.message);
 
+  // If a registered TECHNICIAN messages the company number, don't run customer
+  // intake — just log it (shows in their chat) so the manager can reply. Their
+  // message still opens the 24-hour window, without the AI treating them as a
+  // customer or raising a ticket.
+  const { data: tech } = await supabase
+    .from("users").select("id").eq("phone", phone).eq("role", "technician").maybeSingle();
+  if (tech) {
+    log.info(`[staff] technician ${phone} messaged — no AI intake`);
+    return null;
+  }
+
   // Human handoff: if a manager messaged this customer in the last 12h, stay
   // silent and let them handle it. The inbound is still logged above, so the
   // reply shows in the dashboard chat. AI auto-resumes once the window lapses.
