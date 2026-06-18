@@ -20,10 +20,20 @@ async function sendViaTwilio(toPhone, body) {
 }
 
 // ---------- Meta WhatsApp Cloud API ----------
-async function sendViaMeta(toPhone, body) {
+// `contextMessageId` (optional) is the wamid of a message to quote — turns this
+// into a native WhatsApp "reply" that shows the original message above it.
+async function sendViaMeta(toPhone, body, contextMessageId) {
   // Meta wants the number as digits only, no "+" or "whatsapp:".
   const to = normalizePhone(toPhone).replace(/\D/g, "");
   const url = `https://graph.facebook.com/${env.metaGraphVersion}/${env.metaPhoneNumberId}/messages`;
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to,
+    type: "text",
+    text: { preview_url: false, body },
+  };
+  if (contextMessageId) payload.context = { message_id: contextMessageId };
 
   const res = await fetch(url, {
     method: "POST",
@@ -31,12 +41,7 @@ async function sendViaMeta(toPhone, body) {
       Authorization: `Bearer ${env.metaAccessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to,
-      type: "text",
-      text: { preview_url: false, body },
-    }),
+    body: JSON.stringify(payload),
   });
 
   const data = await res.json().catch(() => ({}));
@@ -84,17 +89,20 @@ async function sendTemplateViaMeta(toPhone, { name, language = "en", variables =
 // In mock mode (WHATSAPP_MOCK=true) it just logs and returns a fake SID, so the
 // whole system runs end-to-end with no credentials. Otherwise it dispatches to
 // the configured provider (WHATSAPP_PROVIDER=twilio|meta).
-export async function sendWhatsApp(toPhone, body) {
+// `opts.contextMessageId` (optional) quotes an earlier message (Meta only) so
+// the customer sees a native WhatsApp "reply".
+export async function sendWhatsApp(toPhone, body, opts = {}) {
   if (env.whatsappMock) {
     const sid = "MOCK-" + Math.random().toString(36).slice(2, 10);
-    log.info(`[WA MOCK] -> ${toPhone}\n${body}\n[sid ${sid}]`);
+    const q = opts.contextMessageId ? ` [reply→ ${opts.contextMessageId}]` : "";
+    log.info(`[WA MOCK] -> ${toPhone}${q}\n${body}\n[sid ${sid}]`);
     return { sid, mock: true };
   }
 
   const result =
     env.whatsappProvider === "meta"
-      ? await sendViaMeta(toPhone, body)
-      : await sendViaTwilio(toPhone, body);
+      ? await sendViaMeta(toPhone, body, opts.contextMessageId)
+      : await sendViaTwilio(toPhone, body); // Twilio: no quoting; sends normally
 
   log.info(`[WA SENT ${env.whatsappProvider}] ${result.sid} -> ${toPhone}`);
   return { ...result, mock: false };
