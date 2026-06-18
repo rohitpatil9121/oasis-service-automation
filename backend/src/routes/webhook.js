@@ -27,8 +27,15 @@ async function logInbound(from, text, { mediaId, mediaType, waMessageId } = {}) 
   const row = { from_phone: phone, body: text };
   if (mediaId) { row.media_id = mediaId; row.media_type = mediaType || null; }
   if (waMessageId) row.wa_message_id = waMessageId; // for native WhatsApp "reply" quoting
-  const { error } = await supabase.from("wa_inbound").insert(row);
-  if (error) log.error("wa_inbound insert failed:", error.message);
+  let { error } = await supabase.from("wa_inbound").insert(row);
+  if (error) {
+    // An optional-feature migration may not be run yet (e.g. media_* or
+    // wa_message_id columns). Never lose the customer's message — retry with
+    // only the core columns that always exist.
+    log.error("wa_inbound insert failed, retrying with core columns:", error.message);
+    ({ error } = await supabase.from("wa_inbound").insert({ from_phone: phone, body: text }));
+    if (error) log.error("wa_inbound core insert failed:", error.message);
+  }
 
   // If a registered TECHNICIAN messages the company number, don't run customer
   // intake — just log it (shows in their chat) so the manager can reply. Their

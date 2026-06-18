@@ -32,8 +32,15 @@ export async function queueNotification({ recipient, body, audience, ticketId, t
     log.error("notification send failed:", e.message);
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("notifications").insert(row).select("id").single();
+  if (error && (row.reply_to_body || row.reply_to_wamid)) {
+    // The reply-context migration may not be run yet — don't drop the message.
+    // Retry without the quote columns so the reply is still stored & sent.
+    log.error("notification insert failed, retrying without reply context:", error.message);
+    const { reply_to_body, reply_to_wamid, ...core } = row;
+    ({ data, error } = await supabase.from("notifications").insert(core).select("id").single());
+  }
   if (error) { log.error("queueNotification insert failed:", error.message); return null; }
   return data.id;
 }
