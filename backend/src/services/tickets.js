@@ -1,6 +1,6 @@
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
-import { managerNewRequest, visitScheduledTechnician, visitScheduledCustomer } from "./waTemplates.js";
+import { managerNewRequest, visitScheduledTechnician, visitScheduledCustomer, requestCancelledCustomer } from "./waTemplates.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
@@ -325,13 +325,33 @@ export async function scheduleVisit({ ticketId, start, end, actorId }) {
   return ticket;
 }
 
-export async function updateStatus(id, toStatus, actorId) {
+export async function updateStatus(id, toStatus, actorId, reason) {
   const current = await getTicket(id);
+
+  // Cancelling requires a reason, which we relay to the customer.
+  if (toStatus === "CANCELLED") {
+    reason = String(reason || "").trim();
+    if (!reason) { const e = new Error("A cancellation reason is required"); e.status = 400; throw e; }
+  }
+
   const { data, error } = await supabase
     .from("tickets").update({ status: toStatus }).eq("id", id).select().single();
   if (error) throw new Error("updateStatus: " + error.message);
   await logEvent(id, "status_changed", {
     from_status: current.status, to_status: toStatus, actor_id: actorId,
+    ...(toStatus === "CANCELLED" ? { meta: { reason } } : {}),
   });
+
+  // Let the customer know their request was cancelled and why.
+  if (toStatus === "CANCELLED" && current.customer?.phone) {
+    const tpl = requestCancelledCustomer({
+      ticketNumber: current.ticket_number, customerName: current.customer.full_name, reason,
+    });
+    await queueNotification({
+      recipient: current.customer.phone, audience: "customer", ticketId: id,
+      body: tpl.body, template: tpl.template,
+    });
+  }
+
   return data;
 }

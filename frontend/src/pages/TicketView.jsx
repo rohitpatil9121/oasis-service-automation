@@ -6,6 +6,7 @@ import AssignModal from "../components/AssignModal.jsx";
 import ScheduleModal from "../components/ScheduleModal.jsx";
 import ChatPanel from "../components/ChatPanel.jsx";
 import EditCustomerModal from "../components/EditCustomerModal.jsx";
+import CancelModal from "../components/CancelModal.jsx";
 import { Card, Button, Icon, Select, Spinner, Alert, Textarea } from "../components/ui.jsx";
 
 const fmt = (d) => (d ? new Date(d).toLocaleString() : "—");
@@ -26,6 +27,7 @@ export default function TicketView() {
   const [showAssign, setShowAssign] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showEditCustomer, setShowEditCustomer] = useState(false);
+  const [showCancel, setShowCancel] = useState(false);
   const [editIssue, setEditIssue] = useState(false);
   const [issueText, setIssueText] = useState("");
   const [issueErr, setIssueErr] = useState("");
@@ -42,8 +44,15 @@ export default function TicketView() {
   useEffect(() => { load(); }, [load]);
 
   async function changeStatus(s) {
+    if (s === "CANCELLED") { setShowCancel(true); return; }
     setBusy(true);
     try { await api.setStatus(id, s); await load(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  async function confirmCancel(reason) {
+    await api.setStatus(id, "CANCELLED", reason);
+    setShowCancel(false);
+    await load();
   }
 
   function startEditIssue() { setIssueText(ticket.issue_description || ""); setIssueErr(""); setEditIssue(true); }
@@ -203,6 +212,7 @@ export default function TicketView() {
                 <span className="text-slate-700">
                   <span className="font-medium capitalize">{e.event_type.replace("_", " ")}</span>
                   {e.to_status ? <span className="text-slate-400"> → {STATUS_LABEL[e.to_status] || e.to_status}</span> : null}
+                  {e.meta?.reason ? <span className="text-slate-400"> — {e.meta.reason}</span> : null}
                   <span className="text-slate-400"> · {e.actor?.full_name || "system/customer"}</span>
                 </span>
                 <span className="shrink-0 text-xs text-slate-400">{fmt(e.created_at)}</span>
@@ -225,6 +235,10 @@ export default function TicketView() {
       {showEditCustomer && (
         <EditCustomerModal ticket={ticket} onClose={() => setShowEditCustomer(false)}
           onUpdated={() => { setShowEditCustomer(false); load(); }} />
+      )}
+
+      {showCancel && (
+        <CancelModal ticket={ticket} onClose={() => setShowCancel(false)} onConfirm={confirmCancel} />
       )}
     </div>
   );

@@ -38,8 +38,8 @@ export const api = {
   getConversation: (id) => request(`/tickets/${id}/conversation`),
   sendMessage: (id, body) => request(`/tickets/${id}/message`, { method: "POST", body: { body } }),
   setBot: (id, on) => request(`/tickets/${id}/bot`, { method: "POST", body: { on } }),
-  setStatus: (id, status) =>
-    request(`/tickets/${id}/status`, { method: "PATCH", body: { status } }),
+  setStatus: (id, status, reason) =>
+    request(`/tickets/${id}/status`, { method: "PATCH", body: { status, reason } }),
   // customers
   listCustomers: () => request("/customers"),
   getCustomer: (id) => request(`/customers/${id}`),
