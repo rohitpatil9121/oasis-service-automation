@@ -92,7 +92,7 @@ router.post("/whatsapp", async (req, res) => {
     const rawMediaUrl = req.body.MediaUrl0 || null;
     const mediaType = req.body.MediaContentType0 || null;
     // Encode the Twilio URL as base64url so it survives as a URL segment in the proxy route.
-    const mediaId = rawMediaUrl ? Buffer.from(rawMediaUrl).toString("base64url") : null;
+    const mediaId = rawMediaUrl ? Buffer.from(rawMediaUrl).toString("base64url").replace(/=/g, "") : null;
     log.info(`[WA IN] ${from}: ${body || (mediaId ? `(media ${mediaType})` : "")}`);
 
     const reply = await getReply(from, body, { mediaId, mediaType });

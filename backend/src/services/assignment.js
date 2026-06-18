@@ -93,7 +93,7 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
   const techTpl = technicianNewJob({
     ticketNumber: ticket.ticket_number, customerName: ticket.customer.full_name,
     customerPhone: ticket.customer.phone, address: ticket.customer.address,
-    issue: ticket.issue_description,
+    appliance: ticket.appliance, issue: ticket.issue_description,
   });
   await queueNotification({
     recipient: tech.phone, audience: "technician", ticketId,

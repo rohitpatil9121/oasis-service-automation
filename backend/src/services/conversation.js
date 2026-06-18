@@ -54,7 +54,7 @@ export async function getConversation(ticketId) {
   if (!phone) return { phone: null, messages: [] };
 
   const [inbound, outbound] = await Promise.all([
-    supabase.from("wa_inbound").select("id, body, created_at, media_id, media_type").eq("from_phone", phone),
+    supabase.from("wa_inbound").select("*").eq("from_phone", phone),
     // Only customer-facing outbound (confirmations + manual agent replies). Staff
     // alerts (manager/technician) can share a phone in testing — keep them out.
     supabase.from("notifications").select("id, body, sent_at, created_at, status, audience")
@@ -89,7 +89,7 @@ export async function getTechnicianConversation(technicianId) {
   const phone = tech.phone;
 
   const [inbound, outbound] = await Promise.all([
-    supabase.from("wa_inbound").select("id, body, created_at, media_id, media_type").eq("from_phone", phone),
+    supabase.from("wa_inbound").select("*").eq("from_phone", phone),
     supabase.from("notifications").select("id, body, sent_at, created_at, status, audience")
       .eq("recipient", phone).in("audience", ["technician", "agent"]),
   ]);

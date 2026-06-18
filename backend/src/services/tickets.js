@@ -166,18 +166,13 @@ export async function updateTicketIntake(ticketId, { issue, appliance } = {}) {
   await supabase.from("tickets").update(patch).eq("id", ticketId);
 }
 
-// Required fields all in → mark complete and fire the one-time alerts.
+// Required fields all in → mark complete and alert managers.
+// Customer confirmation is NOT sent here — the caller (aiIntake.js) sends a
+// single consolidated reply so the customer doesn't get duplicate messages.
 export async function completeIntake(ticketId) {
   const ticket = await getTicket(ticketId);
   if (ticket.intake_complete) return ticket;
   await supabase.from("tickets").update({ intake_complete: true }).eq("id", ticketId);
-
-  await queueNotification({
-    recipient: ticket.customer.phone, audience: "customer", ticketId,
-    body: `✅ Thanks ${ticket.customer.full_name}! Your request is logged.\n` +
-          `Ticket: *${ticket.ticket_number}*\nIssue: ${ticket.issue_description}\n` +
-          `Our team will assign a technician shortly.`,
-  });
 
   const managers = await getManagerRecipients();
   const mgrTpl = managerNewRequest({

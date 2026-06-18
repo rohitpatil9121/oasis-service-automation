@@ -22,17 +22,18 @@ export function managerNewRequest({ ticketNumber, customerName, customerPhone, a
   };
 }
 
-export function technicianNewJob({ ticketNumber, customerName, customerPhone, address, issue }) {
+export function technicianNewJob({ ticketNumber, customerName, customerPhone, address, appliance, issue }) {
   return {
     template: {
       name: "technician_new_job",
       language: WA_LANG,
-      variables: [v(ticketNumber), v(customerName), v(customerPhone), v(address), v(issue)],
+      variables: [v(ticketNumber), v(customerName), v(customerPhone), v(address), v(appliance), v(issue)],
     },
     body:
       ` New assignment ${ticketNumber}\n` +
       `Customer: ${customerName} (${customerPhone})\n` +
       `Address: ${address || "N/A"}\n` +
+      (appliance ? `Appliance: ${appliance}\n` : "") +
       `Issue: ${issue}`,
   };
 }
