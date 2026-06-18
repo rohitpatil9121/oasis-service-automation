@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { api } from "../api/client.js";
+import { api, BASE, getToken } from "../api/client.js";
 import { Icon } from "./ui.jsx";
 
 const POLL_MS = 10000;
@@ -72,7 +72,19 @@ export default function TechnicianChatPanel({ technician }) {
                   ? "rounded-br-sm bg-emerald-600 text-white"
                   : "rounded-bl-sm border border-slate-200 bg-white text-slate-700"
               }`}>
-                <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                {m.mediaId && (
+                  <a href={`${BASE}/api/media/${m.mediaId}?t=${getToken()}`} target="_blank" rel="noreferrer"
+                    className="mb-1 block">
+                    <img
+                      src={`${BASE}/api/media/${m.mediaId}?t=${getToken()}`}
+                      alt="Attached media"
+                      className="max-h-48 w-auto rounded-lg object-contain"
+                      onError={(e) => { e.currentTarget.style.display = "none"; e.currentTarget.nextSibling.style.display = "inline"; }}
+                    />
+                    <span style={{ display: "none" }} className="text-xs opacity-70">📎 Media (tap to open)</span>
+                  </a>
+                )}
+                {m.body ? <p className="whitespace-pre-wrap break-words">{m.body}</p> : null}
                 <div className={`mt-0.5 text-right text-[10px] ${m.dir === "out" ? "text-emerald-100" : "text-slate-400"}`}>
                   {m.pending ? "sending…" : time(m.at)}{m.status === "FAILED" ? " · failed" : ""}
                 </div>

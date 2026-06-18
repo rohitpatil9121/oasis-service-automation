@@ -12,11 +12,11 @@ const router = Router();
 
 // Persist the inbound message FIRST (so the inquiry is never lost even if intake
 // errors), then route to the AI agent or the deterministic state machine.
-async function getReply(from, text) {
+async function getReply(from, text, { mediaId, mediaType } = {}) {
   const phone = normalizePhone(from);
-  const { error } = await supabase
-    .from("wa_inbound")
-    .insert({ from_phone: phone, body: text });
+  const row = { from_phone: phone, body: text };
+  if (mediaId) { row.media_id = mediaId; row.media_type = mediaType || null; }
+  const { error } = await supabase.from("wa_inbound").insert(row);
   if (error) log.error("wa_inbound insert failed:", error.message);
 
   // If a registered TECHNICIAN messages the company number, don't run customer
@@ -71,10 +71,12 @@ router.post("/whatsapp", async (req, res) => {
       if (!msg) return; // delivery/read status events have no messages — ignore
 
       const from = "+" + msg.from; // Meta sends e.g. "918668732890" (no +)
-      const text = msg.type === "text" ? msg.text?.body || "" : "";
-      log.info(`[WA IN] ${from}: ${text || "(non-text message)"}`);
+      const text = msg.type === "text" ? msg.text?.body || "" : (msg.image?.caption || msg.video?.caption || "");
+      const mediaId = msg.image?.id || msg.video?.id || msg.document?.id || null;
+      const mediaType = msg.image?.mime_type || msg.video?.mime_type || msg.document?.mime_type || null;
+      log.info(`[WA IN] ${from}: ${text || (mediaId ? `(media ${mediaType})` : "(non-text message)")}`);
 
-      const reply = await getReply(from, text);
+      const reply = await getReply(from, text, { mediaId, mediaType });
       if (reply) await sendWhatsApp(from, reply); // null = manager handoff, stay quiet
     } catch (e) {
       log.error("meta webhook error:", e.message);
@@ -86,9 +88,14 @@ router.post("/whatsapp", async (req, res) => {
   try {
     const from = req.body.From; // e.g. whatsapp:+918668732890
     const body = req.body.Body || "";
-    log.info(`[WA IN] ${from}: ${body}`);
+    // Twilio sends MediaUrl0 / MediaContentType0 for the first attached media.
+    const rawMediaUrl = req.body.MediaUrl0 || null;
+    const mediaType = req.body.MediaContentType0 || null;
+    // Encode the Twilio URL as base64url so it survives as a URL segment in the proxy route.
+    const mediaId = rawMediaUrl ? Buffer.from(rawMediaUrl).toString("base64url") : null;
+    log.info(`[WA IN] ${from}: ${body || (mediaId ? `(media ${mediaType})` : "")}`);
 
-    const reply = await getReply(from, body);
+    const reply = await getReply(from, body, { mediaId, mediaType });
 
     // Real Twilio mode: reply via the REST API; empty TwiML avoids a duplicate.
     if (!env.whatsappMock) {
