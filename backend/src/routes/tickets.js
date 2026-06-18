@@ -82,7 +82,7 @@ router.get("/:id/conversation", requireRole("owner", "manager", "technician"), a
 
 router.post("/:id/message", requireRole("owner", "manager"), async (req, res, next) => {
   try {
-    const result = await sendCustomerMessage({ ticketId: req.params.id, body: req.body?.body, actorId: req.user.id });
+    const result = await sendCustomerMessage({ ticketId: req.params.id, body: req.body?.body, actorId: req.user.id, replyTo: req.body?.replyTo });
     res.json(result);
   } catch (e) { next(e); }
 });

@@ -10,12 +10,23 @@ import { log } from "../lib/logger.js";
 
 const router = Router();
 
+// How long to wait after the customer's LAST message before the bot replies.
+// People often fire several messages in a row ("hi" … "my RO is leaking" …
+// "since morning"). Without this pause the bot answers the first line while
+// they're still typing the rest. Each new message resets the timer, so the bot
+// only responds once the customer has actually paused — and it sees all the
+// lines together.
+const REPLY_DELAY_MS = 4500;
+const pending = new Map(); // phone -> { parts: [], send, timer }
+
 // Persist the inbound message FIRST (so the inquiry is never lost even if intake
-// errors), then route to the AI agent or the deterministic state machine.
-async function getReply(from, text, { mediaId, mediaType } = {}) {
+// errors), then decide whether the bot should respond at all.
+// Returns false when the message must be swallowed (staff / manager handoff).
+async function logInbound(from, text, { mediaId, mediaType, waMessageId } = {}) {
   const phone = normalizePhone(from);
   const row = { from_phone: phone, body: text };
   if (mediaId) { row.media_id = mediaId; row.media_type = mediaType || null; }
+  if (waMessageId) row.wa_message_id = waMessageId; // for native WhatsApp "reply" quoting
   const { error } = await supabase.from("wa_inbound").insert(row);
   if (error) log.error("wa_inbound insert failed:", error.message);
 
@@ -27,7 +38,7 @@ async function getReply(from, text, { mediaId, mediaType } = {}) {
     .from("users").select("id").eq("phone", phone).eq("role", "technician").maybeSingle();
   if (tech) {
     log.info(`[staff] technician ${phone} messaged — no AI intake`);
-    return null;
+    return false;
   }
 
   // Human handoff: if a manager messaged this customer in the last 12h, stay
@@ -35,16 +46,51 @@ async function getReply(from, text, { mediaId, mediaType } = {}) {
   // reply shows in the dashboard chat. AI auto-resumes once the window lapses.
   if (await isAgentHandling(phone)) {
     log.info(`[handoff] AI paused for ${phone} — manager is handling`);
-    return null;
+    return false;
   }
+  return true;
+}
 
+// Run intake on the (possibly coalesced) text and store the bot's reply so the
+// Service Manager sees the full thread on the dashboard.
+async function runIntake(from, text) {
+  const phone = normalizePhone(from);
   const reply = env.aiIntake
     ? await handleInboundAI({ fromPhone: from, text })
     : await handleInbound({ fromPhone: from, text });
-
-  // Store the bot's reply so the Service Manager sees the full thread on the dashboard.
   if (reply) await storeBotMessage(phone, reply);
   return reply;
+}
+
+// Synchronous path (mock/testing): log + reply immediately, no debounce.
+async function getReply(from, text, media = {}) {
+  if (!(await logInbound(from, text, media))) return null;
+  return runIntake(from, text);
+}
+
+// Debounced path (live WhatsApp): buffer rapid-fire messages and reply once,
+// REPLY_DELAY_MS after the customer's last message. `send` delivers the reply.
+async function enqueueReply(from, text, media, send) {
+  if (!(await logInbound(from, text, media))) return;
+  const phone = normalizePhone(from);
+  let p = pending.get(phone);
+  if (!p) { p = { parts: [] }; pending.set(phone, p); }
+  if (text) p.parts.push(text);
+  p.send = send;
+  if (p.timer) clearTimeout(p.timer);
+  p.timer = setTimeout(() => flushReply(phone, from), REPLY_DELAY_MS);
+}
+
+async function flushReply(phone, from) {
+  const p = pending.get(phone);
+  if (!p) return;
+  pending.delete(phone);
+  try {
+    const reply = await runIntake(from, p.parts.join("\n"));
+    if (reply) await p.send(reply);
+  } catch (e) {
+    log.error("flushReply error:", e.message);
+  }
 }
 
 // ---- Meta webhook verification (GET) ----
@@ -74,10 +120,11 @@ router.post("/whatsapp", async (req, res) => {
       const text = msg.type === "text" ? msg.text?.body || "" : (msg.image?.caption || msg.video?.caption || "");
       const mediaId = msg.image?.id || msg.video?.id || msg.document?.id || null;
       const mediaType = msg.image?.mime_type || msg.video?.mime_type || msg.document?.mime_type || null;
+      const waMessageId = msg.id || null; // wamid — lets the manager later "reply" to this exact message
       log.info(`[WA IN] ${from}: ${text || (mediaId ? `(media ${mediaType})` : "(non-text message)")}`);
 
-      const reply = await getReply(from, text, { mediaId, mediaType });
-      if (reply) await sendWhatsApp(from, reply); // null = manager handoff, stay quiet
+      // Debounced: waits for the customer to finish before the bot replies once.
+      await enqueueReply(from, text, { mediaId, mediaType, waMessageId }, (reply) => sendWhatsApp(from, reply));
     } catch (e) {
       log.error("meta webhook error:", e.message);
     }
@@ -95,14 +142,14 @@ router.post("/whatsapp", async (req, res) => {
     const mediaId = rawMediaUrl ? Buffer.from(rawMediaUrl).toString("base64url").replace(/=/g, "") : null;
     log.info(`[WA IN] ${from}: ${body || (mediaId ? `(media ${mediaType})` : "")}`);
 
-    const reply = await getReply(from, body, { mediaId, mediaType });
-
     // Real Twilio mode: reply via the REST API; empty TwiML avoids a duplicate.
     if (!env.whatsappMock) {
-      if (reply) await sendWhatsApp(from, reply); // null = manager handoff, stay quiet
+      // Debounced: waits for the customer to finish before the bot replies once.
+      await enqueueReply(from, body, { mediaId, mediaType }, (reply) => sendWhatsApp(from, reply));
       res.set("Content-Type", "text/xml").send("<Response></Response>");
     } else {
-      // Mock mode: return the reply as JSON so you can test with curl/Postman.
+      // Mock mode: reply immediately as JSON so you can test with curl/Postman.
+      const reply = await getReply(from, body, { mediaId, mediaType });
       res.json({ from, reply });
     }
   } catch (e) {

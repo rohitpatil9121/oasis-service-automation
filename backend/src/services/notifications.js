@@ -5,7 +5,7 @@ import { sendWhatsApp, sendWhatsAppTemplate } from "./whatsapp.js";
 import { log } from "../lib/logger.js";
 
 
-export async function queueNotification({ recipient, body, audience, ticketId, template }) {
+export async function queueNotification({ recipient, body, audience, ticketId, template, replyTo }) {
   let row = {
     channel: "whatsapp",
     recipient,
@@ -16,11 +16,15 @@ export async function queueNotification({ recipient, body, audience, ticketId, t
     attempts: 1,
     sent_at: new Date().toISOString(),
   };
+  // Quoting an earlier message (dashboard "reply"): remember what we quoted so
+  // the thread can render it, and ask Meta to render it as a native reply.
+  if (replyTo?.body) row.reply_to_body = replyTo.body;
+  if (replyTo?.wamid) row.reply_to_wamid = replyTo.wamid;
 
   try {
     const res = template
       ? await sendWhatsAppTemplate(recipient, template, body)
-      : await sendWhatsApp(recipient, body);
+      : await sendWhatsApp(recipient, body, { contextMessageId: replyTo?.wamid });
     row.provider_sid = res.sid;
   } catch (e) {
 

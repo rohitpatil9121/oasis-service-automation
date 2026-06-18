@@ -16,6 +16,7 @@ export default function ChatPanel({ ticket }) {
   const [warn, setWarn] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [botOn, setBotOn] = useState(true);
+  const [replyTo, setReplyTo] = useState(null); // message the manager is quoting
   const scrollRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -42,16 +43,21 @@ export default function ChatPanel({ ticket }) {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
+  // A short label for a quoted message (handles media-only messages).
+  const snippet = (m) => (m?.body || "").trim() || (m?.mediaId ? "📎 Attachment" : "");
+
   async function send(e) {
     e.preventDefault();
     const body = text.trim();
     if (!body) return;
+    const quoting = replyTo;
     setSending(true); setWarn("");
     // optimistic
-    setMessages((m) => [...m, { id: "tmp-" + Date.now(), dir: "out", body, at: new Date().toISOString(), pending: true }]);
-    setText("");
+    setMessages((m) => [...m, { id: "tmp-" + Date.now(), dir: "out", body, at: new Date().toISOString(), pending: true, replyTo: quoting ? { body: snippet(quoting) } : null }]);
+    setText(""); setReplyTo(null);
     try {
-      const res = await api.sendMessage(ticket.id, body);
+      const payload = quoting ? { wamid: quoting.waMessageId || null, body: snippet(quoting) } : null;
+      const res = await api.sendMessage(ticket.id, body, payload);
       if (!res.ok) setWarn("Couldn't deliver — the customer may be outside WhatsApp's 24-hour window. They need to message first.");
       await load();
     } catch (err) { setWarn(err.message); } finally { setSending(false); }
@@ -83,12 +89,26 @@ export default function ChatPanel({ ticket }) {
           <p className="pt-8 text-center text-sm text-slate-400">No messages yet. Say hello 👋</p>
         ) : (
           messages.map((m) => (
-            <div key={m.id} className={`flex ${m.dir === "out" ? "justify-end" : "justify-start"}`}>
+            <div key={m.id} className={`group flex items-center gap-1.5 ${m.dir === "out" ? "justify-end" : "justify-start"}`}>
+              {/* reply button (left of outbound bubbles) */}
+              {m.dir === "out" && (
+                <button onClick={() => setReplyTo(m)} title="Reply to this message"
+                  className="opacity-0 transition group-hover:opacity-100 text-slate-400 hover:text-emerald-600">
+                  <Icon name="reply" className="h-3.5 w-3.5" />
+                </button>
+              )}
               <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${
                 m.dir === "out"
                   ? "rounded-br-sm bg-emerald-600 text-white"
                   : "rounded-bl-sm border border-slate-200 bg-white text-slate-700"
               }`}>
+                {m.replyTo?.body && (
+                  <div className={`mb-1 border-l-2 pl-2 text-[11px] ${
+                    m.dir === "out" ? "border-emerald-200 text-emerald-100" : "border-slate-300 text-slate-500"
+                  }`}>
+                    {m.replyTo.body}
+                  </div>
+                )}
                 {m.mediaId && (
                   <MediaBubble mediaId={m.mediaId} mediaType={m.mediaType} isOutbound={m.dir === "out"} />
                 )}
@@ -98,12 +118,35 @@ export default function ChatPanel({ ticket }) {
                   {m.pending ? "sending…" : time(m.at)}{m.status === "FAILED" ? " · failed" : ""}
                 </div>
               </div>
+              {/* reply button (right of inbound bubbles) */}
+              {m.dir === "in" && (
+                <button onClick={() => setReplyTo(m)} title="Reply to this message"
+                  className="opacity-0 transition group-hover:opacity-100 text-slate-400 hover:text-emerald-600">
+                  <Icon name="reply" className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           ))
         )}
       </div>
 
       {warn && <div className="border-t border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">{warn}</div>}
+
+      {/* reply preview */}
+      {replyTo && (
+        <div className="flex items-start gap-2 border-t border-slate-100 bg-slate-50 px-3 py-2">
+          <div className="flex-1 border-l-2 border-emerald-500 pl-2 text-xs text-slate-600">
+            <div className="font-semibold text-emerald-700">
+              Replying to {replyTo.dir === "out" ? "you" : ticket.customer?.full_name || "customer"}
+            </div>
+            <div className="truncate">{snippet(replyTo)}</div>
+          </div>
+          <button onClick={() => setReplyTo(null)} title="Cancel reply"
+            className="text-slate-400 hover:text-slate-600">
+            <Icon name="x" className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* composer */}
       <form onSubmit={send} className="flex items-center gap-2 border-t border-slate-100 p-2.5">

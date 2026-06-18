@@ -57,7 +57,8 @@ export async function getConversation(ticketId) {
     supabase.from("wa_inbound").select("*").eq("from_phone", phone),
     // Only customer-facing outbound (confirmations + manual agent replies). Staff
     // alerts (manager/technician) can share a phone in testing — keep them out.
-    supabase.from("notifications").select("id, body, sent_at, created_at, status, audience")
+    // select("*") so new reply-context columns work even before the migration runs.
+    supabase.from("notifications").select("*")
       .eq("recipient", phone).in("audience", ["customer", "agent", "bot"]),
   ]);
 
@@ -65,10 +66,13 @@ export async function getConversation(ticketId) {
     ...(inbound.data || []).map((m) => ({
       id: "in-" + m.id, dir: "in", body: m.body, at: m.created_at,
       mediaId: m.media_id || null, mediaType: m.media_type || null,
+      waMessageId: m.wa_message_id || null,
     })),
     ...(outbound.data || []).map((m) => ({
       id: "out-" + m.id, dir: "out", body: m.body,
       at: m.sent_at || m.created_at, status: m.status, audience: m.audience,
+      waMessageId: m.provider_sid || null,
+      replyTo: m.reply_to_body ? { body: m.reply_to_body } : null,
     })),
   ]
     .filter((m) => m.body || m.mediaId)
@@ -127,15 +131,21 @@ export async function sendTechnicianMessage({ technicianId, body }) {
 // Manager sends a free-form WhatsApp message to the customer (e.g. to ask for a
 // missing/clearer detail). Returns the delivery status so the UI can warn if it
 // couldn't be delivered (e.g. outside WhatsApp's 24-hour window).
-export async function sendCustomerMessage({ ticketId, body, actorId }) {
+export async function sendCustomerMessage({ ticketId, body, actorId, replyTo }) {
   const text = (body || "").trim();
   if (!text) { const e = new Error("Message is empty"); e.status = 400; throw e; }
 
   const ticket = await getTicket(ticketId);
   if (!ticket.customer?.phone) { const e = new Error("This ticket has no customer phone"); e.status = 400; throw e; }
 
+  // Optional quoted reply: keep a short snapshot for the thread + the wamid so
+  // Meta renders it as a native WhatsApp reply (wamid may be null in mock/Twilio).
+  const quote = replyTo?.body
+    ? { body: String(replyTo.body).slice(0, 300), wamid: replyTo.wamid || null }
+    : null;
+
   const id = await queueNotification({
-    recipient: ticket.customer.phone, audience: "agent", ticketId, body: text,
+    recipient: ticket.customer.phone, audience: "agent", ticketId, body: text, replyTo: quote,
   });
 
   // Auto-pause the AI for 12h so it doesn't talk over the manager — unless it's
