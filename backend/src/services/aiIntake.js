@@ -280,14 +280,20 @@ export async function handleInboundAI({ fromPhone, text }) {
     if (session.ticket_id) await updateTicketIntake(session.ticket_id, { issue: collected.issue, appliance: collected.appliance });
   } catch (e) { log.error("live intake update failed:", e.message); }
 
-  // Required fields all in -> finalise once (alerts + customer confirmation).
+  // Required fields all in → finalise once. Send ONE consolidated message:
+  // the AI's conversational reply + confirmation block. completeIntake() no
+  // longer sends a customer message, so there's no duplicate.
   const complete = collected.name && collected.address && collected.issue;
   if (complete && session.ticket_id && !session.data?.completed) {
     try {
       const ticket = await completeIntake(session.ticket_id);
       await saveSession(session.id, { state: "COMPLETED", data: { collected, history, returning, completed: true } });
       log.info(`AI intake complete for ${phone} -> ${ticket.ticket_number}`);
-      return `${reply}\n\n✅ Your request is logged. Ticket ID: *${ticket.ticket_number}*.\n` +
+      // Strip any redundant "request is logged" text the model may have added
+      // before appending the canonical confirmation with the ticket number.
+      const aiPart = reply.replace(/your request (has been |is )(logged|registered)[^.]*/gi, "").trim();
+      return (aiPart ? `${aiPart}\n\n` : "") +
+             `✅ Your request is logged. Ticket: *${ticket.ticket_number}*\n` +
              `You'll get a WhatsApp update when a technician is assigned.\n` +
              `(Send *status* anytime to check it.)`;
     } catch (e) {

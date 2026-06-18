@@ -11,8 +11,9 @@ const router = Router();
 // Media requests accept the JWT as a ?t= query param (browsers can't set headers
 // for <img src>), falling back to the Authorization header.
 router.use((req, res, next) => {
-  if (req.query.t && !req.headers.authorization) {
-    req.headers.authorization = `Bearer ${req.query.t}`;
+  const t = req.query.t;
+  if (t && t !== "null" && !req.headers.authorization) {
+    req.headers.authorization = `Bearer ${t}`;
   }
   requireAuth(req, res, next);
 });

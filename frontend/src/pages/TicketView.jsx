@@ -17,7 +17,7 @@ const fmtSlot = (s, e) => {
   const end = new Date(e).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
   return `${start} – ${end}`;
 };
-const STATUSES = ["NEW", "ASSIGNED", "IN_PROGRESS", "CLOSED", "CANCELLED"];
+const STATUSES = ["NEW", "CLOSED", "CANCELLED"];
 const STATUS_LABEL = { NEW: "New", ASSIGNED: "Assigned", IN_PROGRESS: "In progress", CLOSED: "Closed", CANCELLED: "Cancelled" };
 
 export default function TicketView() {
@@ -88,7 +88,10 @@ export default function TicketView() {
         </div>
         <div className="flex items-center gap-2">
           <Select value={ticket.status} disabled={busy} onChange={(e) => changeStatus(e.target.value)} className="w-auto">
-            {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+            {STATUSES.includes(ticket.status)
+              ? STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)
+              : [ticket.status, ...STATUSES].map((s) => <option key={s} value={s}>{STATUS_LABEL[s] || s}</option>)
+            }
           </Select>
           {!closed && (
             <Button onClick={() => setShowAssign(true)}>
