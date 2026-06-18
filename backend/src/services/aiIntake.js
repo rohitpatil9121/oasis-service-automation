@@ -32,9 +32,7 @@ const AGENT_INTRO =
   `right technician!") instead of ignoring it or repeating the same request word-for-word. ` +
   `Acknowledge what they just said, then gently continue. Keep replies short and friendly.`;
 
-// The agent's instructions. For RETURNING customers we already have name+address,
-// so the agent confirms them (and only re-captures what changed) instead of asking
-// from scratch. Current collected state is injected each turn.
+
 function systemPrompt(collected, returning) {
   if (returning) {
     return `

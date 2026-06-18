@@ -54,7 +54,7 @@ export async function getConversation(ticketId) {
   if (!phone) return { phone: null, messages: [] };
 
   const [inbound, outbound] = await Promise.all([
-    supabase.from("wa_inbound").select("id, body, created_at").eq("from_phone", phone),
+    supabase.from("wa_inbound").select("id, body, created_at, media_id, media_type").eq("from_phone", phone),
     // Only customer-facing outbound (confirmations + manual agent replies). Staff
     // alerts (manager/technician) can share a phone in testing — keep them out.
     supabase.from("notifications").select("id, body, sent_at, created_at, status, audience")
@@ -62,13 +62,16 @@ export async function getConversation(ticketId) {
   ]);
 
   const messages = [
-    ...(inbound.data || []).map((m) => ({ id: "in-" + m.id, dir: "in", body: m.body, at: m.created_at })),
+    ...(inbound.data || []).map((m) => ({
+      id: "in-" + m.id, dir: "in", body: m.body, at: m.created_at,
+      mediaId: m.media_id || null, mediaType: m.media_type || null,
+    })),
     ...(outbound.data || []).map((m) => ({
       id: "out-" + m.id, dir: "out", body: m.body,
       at: m.sent_at || m.created_at, status: m.status, audience: m.audience,
     })),
   ]
-    .filter((m) => m.body)
+    .filter((m) => m.body || m.mediaId)
     .sort((a, b) => new Date(a.at) - new Date(b.at));
 
   return {
@@ -86,19 +89,22 @@ export async function getTechnicianConversation(technicianId) {
   const phone = tech.phone;
 
   const [inbound, outbound] = await Promise.all([
-    supabase.from("wa_inbound").select("id, body, created_at").eq("from_phone", phone),
+    supabase.from("wa_inbound").select("id, body, created_at, media_id, media_type").eq("from_phone", phone),
     supabase.from("notifications").select("id, body, sent_at, created_at, status, audience")
       .eq("recipient", phone).in("audience", ["technician", "agent"]),
   ]);
 
   const messages = [
-    ...(inbound.data || []).map((m) => ({ id: "in-" + m.id, dir: "in", body: m.body, at: m.created_at })),
+    ...(inbound.data || []).map((m) => ({
+      id: "in-" + m.id, dir: "in", body: m.body, at: m.created_at,
+      mediaId: m.media_id || null, mediaType: m.media_type || null,
+    })),
     ...(outbound.data || []).map((m) => ({
       id: "out-" + m.id, dir: "out", body: m.body,
       at: m.sent_at || m.created_at, status: m.status, audience: m.audience,
     })),
   ]
-    .filter((m) => m.body)
+    .filter((m) => m.body || m.mediaId)
     .sort((a, b) => new Date(a.at) - new Date(b.at));
 
   return { phone, name: tech.full_name, messages };

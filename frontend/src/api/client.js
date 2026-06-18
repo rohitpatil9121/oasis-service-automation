@@ -1,8 +1,9 @@
 // Tiny fetch wrapper. Token is kept in memory + sessionStorage via AuthContext.
-const BASE = import.meta.env.VITE_API_BASE || "";
+export const BASE = import.meta.env.VITE_API_BASE || "";
 
 let authToken = null;
 export function setToken(t) { authToken = t; }
+export function getToken() { return authToken; }
 
 async function request(path, { method = "GET", body } = {}) {
   const res = await fetch(`${BASE}/api${path}`, {
