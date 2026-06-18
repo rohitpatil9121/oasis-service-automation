@@ -109,10 +109,10 @@ router.post("/:id/schedule", requireRole("owner", "manager"), async (req, res, n
 // Change status.
 router.patch("/:id/status", requireRole("owner", "manager"), async (req, res, next) => {
   try {
-    const { status } = req.body || {};
+    const { status, reason } = req.body || {};
     if (!STATUSES.includes(status))
       return res.status(400).json({ error: "invalid status", allowed: STATUSES });
-    res.json({ ticket: await tickets.updateStatus(req.params.id, status, req.user.id) });
+    res.json({ ticket: await tickets.updateStatus(req.params.id, status, req.user.id, reason) });
   } catch (e) { next(e); }
 });
 

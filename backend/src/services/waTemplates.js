@@ -66,3 +66,18 @@ export function visitScheduledCustomer({ ticketNumber, customerName, when }) {
       `Ref: ${ticketNumber}`,
   };
 }
+
+// {{1}} customer name  {{2}} ticket  {{3}} reason
+export function requestCancelledCustomer({ ticketNumber, customerName, reason }) {
+  return {
+    template: {
+      name: "request_cancelled_customer",
+      language: WA_LANG,
+      variables: [v(customerName), v(ticketNumber), v(reason)],
+    },
+    body:
+      `Hi ${customerName}, your Oasis Globe service request ${ticketNumber} has been cancelled. ` +
+      `Reason: ${reason}\n` +
+      `If this isn't right or you'd like to raise it again, just reply here.`,
+  };
+}
