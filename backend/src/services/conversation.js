@@ -48,6 +48,46 @@ export async function setCustomerBot(customerId, on) {
   return { on };
 }
 
+// Short, single-line label for a quoted ("reply to") message.
+function quoteSnippet(body, hasMedia) {
+  const t = (body || "").replace(/\s+/g, " ").trim();
+  if (t) return t.length > 120 ? t.slice(0, 120) + "…" : t;
+  return hasMedia ? "📎 Attachment" : "";
+}
+
+// Merge inbound (wa_inbound) + outbound (notifications) rows into one sorted
+// thread, resolving "reply to" quotes on BOTH sides:
+//  - outbound: the manager's reply stores a snapshot (reply_to_body).
+//  - inbound:  the customer/technician quoted a message — we only get its wamid
+//    (reply_to_wamid), so we look the text up among messages in this thread.
+function buildThread(inboundRows = [], outboundRows = []) {
+  const byWamid = new Map(); // wamid -> { body, media }
+  for (const m of inboundRows) if (m.wa_message_id) byWamid.set(m.wa_message_id, { body: m.body, media: !!m.media_id });
+  for (const m of outboundRows) if (m.provider_sid) byWamid.set(m.provider_sid, { body: m.body, media: false });
+  const resolve = (wamid) => {
+    if (!wamid) return null;
+    const q = byWamid.get(wamid);
+    return q ? { body: quoteSnippet(q.body, q.media) } : null;
+  };
+
+  return [
+    ...inboundRows.map((m) => ({
+      id: "in-" + m.id, dir: "in", body: m.body, at: m.created_at,
+      mediaId: m.media_id || null, mediaType: m.media_type || null,
+      waMessageId: m.wa_message_id || null,
+      replyTo: resolve(m.reply_to_wamid),
+    })),
+    ...outboundRows.map((m) => ({
+      id: "out-" + m.id, dir: "out", body: m.body,
+      at: m.sent_at || m.created_at, status: m.status, audience: m.audience,
+      waMessageId: m.provider_sid || null,
+      replyTo: m.reply_to_body ? { body: quoteSnippet(m.reply_to_body, false) } : resolve(m.reply_to_wamid),
+    })),
+  ]
+    .filter((m) => m.body || m.mediaId)
+    .sort((a, b) => new Date(a.at) - new Date(b.at));
+}
+
 export async function getConversation(ticketId) {
   const ticket = await getTicket(ticketId);
   const phone = ticket.customer?.phone;
@@ -62,21 +102,7 @@ export async function getConversation(ticketId) {
       .eq("recipient", phone).in("audience", ["customer", "agent", "bot"]),
   ]);
 
-  const messages = [
-    ...(inbound.data || []).map((m) => ({
-      id: "in-" + m.id, dir: "in", body: m.body, at: m.created_at,
-      mediaId: m.media_id || null, mediaType: m.media_type || null,
-      waMessageId: m.wa_message_id || null,
-    })),
-    ...(outbound.data || []).map((m) => ({
-      id: "out-" + m.id, dir: "out", body: m.body,
-      at: m.sent_at || m.created_at, status: m.status, audience: m.audience,
-      waMessageId: m.provider_sid || null,
-      replyTo: m.reply_to_body ? { body: m.reply_to_body } : null,
-    })),
-  ]
-    .filter((m) => m.body || m.mediaId)
-    .sort((a, b) => new Date(a.at) - new Date(b.at));
+  const messages = buildThread(inbound.data, outbound.data);
 
   return {
     phone, customer: ticket.customer.full_name, messages,
@@ -94,22 +120,12 @@ export async function getTechnicianConversation(technicianId) {
 
   const [inbound, outbound] = await Promise.all([
     supabase.from("wa_inbound").select("*").eq("from_phone", phone),
-    supabase.from("notifications").select("id, body, sent_at, created_at, status, audience")
+    // select("*") to get provider_sid + reply-context columns for quote resolution.
+    supabase.from("notifications").select("*")
       .eq("recipient", phone).in("audience", ["technician", "agent"]),
   ]);
 
-  const messages = [
-    ...(inbound.data || []).map((m) => ({
-      id: "in-" + m.id, dir: "in", body: m.body, at: m.created_at,
-      mediaId: m.media_id || null, mediaType: m.media_type || null,
-    })),
-    ...(outbound.data || []).map((m) => ({
-      id: "out-" + m.id, dir: "out", body: m.body,
-      at: m.sent_at || m.created_at, status: m.status, audience: m.audience,
-    })),
-  ]
-    .filter((m) => m.body || m.mediaId)
-    .sort((a, b) => new Date(a.at) - new Date(b.at));
+  const messages = buildThread(inbound.data, outbound.data);
 
   return { phone, name: tech.full_name, messages };
 }

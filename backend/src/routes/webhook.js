@@ -22,11 +22,12 @@ const pending = new Map(); // phone -> { parts: [], send, timer }
 // Persist the inbound message FIRST (so the inquiry is never lost even if intake
 // errors), then decide whether the bot should respond at all.
 // Returns false when the message must be swallowed (staff / manager handoff).
-async function logInbound(from, text, { mediaId, mediaType, waMessageId } = {}) {
+async function logInbound(from, text, { mediaId, mediaType, waMessageId, replyToWamid } = {}) {
   const phone = normalizePhone(from);
   const row = { from_phone: phone, body: text };
   if (mediaId) { row.media_id = mediaId; row.media_type = mediaType || null; }
   if (waMessageId) row.wa_message_id = waMessageId; // for native WhatsApp "reply" quoting
+  if (replyToWamid) row.reply_to_wamid = replyToWamid; // the message THIS one quotes (customer/tech tagged a reply)
   let { error } = await supabase.from("wa_inbound").insert(row);
   if (error) {
     // An optional-feature migration may not be run yet (e.g. media_* or
@@ -128,10 +129,11 @@ router.post("/whatsapp", async (req, res) => {
       const mediaId = msg.image?.id || msg.video?.id || msg.document?.id || null;
       const mediaType = msg.image?.mime_type || msg.video?.mime_type || msg.document?.mime_type || null;
       const waMessageId = msg.id || null; // wamid — lets the manager later "reply" to this exact message
+      const replyToWamid = msg.context?.id || null; // set when the sender quoted an earlier message
       log.info(`[WA IN] ${from}: ${text || (mediaId ? `(media ${mediaType})` : "(non-text message)")}`);
 
       // Debounced: waits for the customer to finish before the bot replies once.
-      await enqueueReply(from, text, { mediaId, mediaType, waMessageId }, (reply) => sendWhatsApp(from, reply));
+      await enqueueReply(from, text, { mediaId, mediaType, waMessageId, replyToWamid }, (reply) => sendWhatsApp(from, reply));
     } catch (e) {
       log.error("meta webhook error:", e.message);
     }

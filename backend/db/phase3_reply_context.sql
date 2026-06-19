@@ -7,6 +7,7 @@
 --
 -- Run this in the Supabase SQL Editor before the reply feature works.
 
-alter table wa_inbound    add column if not exists wa_message_id text;   -- inbound wamid (Meta msg.id)
-alter table notifications add column if not exists reply_to_wamid text;  -- wamid this message quotes
-alter table notifications add column if not exists reply_to_body  text;  -- snapshot of the quoted text (for display)
+alter table wa_inbound    add column if not exists wa_message_id  text;   -- inbound wamid (Meta msg.id)
+alter table wa_inbound    add column if not exists reply_to_wamid text;   -- wamid the customer/technician quoted
+alter table notifications add column if not exists reply_to_wamid text;   -- wamid this message quotes
+alter table notifications add column if not exists reply_to_body  text;   -- snapshot of the quoted text (for display)

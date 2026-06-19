@@ -73,6 +73,13 @@ export default function TechnicianChatPanel({ technician }) {
                   ? "rounded-br-sm bg-emerald-600 text-white"
                   : "rounded-bl-sm border border-slate-200 bg-white text-slate-700"
               }`}>
+                {m.replyTo?.body && (
+                  <div className={`mb-1 border-l-2 pl-2 text-[11px] ${
+                    m.dir === "out" ? "border-emerald-200 text-emerald-100" : "border-slate-300 text-slate-500"
+                  }`}>
+                    {m.replyTo.body}
+                  </div>
+                )}
                 {m.mediaId && (
                   <MediaBubble mediaId={m.mediaId} mediaType={m.mediaType} isOutbound={m.dir === "out"} />
                 )}
