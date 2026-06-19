@@ -2,7 +2,10 @@
 // Collects mandatory fields IN ORDER: name -> phone -> address -> issue.
 // A request can NEVER be completed until all four are captured & valid.
 import { supabase } from "../config/supabase.js";
-import { createTicket, getLatestTicketByCustomerPhone } from "./tickets.js";
+import {
+  getLatestTicketByCustomerPhone, upsertCustomerByPhone, createDraftTicket,
+  getOpenTicketForCustomer, updateTicketIntake, completeIntake,
+} from "./tickets.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { log } from "../lib/logger.js";
 
@@ -49,6 +52,28 @@ async function createSession(phone) {
   return data;
 }
 
+// Begin a fresh intake AND attach a draft ticket right away, so the request
+// shows on the dashboard from the customer's very first message (even just
+// "hi") — the Service Manager never misses an inbound, including when an
+// earlier ticket was already closed. Mirrors the AI-intake behaviour.
+async function startSession(phone) {
+  const session = await createSession(phone);
+  try {
+    const customer = await upsertCustomerByPhone(phone);
+    // One active request at a time: reuse the customer's existing OPEN ticket
+    // (closed/cancelled are excluded), otherwise start a new draft.
+    const open = await getOpenTicketForCustomer(customer.id);
+    const ticket = open || await createDraftTicket({ customerId: customer.id });
+    await updateSession(session.id, { customer_id: customer.id, ticket_id: ticket.id });
+    session.customer_id = customer.id;
+    session.ticket_id = ticket.id;
+    log.info(`Intake draft -> ${ticket.ticket_number} for ${phone} (${open ? "existing open" : "new"})`);
+  } catch (e) {
+    log.error("draft attach failed:", e.message);
+  }
+  return session;
+}
+
 async function updateSession(id, patch) {
   const { data, error } = await supabase
     .from("intake_sessions").update(patch).eq("id", id).select().single();
@@ -67,7 +92,7 @@ export async function handleInbound({ fromPhone, text }) {
   if (RESET_WORDS.includes(lower)) {
     const active = await getActiveSession(phone);
     if (active) await updateSession(active.id, { state: "COMPLETED" }); // close stale
-    await createSession(phone);
+    await startSession(phone);
     return GREETING;
   }
 
@@ -80,9 +105,9 @@ export async function handleInbound({ fromPhone, text }) {
     return "You don't have any service requests yet.\n\n" + GREETING;
   }
 
-  // No active session -> greet and begin.
+  // No active session -> greet and begin (draft ticket appears immediately).
   if (!session) {
-    session = await createSession(phone);
+    session = await startSession(phone);
     return GREETING;
   }
 
@@ -94,6 +119,8 @@ export async function handleInbound({ fromPhone, text }) {
         return "I need your name to continue. " + PROMPTS.AWAITING_NAME;
       data.name = body;
       await updateSession(session.id, { state: "AWAITING_PHONE", data });
+      // Fill the name into the draft so the dashboard updates live.
+      try { await upsertCustomerByPhone(phone, { full_name: body }); } catch (e) { log.error("name update:", e.message); }
       // Offer the WhatsApp number as a quick default.
       return `Nice to meet you, ${body}!\n` + PROMPTS.AWAITING_PHONE +
              `\n(Reply *same* to use this WhatsApp number ${phone}.)`;
@@ -113,6 +140,8 @@ export async function handleInbound({ fromPhone, text }) {
         return "Please give a bit more detail on the address. " + PROMPTS.AWAITING_ADDRESS;
       data.address = body;
       await updateSession(session.id, { state: "AWAITING_ISSUE", data });
+      // Fill the address into the draft so the dashboard updates live.
+      try { await upsertCustomerByPhone(phone, { address: body }); } catch (e) { log.error("address update:", e.message); }
       return PROMPTS.AWAITING_ISSUE;
     }
 
@@ -133,15 +162,22 @@ export async function handleInbound({ fromPhone, text }) {
         return "I'm missing some details. " + PROMPTS[stateFor];
       }
 
-      // Create the tracked ticket.
-      const ticket = await createTicket({
-        customer: { full_name: data.name, phone: data.phone, address: data.address },
-        issue_description: data.issue,
-        source: "whatsapp",
-      });
+      // The draft ticket was created at the start of the session; fill in the
+      // final details and mark it complete (which alerts the managers). If the
+      // draft is somehow missing, create one now as a fallback.
+      const customer = await upsertCustomerByPhone(phone, { full_name: data.name, address: data.address });
+      let ticketId = session.ticket_id;
+      if (!ticketId) {
+        const draft = await createDraftTicket({ customerId: customer.id });
+        ticketId = draft.id;
+      }
+      await updateTicketIntake(ticketId, { issue: data.issue });
+      // completeIntake does NOT message the customer — we send the single
+      // confirmation below, so there's no duplicate.
+      const ticket = await completeIntake(ticketId);
       await updateSession(session.id, {
         state: "COMPLETED", data,
-        customer_id: ticket.customer.id, ticket_id: ticket.id,
+        customer_id: customer.id, ticket_id: ticketId,
       });
 
       log.info(`Intake complete for ${phone} -> ${ticket.ticket_number}`);
