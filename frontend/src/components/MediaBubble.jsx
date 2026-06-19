@@ -2,14 +2,13 @@ import { BASE, getToken } from "../api/client.js";
 
 // Renders WhatsApp media (image / video / document) inside a chat bubble.
 // mediaType is the MIME type, e.g. "image/jpeg", "video/mp4", "application/pdf".
-// Images/videos render inline in the chat bubble — no new tab, no overlay.
-export default function MediaBubble({ mediaId, mediaType }) {
+export default function MediaBubble({ mediaId, mediaType, isOutbound }) {
   const url = `${BASE}/api/media/${mediaId}?t=${getToken()}`;
   const type = (mediaType || "").toLowerCase();
 
   if (type.startsWith("image/")) {
     return (
-      <div className="mb-1">
+      <a href={url} target="_blank" rel="noreferrer" className="mb-1 block">
         <img
           src={url}
           alt="Image"
@@ -21,9 +20,9 @@ export default function MediaBubble({ mediaId, mediaType }) {
         />
         <span style={{ display: "none" }}
           className="inline-flex items-center gap-1 text-xs opacity-70">
-          🖼️ Image (couldn't load)
+          🖼️ Image (tap to open)
         </span>
-      </div>
+      </a>
     );
   }
 
@@ -42,13 +41,17 @@ export default function MediaBubble({ mediaId, mediaType }) {
         />
         <span style={{ display: "none" }}
           className="inline-flex items-center gap-1 text-xs opacity-70">
-          🎥 Video (couldn't load)
+          🎥 Video —{" "}
+          <a href={url} target="_blank" rel="noreferrer"
+            className={`underline ${isOutbound ? "text-emerald-100" : "text-brand"}`}>
+            open
+          </a>
         </span>
       </div>
     );
   }
 
-  // Document / audio / unknown — these can't preview inline, so download/open.
+  // Document / audio / unknown — show a download link.
   const label = type.startsWith("audio/") ? "🎤 Voice message"
     : type === "application/pdf" ? "📄 PDF document"
     : "📎 Attachment";
