@@ -18,6 +18,14 @@ export default function ChatPanel({ ticket }) {
   const [botOn, setBotOn] = useState(true);
   const [replyTo, setReplyTo] = useState(null); // message the manager is quoting
   const scrollRef = useRef(null);
+  const atBottomRef = useRef(true); // only auto-scroll when the user is already at the bottom
+
+  // Track whether the user is near the bottom; if they scrolled up to read older
+  // messages, we won't yank them down on the next poll.
+  function onScroll(e) {
+    const el = e.currentTarget;
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  }
 
   const load = useCallback(async () => {
     try {
@@ -40,7 +48,7 @@ export default function ChatPanel({ ticket }) {
   }, [load]);
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (scrollRef.current && atBottomRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
   // A short label for a quoted message (handles media-only messages).
@@ -52,6 +60,7 @@ export default function ChatPanel({ ticket }) {
     if (!body) return;
     const quoting = replyTo;
     setSending(true); setWarn("");
+    atBottomRef.current = true; // sending my own message → scroll to show it
     // optimistic
     setMessages((m) => [...m, { id: "tmp-" + Date.now(), dir: "out", body, at: new Date().toISOString(), pending: true, replyTo: quoting ? { body: snippet(quoting) } : null }]);
     setText(""); setReplyTo(null);
@@ -82,7 +91,7 @@ export default function ChatPanel({ ticket }) {
       </div>
 
       {/* messages */}
-      <div ref={scrollRef} className="h-72 space-y-2 overflow-y-auto bg-slate-50 px-3 py-3">
+      <div ref={scrollRef} onScroll={onScroll} className="h-72 space-y-2 overflow-y-auto bg-slate-50 px-3 py-3">
         {!loaded ? (
           <p className="pt-8 text-center text-sm text-slate-400">Loading…</p>
         ) : messages.length === 0 ? (
