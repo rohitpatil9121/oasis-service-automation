@@ -37,7 +37,7 @@ export default function TicketTable({ tickets, emptyHint }) {
                   {t.technician?.full_name || <span className="text-slate-300">Unassigned</span>}
                 </td>
                 <td className="px-4 py-3">
-                  {t.intake_complete === false
+                  {t.intake_complete === false && t.status === "NEW"
                     ? <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />Collecting</span>
                     : <StatusBadge status={t.status} />}
                 </td>

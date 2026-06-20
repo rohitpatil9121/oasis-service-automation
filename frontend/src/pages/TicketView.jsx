@@ -103,7 +103,7 @@ export default function TicketView() {
 
       {err && <div className="mb-4"><Alert>{err}</Alert></div>}
 
-      {ticket.intake_complete === false && (
+      {ticket.intake_complete === false && ticket.status === "NEW" && (
         <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
           <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
           Collecting details from the customer on WhatsApp — this request updates live as they reply.
