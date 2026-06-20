@@ -85,7 +85,8 @@ Sent to the assigned technician when the manager assigns them a ticket.
 
 Customer: {{2}} ({{3}})
 Address: {{4}}
-Issue: {{5}}
+Appliance: {{5}}
+Issue: {{6}}
 
 Please contact the customer and proceed with the visit.
 ```
@@ -97,7 +98,11 @@ Please contact the customer and proceed with the visit.
 | {{2}} | Customer name | `Mohit Sharma` |
 | {{3}} | Customer phone | `+919812345678` |
 | {{4}} | Address | `12 Shivaji Nagar, Pune 411005` |
-| {{5}} | Issue | `AC not cooling` |
+| {{5}} | Appliance | `Split AC 1.5 ton` |
+| {{6}} | Issue | `AC not cooling` |
+
+> Note: appliance can be blank for some tickets — the code sends `—` in that
+> case (Meta rejects empty variables), so the message still goes through.
 
 ---
 

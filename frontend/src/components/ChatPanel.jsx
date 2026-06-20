@@ -9,7 +9,7 @@ const time = (iso) => new Date(iso).toLocaleString([], { day: "2-digit", month: 
 // Inline WhatsApp chat with the ticket's customer. Shows the full thread
 // (inbound + outbound) and lets the manager send a free-form message — handy
 // for asking the customer to clarify a missing detail.
-export default function ChatPanel({ ticket }) {
+export default function ChatPanel({ ticket, heightClass = "h-72" }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -91,7 +91,7 @@ export default function ChatPanel({ ticket }) {
       </div>
 
       {/* messages */}
-      <div ref={scrollRef} onScroll={onScroll} className="h-72 space-y-2 overflow-y-auto bg-slate-50 px-3 py-3">
+      <div ref={scrollRef} onScroll={onScroll} className={`${heightClass} space-y-2 overflow-y-auto bg-slate-50 px-3 py-3`}>
         {!loaded ? (
           <p className="pt-8 text-center text-sm text-slate-400">Loading…</p>
         ) : messages.length === 0 ? (

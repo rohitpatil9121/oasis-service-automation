@@ -27,6 +27,9 @@ export function technicianNewJob({ ticketNumber, customerName, customerPhone, ad
     template: {
       name: "technician_new_job",
       language: WA_LANG,
+      // 6 placeholders ({{1}}–{{6}}): ticket, customer, phone, address,
+      // appliance, issue. The Meta template MUST have all 6 or it fails with
+      // error #132000 (number of parameters does not match).
       variables: [v(ticketNumber), v(customerName), v(customerPhone), v(address), v(appliance), v(issue)],
     },
     body:

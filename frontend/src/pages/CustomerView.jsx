@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
 import StatusBadge from "../components/StatusBadge.jsx";
+import ChatPanel from "../components/ChatPanel.jsx";
 import { Card, Icon, Spinner, Alert } from "../components/ui.jsx";
 
 const fmt = (d) => (d ? new Date(d).toLocaleString() : "—");
@@ -33,6 +34,9 @@ export default function CustomerView() {
   const solved = tickets.filter((t) => t.status === "CLOSED").length;
   const open = tickets.filter((t) => OPEN.includes(t.status)).length;
   const cancelled = tickets.filter((t) => t.status === "CANCELLED").length;
+  // The WhatsApp thread is reconstructed from the customer's phone, so any of
+  // their tickets works as an entry point — use the most recent one.
+  const chatTicket = tickets.length ? { id: tickets[0].id, customer } : null;
 
   return (
     <div>
@@ -57,6 +61,16 @@ export default function CustomerView() {
         <Stat label="Open" value={open} color="amber" />
         <Stat label="Cancelled" value={cancelled} color="slate" />
       </div>
+
+      {/* WhatsApp chat */}
+      {chatTicket && (
+        <div className="mb-6">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700">WhatsApp chat</h2>
+          <div className="lg:max-w-xl">
+            <ChatPanel ticket={chatTicket} heightClass="h-[32rem]" />
+          </div>
+        </div>
+      )}
 
       {/* History */}
       <h2 className="mb-3 text-sm font-semibold text-slate-700">Request history</h2>
