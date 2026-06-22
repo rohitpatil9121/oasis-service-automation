@@ -37,7 +37,7 @@ router.get("/:id/conversation", requireRole("owner", "manager"), async (req, res
 });
 
 router.post("/:id/message", requireRole("owner", "manager"), async (req, res, next) => {
-  try { res.json(await sendTechnicianMessage({ technicianId: req.params.id, body: req.body?.body })); }
+  try { res.json(await sendTechnicianMessage({ technicianId: req.params.id, body: req.body?.body, replyTo: req.body?.replyTo })); }
   catch (e) { next(e); }
 });
 

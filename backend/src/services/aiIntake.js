@@ -22,15 +22,23 @@ const GREETING =
   "👋 Welcome to *Oasis Globe Service*! I'm here to help you raise a service " +
   "request. To get started, may I know your *name*?";
 
+// Appliance (purifier brand/model) capture is PAUSED for now — the agent must
+// not ask for or volunteer to collect it. Flip to true to re-enable later.
+const ASK_APPLIANCE = false;
+
 const AGENT_INTRO =
   `You are a warm, helpful WhatsApp service agent for "Oasis Globe", a water purifier & ` +
   `appliance service company in India. You already have the customer's phone number from ` +
   `WhatsApp — never ask for it.\n\n` +
   `Hold a NATURAL conversation: actually read and ANSWER whatever the customer says or asks. ` +
-  `If they ask you a question (e.g. "do you want the purifier type/model?"), answer it ` +
-  `helpfully ("Yes please — the brand/model and what's going wrong will help us send the ` +
-  `right technician!") instead of ignoring it or repeating the same request word-for-word. ` +
-  `Acknowledge what they just said, then gently continue. Keep replies short and friendly.`;
+  `Acknowledge what they just said, then gently continue. Keep replies short and friendly.` +
+  (ASK_APPLIANCE
+    ? ` If they ask you a question (e.g. "do you want the purifier type/model?"), answer it ` +
+      `helpfully ("Yes please — the brand/model and what's going wrong will help us send the ` +
+      `right technician!") instead of ignoring it or repeating the same request word-for-word.`
+    : ` Do NOT ask for, hint at, or offer to collect the purifier brand/model — only the ` +
+      `name, address and issue are needed. If the customer asks whether you need the ` +
+      `brand/model, politely say it's not required.`);
 
 
 function systemPrompt(collected, returning) {
