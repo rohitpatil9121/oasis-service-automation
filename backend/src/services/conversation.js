@@ -130,15 +130,21 @@ export async function getTechnicianConversation(technicianId) {
   return { phone, name: tech.full_name, messages };
 }
 
-// Manager replies to a technician on WhatsApp.
-export async function sendTechnicianMessage({ technicianId, body }) {
+// Manager replies to a technician on WhatsApp. `replyTo` (optional) quotes an
+// earlier message so it renders as a native WhatsApp reply (Meta) and shows in
+// the thread; mirrors sendCustomerMessage.
+export async function sendTechnicianMessage({ technicianId, body, replyTo }) {
   const text = (body || "").trim();
   if (!text) { const e = new Error("Message is empty"); e.status = 400; throw e; }
   const { data: tech } = await supabase
     .from("users").select("id, phone").eq("id", technicianId).maybeSingle();
   if (!tech?.phone) { const e = new Error("Technician has no phone"); e.status = 400; throw e; }
 
-  const id = await queueNotification({ recipient: tech.phone, audience: "agent", body: text });
+  const quote = replyTo?.body
+    ? { body: String(replyTo.body).slice(0, 300), wamid: replyTo.wamid || null }
+    : null;
+
+  const id = await queueNotification({ recipient: tech.phone, audience: "agent", body: text, replyTo: quote });
   const { data } = await supabase
     .from("notifications").select("status, last_error").eq("id", id).maybeSingle();
   return { ok: data?.status === "SENT", status: data?.status, error: data?.last_error || null };

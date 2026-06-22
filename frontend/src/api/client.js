@@ -50,7 +50,7 @@ export const api = {
   getTechnician: (id) => request(`/technicians/${id}`),
   removeTechnician: (id) => request(`/technicians/${id}`, { method: "DELETE" }),
   getTechnicianConversation: (id) => request(`/technicians/${id}/conversation`),
-  sendTechnicianMessage: (id, body) => request(`/technicians/${id}/message`, { method: "POST", body: { body } }),
+  sendTechnicianMessage: (id, body, replyTo) => request(`/technicians/${id}/message`, { method: "POST", body: { body, replyTo } }),
   // stock (bulk, per technician)
   listStock: () => request("/stock"),
   createStockItem: (payload) => request("/stock", { method: "POST", body: payload }),

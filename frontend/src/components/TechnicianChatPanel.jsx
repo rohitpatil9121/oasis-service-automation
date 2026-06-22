@@ -14,6 +14,7 @@ export default function TechnicianChatPanel({ technician }) {
   const [sending, setSending] = useState(false);
   const [warn, setWarn] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [replyTo, setReplyTo] = useState(null); // message the manager is quoting
   const scrollRef = useRef(null);
   const atBottomRef = useRef(true); // only auto-scroll when the user is already at the bottom
 
@@ -41,16 +42,21 @@ export default function TechnicianChatPanel({ technician }) {
     if (scrollRef.current && atBottomRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
+  // A short label for a quoted message (handles media-only messages).
+  const snippet = (m) => (m?.body || "").trim() || (m?.mediaId ? "📎 Attachment" : "");
+
   async function send(e) {
     e.preventDefault();
     const body = text.trim();
     if (!body) return;
+    const quoting = replyTo;
     setSending(true); setWarn("");
     atBottomRef.current = true; // sending my own message → scroll to show it
-    setMessages((m) => [...m, { id: "tmp-" + Date.now(), dir: "out", body, at: new Date().toISOString(), pending: true }]);
-    setText("");
+    setMessages((m) => [...m, { id: "tmp-" + Date.now(), dir: "out", body, at: new Date().toISOString(), pending: true, replyTo: quoting ? { body: snippet(quoting) } : null }]);
+    setText(""); setReplyTo(null);
     try {
-      const res = await api.sendTechnicianMessage(technician.id, body);
+      const payload = quoting ? { wamid: quoting.waMessageId || null, body: snippet(quoting) } : null;
+      const res = await api.sendTechnicianMessage(technician.id, body, payload);
       if (!res.ok) setWarn("Couldn't deliver — the technician may be outside WhatsApp's 24-hour window. They need to message first.");
       await load();
     } catch (err) { setWarn(err.message); } finally { setSending(false); }
@@ -76,7 +82,14 @@ export default function TechnicianChatPanel({ technician }) {
           <p className="pt-8 text-center text-sm text-slate-400">No messages yet.</p>
         ) : (
           messages.map((m) => (
-            <div key={m.id} className={`flex ${m.dir === "out" ? "justify-end" : "justify-start"}`}>
+            <div key={m.id} className={`group flex items-center gap-1.5 ${m.dir === "out" ? "justify-end" : "justify-start"}`}>
+              {/* reply button (left of outbound bubbles) */}
+              {m.dir === "out" && (
+                <button onClick={() => setReplyTo(m)} title="Reply to this message"
+                  className="opacity-0 transition group-hover:opacity-100 text-slate-400 hover:text-emerald-600">
+                  <Icon name="reply" className="h-3.5 w-3.5" />
+                </button>
+              )}
               <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${
                 m.dir === "out"
                   ? "rounded-br-sm bg-emerald-600 text-white"
@@ -97,12 +110,35 @@ export default function TechnicianChatPanel({ technician }) {
                   {m.pending ? "sending…" : time(m.at)}{m.status === "FAILED" ? " · failed" : ""}
                 </div>
               </div>
+              {/* reply button (right of inbound bubbles) */}
+              {m.dir === "in" && (
+                <button onClick={() => setReplyTo(m)} title="Reply to this message"
+                  className="opacity-0 transition group-hover:opacity-100 text-slate-400 hover:text-emerald-600">
+                  <Icon name="reply" className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           ))
         )}
       </div>
 
       {warn && <div className="border-t border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">{warn}</div>}
+
+      {/* reply preview */}
+      {replyTo && (
+        <div className="flex items-start gap-2 border-t border-slate-100 bg-slate-50 px-3 py-2">
+          <div className="flex-1 border-l-2 border-emerald-500 pl-2 text-xs text-slate-600">
+            <div className="font-semibold text-emerald-700">
+              Replying to {replyTo.dir === "out" ? "you" : technician.full_name || "technician"}
+            </div>
+            <div className="truncate">{snippet(replyTo)}</div>
+          </div>
+          <button onClick={() => setReplyTo(null)} title="Cancel reply"
+            className="text-slate-400 hover:text-slate-600">
+            <Icon name="x" className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       <form onSubmit={send} className="flex items-center gap-2 border-t border-slate-100 p-2.5">
         <input
