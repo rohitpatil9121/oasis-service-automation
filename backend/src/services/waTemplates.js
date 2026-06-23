@@ -7,6 +7,27 @@ function v(val) {
   return s || "—";
 }
 
+// Sent to the CUSTOMER when the Service Manager creates a request on their
+// behalf (e.g. a KENT-referred lead). The customer hasn't messaged us, so we're
+// outside the 24-hour window — this approved template is how we open the chat.
+// {{2}} is the lead source ("KENT" / "our service team").
+export function customerRequestReceived({ customerName, source, ticketNumber, issue, address }) {
+  return {
+    template: {
+      name: "customer_request_received",
+      language: WA_LANG,
+      variables: [v(customerName), v(source), v(ticketNumber), v(issue), v(address)],
+    },
+    body:
+      `Hello ${customerName}, we have received your water purifier service request from ${source}.\n\n` +
+      `Service request ID: ${ticketNumber}\n` +
+      `Service: ${issue}\n` +
+      `Address: ${address || "N/A"}\n\n` +
+      `We will assign a technician and update you here.\n\n` +
+      `If any detail is incorrect, please reply to this message.`,
+  };
+}
+
 export function managerNewRequest({ ticketNumber, customerName, customerPhone, address, issue }) {
   return {
     template: {

@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { api } from "../api/client.js";
-import { Modal, Button, Field, Input, Textarea, Alert } from "./ui.jsx";
+import { Modal, Button, Field, Input, Textarea, Select, Alert } from "./ui.jsx";
 
 // Manual ticket entry — for requests that come in by phone call / walk-in.
 // Uses the same createTicket path, so the customer still gets a WhatsApp
 // confirmation and managers still get alerted.
 export default function NewTicketModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({ full_name: "", phone: "", address: "", issue_description: "" });
+  const [form, setForm] = useState({ full_name: "", phone: "", address: "", issue_description: "", lead_source: "our service team" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
@@ -28,6 +28,12 @@ export default function NewTicketModal({ onClose, onCreated }) {
         <Field label="Phone (WhatsApp if possible)"><Input value={form.phone} onChange={set("phone")} required placeholder="98765 43210" /></Field>
         <Field label="Address"><Textarea value={form.address} onChange={set("address")} rows={2} /></Field>
         <Field label="Issue description"><Textarea value={form.issue_description} onChange={set("issue_description")} rows={3} required /></Field>
+        <Field label="Lead source" hint="Shown to the customer in their request confirmation.">
+          <Select value={form.lead_source} onChange={set("lead_source")}>
+            <option value="our service team">Oasis Globe (our service team)</option>
+            <option value="KENT">KENT</option>
+          </Select>
+        </Field>
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button type="submit" disabled={busy}>{busy ? "Creating…" : "Create request"}</Button>
