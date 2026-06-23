@@ -1,6 +1,6 @@
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
-import { managerNewRequest, visitScheduledTechnician, visitScheduledCustomer, requestCancelledCustomer } from "./waTemplates.js";
+import { customerRequestReceived, managerNewRequest, visitScheduledTechnician, visitScheduledCustomer, requestCancelledCustomer } from "./waTemplates.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
@@ -88,24 +88,28 @@ async function getManagerRecipients() {
   return [...phones];
 }
 
-export async function createTicket({ customer, issue_description, source = "whatsapp", created_by = null }) {
+export async function createTicket({ customer, issue_description, source = "whatsapp", lead_source = null, created_by = null }) {
   const cust = customer.id ? customer : await upsertCustomer(customer);
   const { data: ticket, error } = await supabase
     .from("tickets")
-    .insert({ customer_id: cust.id, issue_description, source, created_by, status: "NEW" })
+    .insert({ customer_id: cust.id, issue_description, source, lead_source, created_by, status: "NEW" })
     .select("*").single();
   if (error) throw new Error("createTicket: " + error.message);
 
   await logEvent(ticket.id, "created", { to_status: "NEW", actor_id: created_by,
-    meta: { source } });
+    meta: { source, lead_source } });
 
-  // 1) Confirmation to the customer.
+  // 1) Confirmation to the customer. Sent as an approved TEMPLATE: a manually-
+  // created request means the customer hasn't messaged us, so we're outside the
+  // 24-hour window and free-form text would silently fail. The template opens
+  // the chat; {{2}} carries the lead source (KENT / our service team).
+  const custTpl = customerRequestReceived({
+    customerName: cust.full_name, source: lead_source || "our service team",
+    ticketNumber: ticket.ticket_number, issue: issue_description, address: cust.address,
+  });
   await queueNotification({
     recipient: cust.phone, audience: "customer", ticketId: ticket.id,
-    body: `✅ Thanks ${cust.full_name}! Your request is logged.\n` +
-          `Ticket: *${ticket.ticket_number}*\n` +
-          `Issue: ${issue_description}\n` +
-          `Our team will assign a technician shortly.`,
+    body: custTpl.body, template: custTpl.template,
   });
   // 2) Alert the Service Manager(s). Managers rarely have an open 24-hour
   const managers = await getManagerRecipients();

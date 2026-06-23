@@ -18,9 +18,20 @@ const RESET_WORDS = ["restart", "reset", "start over", "cancel"];
 const STATUS_WORDS = ["status", "track"];
 const MAX_HISTORY = 20; // keep the last N turns sent to the model
 
+// First reply when a customer starts a NEW conversation. Fixed (not AI-generated)
+// so it goes out reliably every single time, asking for all details at once.
 const GREETING =
-  "👋 Welcome to *Oasis Globe Service*! I'm here to help you raise a service " +
-  "request. To get started, may I know your *name*?";
+  "Hi. This is Oasis Globe water purifier service support.\n\n" +
+  "Please share:\n" +
+  "1. Your name\n" +
+  "2. Service issue\n" +
+  "3. Service address\n" +
+  "4. Picture of your purifier";
+
+// Returning customers (name/address already on file) get a short, personal
+// opener instead of re-asking everything.
+const welcomeBack = (name) =>
+  `👋 Welcome back${name ? ", " + name : ""}! What service issue can we help you with today?`;
 
 // Appliance (purifier brand/model) capture is PAUSED for now — the agent must
 // not ask for or volunteer to collect it. Flip to true to re-enable later.
@@ -230,6 +241,7 @@ export async function handleInboundAI({ fromPhone, text }) {
     return "You don't have any service requests yet.\n\n" + GREETING;
   }
 
+  const isNewConversation = !session;
   if (!session) session = await createSession(phone, await buildInitialData(phone));
 
   const collected = session.data?.collected || {};
@@ -255,6 +267,17 @@ export async function handleInboundAI({ fromPhone, text }) {
       await saveSession(session.id, { customer_id: customer.id, ticket_id: ticket.id, data: { collected, history, returning } });
       log.info(`Intake -> ${ticket.ticket_number} for ${phone} (${open ? "existing open" : "new"})`);
     } catch (e) { log.error("draft attach failed:", e.message); }
+  }
+
+  // Brand-new conversation → send the fixed opener (or a short welcome for a
+  // returning customer) instead of routing the first message through the LLM.
+  // Guarantees the same reliable first reply every time a customer initiates.
+  if (isNewConversation) {
+    const opener = returning && collected.name ? welcomeBack(collected.name) : GREETING;
+    history.push({ role: "user", content: body });
+    history.push({ role: "assistant", content: opener });
+    await saveSession(session.id, { data: { collected, history, returning } });
+    return opener;
   }
 
   // Build the model context: fresh system prompt + recent turns + new message.

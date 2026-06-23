@@ -30,12 +30,12 @@ router.get("/:id/history", requireRole("owner", "manager", "technician"), async 
 // Manual ticket creation from the panel.
 router.post("/", requireRole("owner", "manager"), async (req, res, next) => {
   try {
-    const { full_name, phone, address, issue_description } = req.body || {};
+    const { full_name, phone, address, issue_description, lead_source } = req.body || {};
     if (!full_name || !phone || !issue_description)
       return res.status(400).json({ error: "full_name, phone, issue_description required" });
     const ticket = await tickets.createTicket({
       customer: { full_name, phone, address },
-      issue_description, source: "manual", created_by: req.user.id,
+      issue_description, source: "manual", lead_source, created_by: req.user.id,
     });
     res.status(201).json({ ticket });
   } catch (e) { next(e); }
