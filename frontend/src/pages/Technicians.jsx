@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
-import { Button, Card, Icon, Input, Field, Alert, EmptyState, Modal } from "../components/ui.jsx";
+import { Button, Card, Icon, Input, Field, PhoneInput, Alert, EmptyState, Modal } from "../components/ui.jsx";
 
 export default function Technicians() {
   const navigate = useNavigate();
@@ -116,7 +116,7 @@ function AddTechnician({ onClose, onAdded }) {
         <Alert>{err}</Alert>
         <Field label="Full name"><Input value={form.full_name} onChange={set("full_name")} required autoFocus /></Field>
         <Field label="Phone (WhatsApp)" hint="They receive job alerts here.">
-          <Input value={form.phone} onChange={set("phone")} required placeholder="98765 43210" />
+          <PhoneInput value={form.phone} onChange={set("phone")} required placeholder="98765 43210" />
         </Field>
         <Field label="Email (optional)"><Input type="email" value={form.email} onChange={set("email")} /></Field>
         <div className="flex justify-end gap-2 pt-1">

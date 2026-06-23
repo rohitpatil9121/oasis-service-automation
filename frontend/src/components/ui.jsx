@@ -63,6 +63,25 @@ const FIELD = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text
 export function Input(props) { return <input {...props} className={`${FIELD} ${props.className || ""}`} />; }
 export function Textarea(props) { return <textarea {...props} className={`${FIELD} ${props.className || ""}`} />; }
 export function Select(props) { return <select {...props} className={`${FIELD} ${props.className || ""}`} />; }
+// Phone input with a fixed +91 prefix so staff type only the local 10-digit
+// number (no country code). Reads/writes the full value ("+919876543210") and
+// fires onChange with a synthetic event, so it drops into existing form handlers.
+export function PhoneInput({ value, onChange, className = "", ...props }) {
+  let local = String(value || "").replace(/\D/g, "");
+  if (local.startsWith("91") && local.length > 10) local = local.slice(2); // strip stored country code
+  local = local.slice(0, 10);
+  const handle = (e) => {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+    onChange?.({ target: { value: digits ? "+91" + digits : "" } });
+  };
+  return (
+    <div className={`flex items-center rounded-lg border border-slate-300 bg-white text-sm transition focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20 ${className}`}>
+      <span className="select-none border-r border-slate-200 px-3 py-2 text-slate-500">+91</span>
+      <input {...props} value={local} onChange={handle} inputMode="numeric" maxLength={10}
+        className="w-full rounded-r-lg bg-transparent px-3 py-2 outline-none" />
+    </div>
+  );
+}
 export function Field({ label, children, hint }) {
   return (
     <label className="block">

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { Button, Input, Field, Alert, Icon } from "../components/ui.jsx";
+import { Button, Input, Field, PhoneInput, Alert, Icon } from "../components/ui.jsx";
 
 export default function Login() {
   const { loginPassword, requestOtp, loginOtp, user } = useAuth();
@@ -47,13 +47,13 @@ export default function Login() {
 
         {mode === "password" ? (
           <form onSubmit={doPassword} className="space-y-3">
-            <Field label="Phone"><Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+9190000…" autoFocus /></Field>
+            <Field label="Phone"><PhoneInput value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="90000 00000" autoFocus /></Field>
             <Field label="Password"><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" /></Field>
             <Button type="submit" className="mt-1 w-full" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</Button>
           </form>
         ) : (
           <form onSubmit={otpSent ? doVerifyOtp : doRequestOtp} className="space-y-3">
-            <Field label="Phone"><Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+9190000…" autoFocus /></Field>
+            <Field label="Phone"><PhoneInput value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="90000 00000" autoFocus /></Field>
             {!otpSent ? (
               <Button type="submit" className="w-full" disabled={busy}>
                 {busy ? "Sending…" : <><Icon name="phone" /> Send OTP via WhatsApp</>}

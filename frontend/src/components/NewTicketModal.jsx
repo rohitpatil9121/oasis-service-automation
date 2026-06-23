@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../api/client.js";
-import { Modal, Button, Field, Input, Textarea, Select, Alert } from "./ui.jsx";
+import { Modal, Button, Field, Input, Textarea, Select, PhoneInput, Alert } from "./ui.jsx";
 
 // Manual ticket entry — for requests that come in by phone call / walk-in.
 // Uses the same createTicket path, so the customer still gets a WhatsApp
@@ -25,7 +25,7 @@ export default function NewTicketModal({ onClose, onCreated }) {
       <form onSubmit={submit} className="space-y-3">
         <Alert>{err}</Alert>
         <Field label="Customer name"><Input value={form.full_name} onChange={set("full_name")} required autoFocus /></Field>
-        <Field label="Phone (WhatsApp if possible)"><Input value={form.phone} onChange={set("phone")} required placeholder="98765 43210" /></Field>
+        <Field label="Phone (WhatsApp if possible)"><PhoneInput value={form.phone} onChange={set("phone")} required placeholder="98765 43210" /></Field>
         <Field label="Address"><Textarea value={form.address} onChange={set("address")} rows={2} /></Field>
         <Field label="Issue description"><Textarea value={form.issue_description} onChange={set("issue_description")} rows={3} required /></Field>
         <Field label="Lead source" hint="Shown to the customer in their request confirmation.">

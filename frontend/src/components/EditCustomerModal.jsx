@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../api/client.js";
-import { Modal, Button, Field, Input, Textarea, Alert } from "./ui.jsx";
+import { Modal, Button, Field, Input, Textarea, PhoneInput, Alert } from "./ui.jsx";
 
 // Service Manager edits the customer's details on a ticket — name, WhatsApp
 // number, and address (e.g. after confirming the right info over chat).
@@ -26,7 +26,7 @@ export default function EditCustomerModal({ ticket, onClose, onUpdated }) {
         <Alert>{err}</Alert>
         <Field label="Full name"><Input value={form.full_name} onChange={set("full_name")} required autoFocus /></Field>
         <Field label="WhatsApp number" hint="Changing this updates where the customer is reached.">
-          <Input value={form.phone} onChange={set("phone")} placeholder="+9198XXXXXXXX" />
+          <PhoneInput value={form.phone} onChange={set("phone")} placeholder="98765 43210" />
         </Field>
         <Field label="Address"><Textarea value={form.address} onChange={set("address")} rows={2} placeholder="House / street, area, city" /></Field>
         <div className="flex justify-end gap-2 pt-1">
