@@ -68,7 +68,7 @@ export function Select(props) { return <select {...props} className={`${FIELD} $
 // fires onChange with a synthetic event, so it drops into existing form handlers.
 export function PhoneInput({ value, onChange, className = "", ...props }) {
   let local = String(value || "").replace(/\D/g, "");
-  if (local.startsWith("91") && local.length > 10) local = local.slice(2); // strip stored country code
+  if (local.startsWith("91")) local = local.slice(2); // strip +91 country code (stored value is always "+91"+digits)
   local = local.slice(0, 10);
   const handle = (e) => {
     const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
