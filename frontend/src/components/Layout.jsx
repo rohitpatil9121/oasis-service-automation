@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, NavLink, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { Icon } from "./ui.jsx";
+import NotificationBell from "./NotificationBell.jsx";
 
 // Real, working pages only — grouped like an ERP for a richer feel.
 const NAV = [
@@ -101,10 +102,7 @@ export default function Layout({ children }) {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <button title="Notifications"
-              className="relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-              <Icon name="bell" />
-            </button>
+            <NotificationBell />
 
             {/* User chip */}
             <div className="relative">

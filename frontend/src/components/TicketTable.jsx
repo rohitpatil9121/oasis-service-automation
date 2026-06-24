@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import StatusBadge from "./StatusBadge.jsx";
 import { EmptyState, timeAgo } from "./ui.jsx";
+import { isUnread } from "../lib/notify.js";
 
 export default function TicketTable({ tickets, emptyHint }) {
   const nav = useNavigate();
@@ -22,12 +23,22 @@ export default function TicketTable({ tickets, emptyHint }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {tickets.map((t) => (
+            {tickets.map((t) => {
+              const unread = isUnread(t);
+              return (
               <tr key={t.id} onClick={() => nav(`/tickets/${t.id}`)}
-                className="cursor-pointer transition hover:bg-slate-50">
-                <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-semibold text-brand">{t.ticket_number}</td>
+                className={`cursor-pointer transition hover:bg-slate-50 ${unread ? "bg-emerald-50/60" : ""}`}>
+                <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-semibold text-brand">
+                  <span className="inline-flex items-center gap-1.5">
+                    {unread && <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-500" title="New customer message" />}
+                    {t.ticket_number}
+                  </span>
+                </td>
                 <td className="px-4 py-3">
-                  <div className="font-medium text-slate-800">{t.customer?.full_name || "—"}</div>
+                  <div className={`text-slate-800 ${unread ? "font-bold" : "font-medium"}`}>
+                    {t.customer?.full_name || "—"}
+                    {unread && <span className="ml-2 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 align-middle">New</span>}
+                  </div>
                   <div className="font-mono text-xs text-slate-400">{t.customer?.phone}</div>
                 </td>
                 <td className="max-w-[18rem] truncate px-4 py-3 text-slate-600">
@@ -43,7 +54,8 @@ export default function TicketTable({ tickets, emptyHint }) {
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right text-xs text-slate-400">{timeAgo(t.created_at)}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

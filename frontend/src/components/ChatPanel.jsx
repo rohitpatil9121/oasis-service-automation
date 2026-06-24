@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "../api/client.js";
 import { Icon } from "./ui.jsx";
 import MediaBubble from "./MediaBubble.jsx";
+import { markSeen } from "../lib/notify.js";
 
 const POLL_MS = 10000;
 const time = (iso) => new Date(iso).toLocaleString([], { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
@@ -32,6 +33,7 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
       const { messages, botOn } = await api.getConversation(ticket.id);
       setMessages(messages);
       if (typeof botOn === "boolean") setBotOn(botOn);
+      markSeen(ticket.id); // manager is viewing this chat → clear its unread badge
     } catch { /* ignore transient */ } finally { setLoaded(true); }
   }, [ticket.id]);
 

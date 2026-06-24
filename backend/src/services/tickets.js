@@ -224,6 +224,19 @@ export async function listTickets({ status } = {}) {
   if (status) q = q.eq("status", status);
   const { data, error } = await q;
   if (error) throw new Error("listTickets: " + error.message);
+
+  // Attach the latest inbound (customer) message time per ticket so the dashboard
+  // can show an "unread" badge + sound alert when a customer sends a new message.
+  const { data: inbound } = await supabase
+    .from("wa_inbound").select("from_phone, created_at")
+    .order("created_at", { ascending: false }).limit(3000);
+  const latestByPhone = new Map();
+  for (const m of inbound || []) {
+    if (!latestByPhone.has(m.from_phone)) latestByPhone.set(m.from_phone, m.created_at);
+  }
+  for (const t of data) {
+    t.last_inbound_at = t.customer?.phone ? latestByPhone.get(t.customer.phone) || null : null;
+  }
   return data;
 }
 
