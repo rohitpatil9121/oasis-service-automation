@@ -19,6 +19,11 @@ const router = Router();
 const REPLY_DELAY_MS = 4500;
 const pending = new Map(); // phone -> { parts: [], send, timer }
 
+// Human-like pause BEFORE every bot reply is actually sent (typing delay), on top
+// of the debounce above. Set BOT_SEND_DELAY_MS=0 to disable. Default 4.5s.
+const SEND_DELAY_MS = parseInt(process.env.BOT_SEND_DELAY_MS || "4500", 10);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // Persist the inbound message FIRST (so the inquiry is never lost even if intake
 // errors), then decide whether the bot should respond at all.
 // Returns false when the message must be swallowed (staff / manager handoff).
@@ -95,7 +100,10 @@ async function flushReply(phone, from) {
   pending.delete(phone);
   try {
     const reply = await runIntake(from, p.parts.join("\n"));
-    if (reply) await p.send(reply);
+    if (reply) {
+      if (SEND_DELAY_MS > 0) await sleep(SEND_DELAY_MS); // human-like typing pause
+      await p.send(reply);
+    }
   } catch (e) {
     log.error("flushReply error:", e.message);
   }

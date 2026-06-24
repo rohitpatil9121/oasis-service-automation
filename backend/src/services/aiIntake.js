@@ -16,7 +16,16 @@ import { log } from "../lib/logger.js";
 
 const RESET_WORDS = ["restart", "reset", "start over", "cancel"];
 const STATUS_WORDS = ["status", "track"];
+
+// A "bare greeting" — the message is ONLY a hello with nothing else. These get
+// the fixed opener; any real content (issue, address, complaint) goes to the LLM.
+const GREETING_RX =
+  /^\s*(hi+|hey+|hello+|helo|hlo|hii+|namaste|namaskar|service|start|menu|good\s+(morning|afternoon|evening))[\s!.,]*$/i;
 const MAX_HISTORY = 20; // keep the last N turns sent to the model
+
+// If a customer already has a ticket from the last N days, further messages are a
+// FOLLOW-UP about that request — the AI just chats, it does NOT raise a new ticket.
+const FOLLOW_UP_DAYS = 3;
 
 // First reply when a customer starts a NEW conversation. Fixed (not AI-generated)
 // so it goes out reliably every single time, asking for all details at once.
@@ -121,6 +130,33 @@ Return ONLY the JSON object. No markdown, no extra text.
 Example — "hi I'm Sunil Kale, my Kent RO is leaking badly, I live at 12 Shivaji Nagar Pune 411005": {"fields":{"name":"Sunil Kale","issue":"RO purifier leaking badly","appliance":"Kent RO","address":"12 Shivaji Nagar, Pune 411005"},"message":"Thanks Sunil! Registering your request now. 🙏"}
 Example — "my purifier is not working": {"fields":{"issue":"purifier not working"},"message":"Sorry to hear that! 🙏 May I know your name and address for the technician visit?"}
 Example — "it's an Aquaguard": {"fields":{"appliance":"Aquaguard"},"message":"Got it — Aquaguard. 👍 And your name and address for the technician visit?"}
+`.trim();
+}
+
+// System prompt for a customer who ALREADY has a recent ticket. The AI chats
+// about that existing request and must NOT create or "log" a new one.
+function followUpSystemPrompt(collected, ticket) {
+  const tech = ticket.technician?.full_name;
+  return `
+${AGENT_INTRO}
+
+This customer ALREADY has a service request with us. Do NOT create a new request, do NOT
+"log" a ticket, and do NOT ask for their name or address again.
+
+Their request on file:
+- Ticket: ${ticket.ticket_number}
+- Status: ${ticket.status}${tech ? `\n- Technician: ${tech}` : ""}
+- Issue: ${ticket.issue_description || collected.issue || "(on file)"}
+
+Hold a SHORT, helpful WhatsApp chat about THIS existing request only:
+- Status / "when will he come?" → tell them what the status above shows. If a technician is
+  assigned, say the technician will contact them before the visit. NEVER invent a time.
+- A problem (technician didn't come, still not working, unhappy) → apologise briefly and say
+  you've informed the team to follow up. Do NOT promise a specific time or outcome.
+- "resolved" / "thank you" → acknowledge warmly and close politely.
+- NEVER say "your request is logged" or announce a ticket number as if it is new.
+
+Reply with ONE JSON object: {"message":"..."} — short, warm, WhatsApp style. No markdown.
 `.trim();
 }
 
@@ -248,6 +284,37 @@ export async function handleInboundAI({ fromPhone, text }) {
   const history = session.data?.history || [];
   const returning = session.data?.returning || false;
 
+  // ----- Follow-up window (no new ticket) -----
+  // If this customer raised a request in the last FOLLOW_UP_DAYS days, treat further
+  // messages as a FOLLOW-UP chat about THAT request — never create a second ticket or
+  // re-run intake (this also fixes "problem solved" wrongly logging a ticket). Bare
+  // greetings still fall through to the normal opener below.
+  const bareGreeting = !body || GREETING_RX.test(body);
+  if (!bareGreeting) {
+    const recentTicket = await getLatestTicketByCustomerPhone(phone);
+    const inFollowUp = recentTicket &&
+      Date.now() - new Date(recentTicket.created_at).getTime() < FOLLOW_UP_DAYS * 86400000;
+    if (inFollowUp) {
+      let reply;
+      try {
+        const parsed = JSON.parse(await getAIResponse([
+          { role: "system", content: followUpSystemPrompt(collected, recentTicket) },
+          ...history.slice(-MAX_HISTORY),
+          { role: "user", content: body },
+        ]));
+        reply = (parsed.message || "").trim();
+      } catch (e) {
+        log.error("follow-up AI error:", e.message);
+        reply = "🙏 Thanks for your message — our team will look into it and update you here.";
+      }
+      if (!reply) reply = "🙏 Noted — our team will get back to you.";
+      history.push({ role: "user", content: body });
+      history.push({ role: "assistant", content: reply });
+      await saveSession(session.id, { data: { collected, history, returning } });
+      return reply;
+    }
+  }
+
   // Create the dashboard request on the very FIRST message so the Service Manager
   // can watch it fill in live as the customer shares details.
   if (!session.ticket_id) {
@@ -269,10 +336,12 @@ export async function handleInboundAI({ fromPhone, text }) {
     } catch (e) { log.error("draft attach failed:", e.message); }
   }
 
-  // Brand-new conversation → send the fixed opener (or a short welcome for a
-  // returning customer) instead of routing the first message through the LLM.
-  // Guarantees the same reliable first reply every time a customer initiates.
-  if (isNewConversation) {
+  // Brand-new conversation → send the fixed opener ONLY when the first message is
+  // just a greeting (hi / hello / namaste). Guarantees a reliable opener without
+  // robotically greeting a customer who actually said something — a complaint
+  // ("no one came"), an address ("B wing 902"), "problem solved", or a real
+  // issue. Anything substantive falls through to the LLM so it reads and replies.
+  if (isNewConversation && (!body || GREETING_RX.test(body))) {
     const opener = returning && collected.name ? welcomeBack(collected.name) : GREETING;
     history.push({ role: "user", content: body });
     history.push({ role: "assistant", content: opener });
