@@ -102,9 +102,9 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
 
   await queueNotification({
     recipient: ticket.customer.phone, audience: "customer", ticketId,
-    body: `👨‍🔧 Hi ${ticket.customer.full_name}, technician *${tech.full_name}* ` +
-          `has been assigned to your request ${ticket.ticket_number}. ` +
-          `They will contact you shortly.`,
+    body: `Your service request ${ticket.ticket_number} has been assigned to our technician ${tech.full_name}.\n\n` +
+          `Service: ${ticket.issue_description}\n\n` +
+          `The technician will contact you before the visit.`,
   });
 
   log.info(`Ticket ${ticket.ticket_number} assigned to ${tech.full_name}`);

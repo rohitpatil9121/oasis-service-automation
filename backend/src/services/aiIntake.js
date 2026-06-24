@@ -397,12 +397,11 @@ export async function handleInboundAI({ fromPhone, text }) {
       log.info(`AI intake complete for ${phone} -> ${ticket.ticket_number}`);
       // Send only the canonical confirmation block (spec format). The model's own
       // "registering…" line is dropped so the customer gets one clean message.
-      return `Your service request has been logged.\n\n` +
+      return `${collected.name}, your service request has been logged.\n\n` +
              `Ticket ID: ${ticket.ticket_number}\n` +
-             `Service: ${collected.issue}\n` +
+             `Service Issue: ${collected.issue}\n` +
              `Address: ${collected.address}\n\n` +
-             `We will assign a technician and update you here.\n` +
-             `For status, reply: status`;
+             `We will assign a technician and update you here.`;
     } catch (e) {
       log.error("completeIntake failed:", e.message);
       await saveSession(session.id, { data: { collected, history, returning } });
