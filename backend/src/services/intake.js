@@ -4,7 +4,7 @@
 import { supabase } from "../config/supabase.js";
 import {
   getLatestTicketByCustomerPhone, upsertCustomerByPhone, createDraftTicket,
-  getOpenTicketForCustomer, updateTicketIntake, completeIntake,
+  getReusableTicketForCustomer, updateTicketIntake, completeIntake,
 } from "./tickets.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { log } from "../lib/logger.js";
@@ -60,14 +60,17 @@ async function startSession(phone) {
   const session = await createSession(phone);
   try {
     const customer = await upsertCustomerByPhone(phone);
-    // One active request at a time: reuse the customer's existing OPEN ticket
-    // (closed/cancelled are excluded), otherwise start a new draft.
-    const open = await getOpenTicketForCustomer(customer.id);
-    const ticket = open || await createDraftTicket({ customerId: customer.id });
+    // No duplicate tickets: reuse the customer's existing request — still open,
+    // OR raised within the last 7 days even if since closed (a quick follow-up
+    // belongs on the same ticket; completeIntake reopens it). Otherwise a new
+    // draft. This also covers the bare-greeting case: even a plain "hi" within
+    // the window folds onto the recent ticket instead of spawning a new one.
+    const reuse = await getReusableTicketForCustomer(customer.id);
+    const ticket = reuse || await createDraftTicket({ customerId: customer.id });
     await updateSession(session.id, { customer_id: customer.id, ticket_id: ticket.id });
     session.customer_id = customer.id;
     session.ticket_id = ticket.id;
-    log.info(`Intake draft -> ${ticket.ticket_number} for ${phone} (${open ? "existing open" : "new"})`);
+    log.info(`Intake draft -> ${ticket.ticket_number} for ${phone} (${reuse ? "reused" : "new"})`);
   } catch (e) {
     log.error("draft attach failed:", e.message);
   }
