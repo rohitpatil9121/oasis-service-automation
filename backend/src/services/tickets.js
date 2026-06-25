@@ -8,6 +8,13 @@ import { log } from "../lib/logger.js";
 const TICKET_SELECT =
   "*, customer:customers(*), technician:users!tickets_assigned_technician_id_fkey(id,full_name,phone)";
 
+// How long after a request is raised we treat further messages from the SAME
+// customer as that same request — so we fold them onto the existing ticket
+// instead of opening a duplicate. A recently CLOSED request the customer
+// follows up on within this window is reused (and reopened) rather than
+// duplicated. Both intake paths (deterministic + AI) share this window.
+export const TICKET_REUSE_DAYS = 7;
+
 // Human-readable slot for notifications, e.g. "14 Jun 2026, 9:00 am – 11:00 am" (IST).
 function formatSlot(startISO, endISO) {
   const tz = "Asia/Kolkata";
@@ -175,8 +182,22 @@ export async function updateTicketIntake(ticketId, { issue, appliance } = {}) {
 // single consolidated reply so the customer doesn't get duplicate messages.
 export async function completeIntake(ticketId) {
   const ticket = await getTicket(ticketId);
-  if (ticket.intake_complete) return ticket;
-  await supabase.from("tickets").update({ intake_complete: true }).eq("id", ticketId);
+  // A CLOSED ticket completing intake again means the customer re-engaged within
+  // the reuse window (getReusableTicketForCustomer folded the new request back
+  // onto it). Reopen it so it returns to the active board, and alert managers.
+  const reopened = ticket.status === "CLOSED";
+  // Already finished AND still open → nothing to do (avoids duplicate alerts).
+  if (ticket.intake_complete && !reopened) return ticket;
+
+  const patch = { intake_complete: true };
+  if (reopened) patch.status = "NEW";
+  await supabase.from("tickets").update(patch).eq("id", ticketId);
+  if (reopened) {
+    await logEvent(ticketId, "status_changed", {
+      from_status: "CLOSED", to_status: "NEW", meta: { reopened: "reuse_window" },
+    });
+    log.info(`Ticket ${ticket.ticket_number} reopened — customer re-engaged within ${TICKET_REUSE_DAYS}d`);
+  }
 
   const managers = await getManagerRecipients();
   const mgrTpl = managerNewRequest({
@@ -187,7 +208,7 @@ export async function completeIntake(ticketId) {
     await queueNotification({ recipient: phone, audience: "manager", ticketId, body: mgrTpl.body, template: mgrTpl.template });
   }
   log.info(`Intake complete for ${ticket.ticket_number}`);
-  return { ...ticket, intake_complete: true };
+  return { ...ticket, intake_complete: true, status: reopened ? "NEW" : ticket.status };
 }
 
 // All customers for the Clients page.
@@ -260,17 +281,26 @@ export async function getTicketHistory(id) {
   return { events: events || [], assignments: assignments || [] };
 }
 
-// The customer's current OPEN request (not closed/cancelled), latest first.
-// Live intake reuses this so a customer only ever has one active ticket — new
-// messages fold into it instead of spawning duplicates.
-export async function getOpenTicketForCustomer(customerId) {
+// The existing ticket a new inbound should fold into, or null to start fresh.
+// Live intake reuses this so a customer doesn't spawn duplicate tickets:
+//   • still-open request (not closed/cancelled)        → always reuse
+//   • CLOSED request raised within TICKET_REUSE_DAYS    → reuse (will reopen)
+//   • CANCELLED, or CLOSED & older than the window      → null (genuinely new)
+// We look at only the single latest ticket: cancelling is a deliberate end, so
+// a later message is a real new request; a closed one is reused only while the
+// reuse window is still open.
+export async function getReusableTicketForCustomer(customerId) {
   const { data } = await supabase
     .from("tickets").select("*")
     .eq("customer_id", customerId)
-    .neq("status", "CLOSED").neq("status", "CANCELLED")
     .order("created_at", { ascending: false })
     .limit(1).maybeSingle();
-  return data;
+  if (!data) return null;
+  if (data.status === "CANCELLED") return null; // deliberate end → new request
+  if (data.status !== "CLOSED") return data;    // still open → always reuse
+  const withinWindow =
+    Date.now() - new Date(data.created_at).getTime() < TICKET_REUSE_DAYS * 86400000;
+  return withinWindow ? data : null;            // recent close → reuse, else new
 }
 
 // Latest ticket for a WhatsApp number - powers the customer "status" command.

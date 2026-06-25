@@ -9,7 +9,7 @@ import { supabase } from "../config/supabase.js";
 import { getAIResponse } from "./ai.js";
 import {
   upsertCustomerByPhone, createDraftTicket, updateTicketIntake, completeIntake,
-  getLatestTicketByCustomerPhone, getOpenTicketForCustomer,
+  getLatestTicketByCustomerPhone, getReusableTicketForCustomer, TICKET_REUSE_DAYS,
 } from "./tickets.js";
 import { normalizePhone } from "../lib/phone.js";
 import { log } from "../lib/logger.js";
@@ -25,7 +25,8 @@ const MAX_HISTORY = 20; // keep the last N turns sent to the model
 
 // If a customer already has a ticket from the last N days, further messages are a
 // FOLLOW-UP about that request — the AI just chats, it does NOT raise a new ticket.
-const FOLLOW_UP_DAYS = 3;
+// Shares the single reuse window with the deterministic path (see tickets.js).
+const FOLLOW_UP_DAYS = TICKET_REUSE_DAYS;
 
 // First reply when a customer starts a NEW conversation. Fixed (not AI-generated)
 // so it goes out reliably every single time, asking for all details at once.
@@ -297,7 +298,9 @@ export async function handleInboundAI({ fromPhone, text }) {
   const bareGreeting = !body || GREETING_RX.test(body);
   if (!bareGreeting) {
     const recentTicket = await getLatestTicketByCustomerPhone(phone);
-    const inFollowUp = recentTicket &&
+    // A CANCELLED request is a deliberate end, so a later message is a genuinely
+    // new request — fall through to fresh intake (matches getReusableTicketForCustomer).
+    const inFollowUp = recentTicket && recentTicket.status !== "CANCELLED" &&
       Date.now() - new Date(recentTicket.created_at).getTime() < FOLLOW_UP_DAYS * 86400000;
     if (inFollowUp) {
       let reply;
@@ -325,19 +328,21 @@ export async function handleInboundAI({ fromPhone, text }) {
   if (!session.ticket_id) {
     try {
       const customer = await upsertCustomerByPhone(phone, { full_name: collected.name, address: collected.address });
-      // One ticket at a time: reuse the customer's existing OPEN request so new
-      // messages fold into it instead of creating a duplicate. Seed what's already
-      // on it so the agent ADDS to the issue rather than starting over.
-      const open = await getOpenTicketForCustomer(customer.id);
-      const ticket = open || await createDraftTicket({ customerId: customer.id });
-      if (open) {
-        if (!collected.issue && open.issue_description) collected.issue = open.issue_description;
-        if (!collected.appliance && open.appliance) collected.appliance = open.appliance;
+      // No duplicate tickets: reuse the customer's existing request — still open,
+      // OR raised within the reuse window even if since closed. This is the path
+      // a BARE GREETING ("hi") takes (it skips the follow-up branch above), so a
+      // plain hello within the window folds onto the recent ticket too. Seed
+      // what's already on it so the agent ADDS to the issue rather than starting over.
+      const reuse = await getReusableTicketForCustomer(customer.id);
+      const ticket = reuse || await createDraftTicket({ customerId: customer.id });
+      if (reuse) {
+        if (!collected.issue && reuse.issue_description) collected.issue = reuse.issue_description;
+        if (!collected.appliance && reuse.appliance) collected.appliance = reuse.appliance;
       }
       session.customer_id = customer.id;
       session.ticket_id = ticket.id;
       await saveSession(session.id, { customer_id: customer.id, ticket_id: ticket.id, data: { collected, history, returning } });
-      log.info(`Intake -> ${ticket.ticket_number} for ${phone} (${open ? "existing open" : "new"})`);
+      log.info(`Intake -> ${ticket.ticket_number} for ${phone} (${reuse ? "reused" : "new"})`);
     } catch (e) { log.error("draft attach failed:", e.message); }
   }
 
