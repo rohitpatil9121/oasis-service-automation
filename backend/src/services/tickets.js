@@ -395,5 +395,14 @@ export async function updateStatus(id, toStatus, actorId, reason) {
     });
   }
 
+  // Tell the customer their request is completed when the manager closes it.
+  if (toStatus === "CLOSED" && current.customer?.phone) {
+    await queueNotification({
+      recipient: current.customer.phone, audience: "customer", ticketId: id,
+      body: `Your service request ${current.ticket_number} has been marked completed.\n\n` +
+            `Service: ${current.issue_description || "—"}`,
+    });
+  }
+
   return data;
 }

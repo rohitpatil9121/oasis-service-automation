@@ -35,6 +35,10 @@ export const env = {
   // AI intake (Groq). When AI_INTAKE=true the WhatsApp agent uses the LLM
   // for natural conversation instead of the deterministic state machine.
   aiIntake: bool(process.env.AI_INTAKE, false),
+  // Tool-calling agent (Groq function calling). When AGENT_TOOLS=true the
+  // WhatsApp intake runs the tool-calling agent (services/agent/) instead of the
+  // single-prompt AI intake. Takes precedence over AI_INTAKE.
+  agentTools: bool(process.env.AGENT_TOOLS, false),
   groqApiKey: process.env.GROQ_API_KEY,
   groqModel: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
 
