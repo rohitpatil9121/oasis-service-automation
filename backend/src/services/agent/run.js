@@ -1,0 +1,117 @@
+// Groq tool-calling agent loop (Flow 1: Inquiry Submission).
+// Enabled with AGENT_TOOLS=true (+ GROQ_API_KEY). The model reads the customer's
+// message, calls tools to read/write the request, and composes the reply. State
+// (clean transcript + the active ticket/customer) is persisted in the existing
+// intake_sessions table, so it survives across messages without duplicating tickets.
+
+import Groq from "groq-sdk";
+import { supabase } from "../../config/supabase.js";
+import { env } from "../../config/env.js";
+import { normalizePhone } from "../../lib/phone.js";
+import { log } from "../../lib/logger.js";
+import { TOOL_DEFS } from "./tools.js";
+import { executeTool } from "./executor.js";
+import { SYSTEM_PROMPT } from "./prompt.js";
+
+const MAX_STEPS = 6;    // safety cap on tool round-trips per message
+const MAX_HISTORY = 20; // turns of clean transcript kept for context
+
+let client = null;
+const groq = () => (client ||= new Groq({ apiKey: env.groqApiKey }));
+
+// ---- session state (reuses intake_sessions; data = { history, ticketId, customerId }) ----
+async function getActiveSession(phone) {
+  const { data } = await supabase
+    .from("intake_sessions").select("*")
+    .eq("phone", phone).neq("state", "COMPLETED")
+    .order("created_at", { ascending: false }).maybeSingle();
+  return data;
+}
+
+async function createSession(phone) {
+  const { data, error } = await supabase
+    .from("intake_sessions")
+    .insert({ phone, state: "AWAITING_NAME", data: { history: [], ticketId: null, customerId: null } })
+    .select().single();
+  if (error) throw new Error("createSession: " + error.message);
+  return data;
+}
+
+async function saveSession(id, patch) {
+  const { error } = await supabase.from("intake_sessions").update(patch).eq("id", id);
+  if (error) log.error("saveSession failed:", error.message);
+}
+
+// Main entry — returns the reply string the webhook sends to the customer.
+export async function runAgent({ fromPhone, text }) {
+  const phone = normalizePhone(fromPhone);
+  const userText = (text || "").trim();
+
+  const session = (await getActiveSession(phone)) || (await createSession(phone));
+  const data = session.data || { history: [], ticketId: null, customerId: null };
+  const history = data.history || [];
+  const ctx = { phone, ticketId: data.ticketId || null, customerId: data.customerId || null };
+
+  const messages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...history,
+    { role: "user", content: userText || "(no text)" },
+  ];
+
+  let reply = "";
+  try {
+    for (let step = 0; step < MAX_STEPS; step++) {
+      const res = await groq().chat.completions.create({
+        model: env.groqModel,
+        messages,
+        tools: TOOL_DEFS,
+        tool_choice: "auto",
+        temperature: 0, // intake should be consistent, not creative
+        max_tokens: 1024,
+      });
+
+      const msg = res.choices?.[0]?.message;
+      if (!msg) break;
+      const calls = msg.tool_calls || [];
+
+      // Keep the assistant turn (with tool_calls, so the tool results are valid).
+      messages.push(
+        calls.length
+          ? { role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls }
+          : { role: "assistant", content: msg.content ?? "" }
+      );
+
+      if (!calls.length) { reply = (msg.content || "").trim(); break; }
+
+      for (const call of calls) {
+        let args = {};
+        try { args = JSON.parse(call.function?.arguments || "{}"); } catch { /* bad JSON → {} */ }
+        const result = await executeTool(call.function?.name, args, ctx);
+        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+      }
+    }
+  } catch (e) {
+    log.error("runAgent error:", e.message);
+    return "Sorry, there was a technical issue. Please send your message again.";
+  }
+
+  // If the request was submitted, send the exact approved confirmation verbatim
+  // (the model is unreliable at reproducing multi-line text — don't let it try).
+  if (ctx.confirmation) reply = ctx.confirmation;
+
+  if (!reply) reply = "Could you share a bit more so I can help?";
+
+  // Persist a clean transcript (no tool plumbing) + the active ticket/customer.
+  const newHistory = [
+    ...history,
+    { role: "user", content: userText },
+    { role: "assistant", content: reply },
+  ].slice(-MAX_HISTORY);
+
+  await saveSession(session.id, {
+    state: ctx.submitted ? "COMPLETED" : session.state,
+    data: { history: newHistory, ticketId: ctx.ticketId, customerId: ctx.customerId },
+  });
+
+  return reply;
+}

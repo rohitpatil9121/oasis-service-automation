@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { handleInbound } from "../services/intake.js";
 import { handleInboundAI } from "../services/aiIntake.js";
+import { runAgent } from "../services/agent/run.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
 import { isAgentHandling, storeBotMessage } from "../services/conversation.js";
 import { supabase } from "../config/supabase.js";
@@ -68,9 +69,11 @@ async function logInbound(from, text, { mediaId, mediaType, waMessageId, replyTo
 // Service Manager sees the full thread on the dashboard.
 async function runIntake(from, text) {
   const phone = normalizePhone(from);
-  const reply = env.aiIntake
-    ? await handleInboundAI({ fromPhone: from, text })
-    : await handleInbound({ fromPhone: from, text });
+  const reply = env.agentTools
+    ? await runAgent({ fromPhone: from, text })
+    : env.aiIntake
+      ? await handleInboundAI({ fromPhone: from, text })
+      : await handleInbound({ fromPhone: from, text });
   if (reply) await storeBotMessage(phone, reply);
   return reply;
 }
