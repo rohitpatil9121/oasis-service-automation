@@ -59,7 +59,8 @@ export default function NotificationBell() {
 
   return (
     <div className="relative">
-      <button title="Notifications" onClick={() => setOpen((v) => !v)}
+      <button aria-label={unread.length > 0 ? `Notifications, ${unread.length} new` : "Notifications"}
+        aria-haspopup="true" aria-expanded={open} onClick={() => setOpen((v) => !v)}
         className="relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
         <Icon name="bell" />
         {unread.length > 0 && (

@@ -21,7 +21,9 @@ export function createApp() {
   app.set("trust proxy", 1);            // behind Render/Vercel proxy -> real client IP for rate limiting
   app.use(helmet({ frameguard: { action: "deny" } })); // CSP, HSTS, X-Frame-Options: DENY, nosniff, etc.
   app.use(cors({ origin: env.corsOrigin.split(",").map((s) => s.trim()) }));
-  app.use(express.json({ limit: "200kb" }));
+  // Keep the raw JSON bytes so the Meta webhook can verify X-Hub-Signature-256
+  // (the HMAC must be computed over exactly what Meta sent).
+  app.use(express.json({ limit: "200kb", verify: (req, _res, buf) => { req.rawBody = buf; } }));
   app.use(express.urlencoded({ extended: true, limit: "200kb" })); // Twilio webhooks
 
   app.get("/health", (req, res) =>

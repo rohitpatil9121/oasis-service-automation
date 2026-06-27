@@ -9,7 +9,7 @@ import { supabase } from "../config/supabase.js";
 import { getAIResponse } from "./ai.js";
 import {
   upsertCustomerByPhone, createDraftTicket, updateTicketIntake, completeIntake,
-  getLatestTicketByCustomerPhone, getReusableTicketForCustomer, TICKET_REUSE_DAYS,
+  getLatestTicketByCustomerPhone, getReusableTicketForCustomer, escalateFollowUp, TICKET_REUSE_DAYS,
 } from "./tickets.js";
 import { normalizePhone } from "../lib/phone.js";
 import { log } from "../lib/logger.js";
@@ -43,9 +43,10 @@ const welcomeBack = (name) =>
   `Hi${name ? " " + name : ""}. This is Oasis Globe water purifier service support.\n\n` +
   `Please tell us the issue with your purifier.`;
 
-// Appliance (purifier brand/model) capture is PAUSED for now — the agent must
-// not ask for or volunteer to collect it. Flip to true to re-enable later.
-const ASK_APPLIANCE = false;
+// Appliance (purifier brand/model) capture. When true the agent confirms the
+// brand/model is useful if the customer asks, and passively records it whenever
+// it's mentioned — it still never forces the question, so intake stays short.
+const ASK_APPLIANCE = true;
 
 const AGENT_INTRO =
   `You are a WhatsApp service intake assistant for "Oasis Globe", a water purifier service ` +
@@ -154,15 +155,28 @@ Their request on file:
 - Status: ${ticket.status}${tech ? `\n- Technician: ${tech}` : ""}
 - Issue: ${ticket.issue_description || collected.issue || "(on file)"}
 
-Hold a SHORT chat about THIS existing request only (operational tone, no emoji — see STYLE):
-- Status / "when will he come?" → tell them what the status above shows. If a technician is
-  assigned, say the technician will contact them before the visit. NEVER invent a time.
-- A problem (technician didn't come, still not working, unhappy) → say you are forwarding it to
-  the support team to follow up. Do NOT promise a specific time or outcome.
-- "resolved" / "thank you" → acknowledge briefly and close.
-- NEVER say "your request is logged" or announce a ticket number as if it is new.
+Hold a SHORT chat about THIS existing request only (operational tone, no emoji — see STYLE).
 
-Reply with ONE JSON object: {"message":"..."} — short, operational, no emoji. No markdown.
+EVERY reply MUST be a single JSON object with exactly these two keys, in this order:
+{"escalate": true|false, "message": "..."}
+
+Set "escalate" to TRUE only when the customer reports a PROBLEM a human must follow up on: the
+technician did not come, it is still not fixed, it stopped working / the problem recurred after
+the visit, damage, or they are clearly unhappy. Then "message" = tell them you are forwarding it
+to the support team to follow up (do NOT promise a specific time or outcome).
+
+Set "escalate" to FALSE for everything else:
+- Status / "when will he come?" → answer from the status above. If a technician is assigned, say
+  they will contact the customer before the visit. NEVER invent a time.
+- "resolved" / "thank you" → acknowledge briefly and close.
+- General chat / a question → answer in one line.
+
+NEVER say "your request is logged" or announce a ticket number as if it is new.
+Return ONLY the JSON object. No markdown.
+
+Example — "technician never came": {"escalate":true,"message":"We are forwarding this to our support team to follow up. They will get back to you."}
+Example — "when will he come?": {"escalate":false,"message":"Your request is assigned. The technician will contact you before the visit."}
+Example — "thanks, all good now": {"escalate":false,"message":"Glad to hear it. Reach out any time you need us."}
 `.trim();
 }
 
@@ -303,7 +317,7 @@ export async function handleInboundAI({ fromPhone, text }) {
     const inFollowUp = recentTicket && recentTicket.status !== "CANCELLED" &&
       Date.now() - new Date(recentTicket.created_at).getTime() < FOLLOW_UP_DAYS * 86400000;
     if (inFollowUp) {
-      let reply;
+      let reply, escalate = false;
       try {
         const parsed = JSON.parse(await getAIResponse([
           { role: "system", content: followUpSystemPrompt(collected, recentTicket) },
@@ -311,11 +325,19 @@ export async function handleInboundAI({ fromPhone, text }) {
           { role: "user", content: body },
         ]));
         reply = (parsed.message || "").trim();
+        escalate = parsed.escalate === true;
       } catch (e) {
         log.error("follow-up AI error:", e.message);
         reply = "🙏 Thanks for your message — our team will look into it and update you here.";
+        escalate = true; // couldn't parse — surface to a human rather than drop it
       }
       if (!reply) reply = "🙏 Noted — our team will get back to you.";
+      // Keep the bot's "we'll forward this" promise real: reopen the request and
+      // alert the manager(s) instead of just saying it.
+      if (escalate) {
+        try { await escalateFollowUp({ ticketId: recentTicket.id, customerMessage: body }); }
+        catch (e) { log.error("follow-up escalation failed:", e.message); }
+      }
       history.push({ role: "user", content: body });
       history.push({ role: "assistant", content: reply });
       await saveSession(session.id, { data: { collected, history, returning } });
@@ -352,7 +374,16 @@ export async function handleInboundAI({ fromPhone, text }) {
   // ("no one came"), an address ("B wing 902"), "problem solved", or a real
   // issue. Anything substantive falls through to the LLM so it reads and replies.
   if (isNewConversation && (!body || GREETING_RX.test(body))) {
-    const opener = returning && collected.name ? welcomeBack(collected.name) : GREETING;
+    // If they already have a REGISTERED, still-open request, a bare "hi" is a
+    // check-in — acknowledge that request instead of re-asking for the issue
+    // (which felt like we'd ignored a request that was already assigned).
+    const recent = await getLatestTicketByCustomerPhone(phone);
+    const hasActiveRequest = recent && recent.intake_complete &&
+      recent.status !== "CLOSED" && recent.status !== "CANCELLED";
+    const opener = hasActiveRequest
+      ? `Hi${collected.name ? " " + collected.name : ""}.\n\n${statusReply(recent)}\n\n` +
+        `Need anything else for this request? Just reply here.`
+      : returning && collected.name ? welcomeBack(collected.name) : GREETING;
     history.push({ role: "user", content: body });
     history.push({ role: "assistant", content: opener });
     await saveSession(session.id, { data: { collected, history, returning } });

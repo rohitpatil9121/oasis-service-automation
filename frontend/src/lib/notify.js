@@ -5,6 +5,7 @@
 // No backend/DB changes: "seen" lives in localStorage, keyed per ticket.
 
 const SEEN_KEY = "og_seen_inbound_v1";
+const BASELINE_KEY = "og_inbound_baseline_v1";
 
 function readSeen() {
   try { return JSON.parse(localStorage.getItem(SEEN_KEY) || "{}"); } catch { return {}; }
@@ -13,11 +14,29 @@ function writeSeen(map) {
   try { localStorage.setItem(SEEN_KEY, JSON.stringify(map)); } catch { /* quota — ignore */ }
 }
 
-// Has the customer messaged on this ticket since the manager last opened the chat?
+// The first time this device ever loads the app we record "now" as a baseline and
+// treat everything already in the inbox as seen. Without it, a fresh browser (or
+// cleared storage) would have NO "seen" record for any ticket and so flag EVERY
+// past customer chat as unread. With it, the bell only alerts about customer
+// messages that arrive FROM HERE ON — which is what we actually want.
+function baseline() {
+  let b = null;
+  try { b = localStorage.getItem(BASELINE_KEY); } catch { /* ignore */ }
+  if (!b) {
+    b = new Date().toISOString();
+    try { localStorage.setItem(BASELINE_KEY, b); } catch { /* quota — ignore */ }
+  }
+  return b;
+}
+
+// Has the customer sent a NEW message on this ticket — newer than both the
+// baseline and the last time the manager opened this chat?
 export function isUnread(ticket) {
   if (!ticket?.last_inbound_at) return false;
   const seen = readSeen()[ticket.id];
-  return !seen || new Date(ticket.last_inbound_at) > new Date(seen);
+  const base = baseline();
+  const cutoff = seen && new Date(seen) > new Date(base) ? seen : base;
+  return new Date(ticket.last_inbound_at) > new Date(cutoff);
 }
 
 // Mark a ticket's chat as seen — call when the manager opens the conversation.

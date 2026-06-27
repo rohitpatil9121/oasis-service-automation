@@ -175,13 +175,25 @@ async function logComplaint(ctx, { ticket_number, details } = {}) {
   const num = (ticket_number || "").trim();
   if (num) {
     const { data } = await supabase
-      .from("tickets").select("id, ticket_number, customer:customers(phone)")
+      .from("tickets").select("id, ticket_number, status, customer:customers(phone)")
       .eq("ticket_number", num).maybeSingle();
     if (data && data.customer?.phone === ctx.phone) ticket = data; // own ticket only
   }
   if (!ticket) {
     const latest = await getLatestTicketByCustomerPhone(ctx.phone);
-    if (latest) ticket = { id: latest.id, ticket_number: latest.ticket_number };
+    if (latest) ticket = { id: latest.id, ticket_number: latest.ticket_number, status: latest.status };
+  }
+
+  // Reopen a CLOSED request so the recurring problem returns to the active board.
+  let reopened = false;
+  if (ticket && ticket.status === "CLOSED") {
+    await supabase.from("tickets").update({ status: "NEW" }).eq("id", ticket.id);
+    const { error } = await supabase.from("ticket_events").insert({
+      ticket_id: ticket.id, event_type: "status_changed",
+      from_status: "CLOSED", to_status: "NEW", meta: { reopened: "customer_follow_up" },
+    });
+    if (error) log.error("reopen audit row skipped:", error.message);
+    reopened = true;
   }
 
   // Best-effort audit row — event_type is a constrained enum, so this may be
@@ -200,11 +212,11 @@ async function logComplaint(ctx, { ticket_number, details } = {}) {
   for (const phone of await managerPhones()) {
     await queueNotification({
       recipient: phone, audience: "manager", ticketId: ticket?.id || null,
-      body: `COMPLAINT from ${ctx.phone}${ref}: ${details || "customer is unhappy with the service"}`,
+      body: `COMPLAINT from ${ctx.phone}${ref}${reopened ? " [reopened]" : ""}: ${details || "customer is unhappy with the service"}`,
     });
   }
   ctx.handedOff = true;
-  return { ok: true, ticket_number: ticket?.ticket_number || null };
+  return { ok: true, ticket_number: ticket?.ticket_number || null, reopened };
 }
 
 async function pauseBot(phone) {

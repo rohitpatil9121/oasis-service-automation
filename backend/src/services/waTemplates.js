@@ -92,6 +92,24 @@ export function visitScheduledCustomer({ ticketNumber, customerName, when }) {
   };
 }
 
+// Sent to the CUSTOMER when the Service Manager CLOSES (completes) a request and
+// the 24-hour window has lapsed — free-form text / interactive buttons would
+// silently fail there, so this approved template guarantees delivery.
+// {{1}} customer name  {{2}} ticket  {{3}} service/issue
+export function requestCompletedCustomer({ ticketNumber, customerName, issue }) {
+  return {
+    template: {
+      name: "request_completed_customer",
+      language: WA_LANG,
+      variables: [v(customerName), v(ticketNumber), v(issue)],
+    },
+    body:
+      `Hi ${customerName}, your Oasis Globe service request ${ticketNumber} has been marked completed.\n\n` +
+      `Service: ${issue || "—"}\n\n` +
+      `Thank you for choosing Oasis Globe. If you need anything else, just reply here.`,
+  };
+}
+
 // {{1}} customer name  {{2}} ticket  {{3}} reason
 export function requestCancelledCustomer({ ticketNumber, customerName, reason }) {
   return {

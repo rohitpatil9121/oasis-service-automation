@@ -3,7 +3,8 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
 import TicketTable from "../components/TicketTable.jsx";
 import NewTicketModal from "../components/NewTicketModal.jsx";
-import { Button, Icon } from "../components/ui.jsx";
+import { Button, Icon, Spinner } from "../components/ui.jsx";
+import { ICON_BG, RING } from "../lib/status.js";
 
 const REFRESH_MS = 8000;
 
@@ -15,19 +16,6 @@ const STATS = [
   { key: "IN_PROGRESS", label: "In progress", icon: "refresh", color: "violet" },
   { key: "CLOSED", label: "Closed", icon: "check", color: "emerald" },
 ];
-
-const ICON_BG = {
-  slate: "bg-slate-100 text-slate-500",
-  blue: "bg-blue-50 text-blue-600",
-  amber: "bg-amber-50 text-amber-600",
-  violet: "bg-violet-50 text-violet-600",
-  emerald: "bg-emerald-50 text-emerald-600",
-  orange: "bg-orange-50 text-orange-600",
-};
-const RING = {
-  slate: "ring-slate-300", blue: "ring-blue-400", amber: "ring-amber-400",
-  violet: "ring-violet-400", emerald: "ring-emerald-400",
-};
 
 export default function Dashboard() {
   const [tickets, setTickets] = useState([]);
@@ -107,17 +95,25 @@ export default function Dashboard() {
       </div>
 
       {/* Requests table */}
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold text-slate-700">
           {filter ? STATS.find((s) => s.key === filter)?.label : "All"} requests
-          {search && <span className="font-normal text-slate-400"> · matching “{search}”</span>}
         </h2>
+        <span className="text-sm text-slate-400">· {visible.length}</span>
+        {/* Active filters surface as removable chips so it's always clear what's
+            being shown — and one click clears them. */}
+        {filter && (
+          <FilterChip label={STATS.find((s) => s.key === filter)?.label} onClear={() => setFilter("")} />
+        )}
+        {search && (
+          <FilterChip label={`“${search}”`} onClear={() => navigate("/")} />
+        )}
       </div>
 
       {err && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
 
       {!loaded
-        ? <div className="rounded-xl border border-slate-200 bg-white py-14 text-center text-slate-400">Loading…</div>
+        ? <div className="flex justify-center rounded-xl border border-slate-200 bg-white py-16"><Spinner className="h-7 w-7" /></div>
         : <TicketTable tickets={visible} emptyHint={search || filter ? "Try a different filter or search." : undefined} />}
 
       {showNew && (
@@ -127,10 +123,21 @@ export default function Dashboard() {
   );
 }
 
+function FilterChip({ label, onClear }) {
+  return (
+    <button onClick={onClear}
+      className="inline-flex items-center gap-1.5 rounded-full bg-brand/10 px-2.5 py-0.5 text-xs font-medium text-brand transition hover:bg-brand/20"
+      aria-label={`Clear filter ${label}`}>
+      {label}
+      <Icon name="x" className="h-3 w-3" />
+    </button>
+  );
+}
+
 function Kpi({ label, value, icon, color, active, ring, onClick }) {
   return (
-    <button onClick={onClick}
-      className={`flex items-start justify-between rounded-xl border bg-white p-4 text-left shadow-card transition hover:shadow-pop ${
+    <button onClick={onClick} aria-pressed={active === undefined ? undefined : active}
+      className={`flex items-start justify-between rounded-xl border bg-white p-4 text-left shadow-card transition hover:shadow-pop focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 ${
         active ? `border-transparent ring-2 ${ring}` : "border-slate-200"
       }`}>
       <div>

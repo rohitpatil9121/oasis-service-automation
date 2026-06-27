@@ -1,4 +1,6 @@
 import { Router } from "express";
+import crypto from "crypto";
+import twilio from "twilio";
 import { handleInbound } from "../services/intake.js";
 import { handleInboundAI } from "../services/aiIntake.js";
 import { runAgent } from "../services/agent/run.js";
@@ -126,8 +128,39 @@ router.get("/whatsapp", (req, res) => {
   return res.sendStatus(403);
 });
 
+// ---- Inbound authenticity ----------------------------------------------------
+// Reject forged webhook calls. Twilio signs with X-Twilio-Signature (verified
+// against the params + URL); Meta signs the raw body with the app secret
+// (X-Hub-Signature-256). Skipped in mock mode, and degrades to a warning when
+// the relevant secret isn't configured so a misconfig never drops real messages.
+let warnedNoSecret = false;
+function warnOnce() {
+  if (!warnedNoSecret) { log.warn("Webhook signature secret not set — inbound is NOT verified."); warnedNoSecret = true; }
+}
+function safeEqual(a, b) {
+  const ba = Buffer.from(String(a)), bb = Buffer.from(String(b));
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+}
+function signatureOk(req) {
+  if (env.whatsappProvider === "meta") {
+    if (!env.metaAppSecret || !req.rawBody) { warnOnce(); return true; }
+    const expected = "sha256=" + crypto.createHmac("sha256", env.metaAppSecret).update(req.rawBody).digest("hex");
+    return safeEqual(req.get("x-hub-signature-256") || "", expected);
+  }
+  // Twilio
+  if (!env.twilioToken) { warnOnce(); return true; }
+  const url = env.publicBaseUrl.replace(/\/+$/, "") + req.originalUrl;
+  return twilio.validateRequest(env.twilioToken, req.get("x-twilio-signature") || "", url, req.body || {});
+}
+
 // ---- Inbound messages (POST) ----
 router.post("/whatsapp", async (req, res) => {
+  // Drop forged requests before doing any work (skipped in mock/dev).
+  if (!env.whatsappMock && !signatureOk(req)) {
+    log.warn(`Webhook rejected: invalid ${env.whatsappProvider} signature`);
+    return res.sendStatus(403);
+  }
+
   // ----- Meta WhatsApp Cloud API -----
   if (env.whatsappProvider === "meta") {
     res.sendStatus(200); // ack immediately so Meta doesn't retry/duplicate

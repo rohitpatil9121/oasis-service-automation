@@ -77,7 +77,21 @@ export default function Layout({ children }) {
             </div>
           ))}
         </nav>
-  
+
+        {/* Sidebar footer: who's signed in + sign out */}
+        <div className="border-t border-white/10 p-3">
+          <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand/20 text-xs font-semibold text-white">{initials}</span>
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="truncate text-sm font-medium text-white">{user?.full_name}</div>
+              <div className="truncate text-xs capitalize text-slate-500">{user?.role}</div>
+            </div>
+            <button onClick={logout} aria-label="Log out"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white">
+              <Icon name="logout" className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       </aside>
 
       {/* ---------- Main column ---------- */}
@@ -85,7 +99,7 @@ export default function Layout({ children }) {
         {/* Top bar */}
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6">
           {/* mobile brand */}
-          <Link to="/" className="flex items-center gap-2 lg:hidden">
+          <Link to="/" aria-label="Oasis Globe home" className="flex items-center gap-2 lg:hidden">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-xs font-extrabold text-white">OG</span>
           </Link>
 
@@ -94,6 +108,8 @@ export default function Layout({ children }) {
               <Icon name="search" />
             </span>
             <input
+              type="search"
+              aria-label="Search service requests"
               value={q}
               onChange={onSearch}
               placeholder="Search ticket #, customer, phone, issue…"

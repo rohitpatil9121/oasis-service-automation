@@ -1,6 +1,6 @@
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
-import { customerRequestReceived, managerNewRequest, visitScheduledTechnician, visitScheduledCustomer, requestCancelledCustomer } from "./waTemplates.js";
+import { customerRequestReceived, managerNewRequest, visitScheduledTechnician, visitScheduledCustomer, requestCancelledCustomer, requestCompletedCustomer } from "./waTemplates.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
@@ -127,6 +127,17 @@ async function logEvent(ticketId, type, extra = {}) {
   await supabase.from("ticket_events").insert({
     ticket_id: ticketId, event_type: type, ...extra,
   });
+}
+
+// Has the customer messaged us within `ms`? WhatsApp only delivers free-form
+// text and interactive (button) messages inside the 24-hour service window;
+// outside it we must fall back to an approved template.
+async function customerMessagedWithin(phone, ms) {
+  if (!phone) return false;
+  const { data } = await supabase
+    .from("wa_inbound").select("created_at").eq("from_phone", phone)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  return !!data && Date.now() - new Date(data.created_at).getTime() < ms;
 }
 
 async function getManagerRecipients() {
@@ -272,7 +283,7 @@ export async function getCustomerWithHistory(id) {
 
   const { data: tickets } = await supabase
     .from("tickets")
-    .select("id, ticket_number, issue_description, status, appliance, created_at, " +
+    .select("id, ticket_number, issue_description, status, appliance, rating, created_at, " +
             "technician:users!tickets_assigned_technician_id_fkey(id,full_name)")
     .eq("customer_id", id)
     .order("created_at", { ascending: false });
@@ -410,6 +421,61 @@ export async function scheduleVisit({ ticketId, start, end, actorId }) {
   return ticket;
 }
 
+// A customer reported a fresh problem on an existing request (e.g. the machine
+// stopped again after the visit). Keep the bot's "we'll forward this" promise:
+// reopen a closed request onto the active board, log it, and alert the
+// manager(s) — deduped so a burst of follow-up lines doesn't spam them.
+export async function escalateFollowUp({ ticketId, customerMessage }) {
+  const ticket = await getTicket(ticketId);
+  const reopened = ticket.status === "CLOSED";
+
+  // Reopen a closed request so it returns to the active board.
+  if (reopened) {
+    await supabase.from("tickets").update({ status: "NEW" }).eq("id", ticketId);
+    await logEvent(ticketId, "status_changed", {
+      from_status: "CLOSED", to_status: "NEW", meta: { reopened: "customer_follow_up" },
+    });
+  }
+
+  // Don't re-alert managers for every line of a back-and-forth: skip if we
+  // already escalated this ticket in the last 6 hours (a reopen always alerts).
+  let alreadyAlerted = false;
+  if (!reopened) {
+    const since = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+    const { data } = await supabase.from("ticket_events")
+      .select("id").eq("ticket_id", ticketId).eq("event_type", "follow_up")
+      .gte("created_at", since).limit(1);
+    alreadyAlerted = !!(data && data.length);
+  }
+
+  // Audit (best-effort — event_type may be constrained in some schemas).
+  try {
+    await logEvent(ticketId, "follow_up", { meta: { message: String(customerMessage || "").slice(0, 500) } });
+  } catch (e) { log.error("follow_up event:", e.message); }
+
+  // Reuse the approved manager template so the alert delivers even when the
+  // manager is outside WhatsApp's 24-hour window; the follow-up note rides in
+  // the "issue" slot.
+  if (reopened || !alreadyAlerted) {
+    const managers = await getManagerRecipients();
+    const tpl = managerNewRequest({
+      ticketNumber: ticket.ticket_number,
+      customerName: ticket.customer.full_name,
+      customerPhone: ticket.customer.phone,
+      address: ticket.customer.address,
+      issue: `Follow-up: ${String(customerMessage || "").trim()}`,
+    });
+    for (const phone of managers) {
+      await queueNotification({
+        recipient: phone, audience: "manager", ticketId,
+        body: tpl.body, template: tpl.template,
+      });
+    }
+  }
+  log.info(`Follow-up escalated for ${ticket.ticket_number}${reopened ? " (reopened)" : ""}`);
+  return { reopened };
+}
+
 export async function updateStatus(id, toStatus, actorId, reason) {
   const current = await getTicket(id);
 
@@ -438,27 +504,40 @@ export async function updateStatus(id, toStatus, actorId, reason) {
     });
   }
 
-  // Tell the customer their request is completed when the manager closes it, and
-  // ask them to rate the service with 3 one-tap WhatsApp buttons. The button ids
-  // encode the ticket + score so the tap can be attributed back on the webhook.
-  // (Interactive messages, like the old plain text, reach customers who messaged
-  // within WhatsApp's 24-hour window.)
+  // Tell the customer their request is completed when the manager closes it.
+  // Inside WhatsApp's 24-hour window we send 3 one-tap rating buttons (the ids
+  // encode ticket + score, attributed back on the webhook). Outside the window
+  // interactive/free-form silently fails, so we fall back to an approved
+  // template — the customer still reliably learns the job is done.
   if (toStatus === "CLOSED" && current.customer?.phone) {
-    const body =
-      `Your service request ${current.ticket_number} has been marked completed.\n\n` +
-      `Service: ${current.issue_description || "—"}\n\n` +
-      `How was our service?`;
-    await queueNotification({
-      recipient: current.customer.phone, audience: "customer", ticketId: id, body,
-      interactive: {
-        body,
-        buttons: [
-          { id: `rate_${id}_5`, title: "Excellent" },
-          { id: `rate_${id}_3`, title: "Okay" },
-          { id: `rate_${id}_1`, title: "Poor" },
-        ],
-      },
-    });
+    const within24h = await customerMessagedWithin(current.customer.phone, 24 * 3600 * 1000);
+    if (within24h) {
+      const body =
+        `Your service request ${current.ticket_number} has been marked completed.\n\n` +
+        `Service: ${current.issue_description || "—"}\n\n` +
+        `How was our service?`;
+      await queueNotification({
+        recipient: current.customer.phone, audience: "customer", ticketId: id, body,
+        interactive: {
+          body,
+          buttons: [
+            { id: `rate_${id}_5`, title: "Excellent" },
+            { id: `rate_${id}_3`, title: "Okay" },
+            { id: `rate_${id}_1`, title: "Poor" },
+          ],
+        },
+      });
+    } else {
+      const tpl = requestCompletedCustomer({
+        ticketNumber: current.ticket_number,
+        customerName: current.customer.full_name,
+        issue: current.issue_description,
+      });
+      await queueNotification({
+        recipient: current.customer.phone, audience: "customer", ticketId: id,
+        body: tpl.body, template: tpl.template,
+      });
+    }
   }
 
   return data;
