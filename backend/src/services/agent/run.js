@@ -11,7 +11,13 @@ import { normalizePhone } from "../../lib/phone.js";
 import { log } from "../../lib/logger.js";
 import { TOOL_DEFS } from "./tools.js";
 import { executeTool } from "./executor.js";
-import { SYSTEM_PROMPT } from "./prompt.js";
+import { SYSTEM_PROMPT, OPENING } from "./prompt.js";
+
+// A bare greeting with no service details — "hi", "hello", "service", "namaste".
+// On a brand-new chat we answer these with the fixed OPENING verbatim so all four
+// numbered lines (incl. the purifier photo) always appear; the LLM drops them.
+const GREETING_RE = /^(hi+|hey+|hello+|helo|hlo|namaste|namaskar|good\s*(morning|afternoon|evening)|start|service|enquiry|inquiry)[\s!.,]*$/i;
+const isBareGreeting = (t) => GREETING_RE.test((t || "").trim());
 
 const MAX_STEPS = 6;    // safety cap on tool round-trips per message
 const MAX_HISTORY = 20; // turns of clean transcript kept for context
@@ -51,6 +57,19 @@ export async function runAgent({ fromPhone, text }) {
   const data = session.data || { history: [], ticketId: null, customerId: null };
   const history = data.history || [];
   const ctx = { phone, ticketId: data.ticketId || null, customerId: data.customerId || null };
+
+  // Brand-new chat + a bare greeting → send the fixed opening verbatim, no LLM.
+  // Guarantees the full 4-point message (the model was dropping line 4).
+  if (!history.length && isBareGreeting(userText)) {
+    await saveSession(session.id, {
+      state: session.state,
+      data: {
+        history: [{ role: "user", content: userText }, { role: "assistant", content: OPENING }],
+        ticketId: ctx.ticketId, customerId: ctx.customerId,
+      },
+    });
+    return OPENING;
+  }
 
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
