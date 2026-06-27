@@ -4,7 +4,7 @@ import { api } from "../api/client.js";
 import TicketTable from "../components/TicketTable.jsx";
 import NewTicketModal from "../components/NewTicketModal.jsx";
 import { Button, Icon, Spinner } from "../components/ui.jsx";
-import { ICON_BG, RING } from "../lib/status.js";
+import { ICON_BG, RING, ACCENT } from "../lib/status.js";
 
 const REFRESH_MS = 8000;
 
@@ -51,7 +51,21 @@ export default function Dashboard() {
   }, [load, loadStock]);
 
   const counts = tickets.reduce((a, t) => ((a[t.status] = (a[t.status] || 0) + 1), a), {});
-  const countFor = (k) => (k ? counts[k] || 0 : tickets.length);
+  const total = tickets.length;
+  const countFor = (k) => (k ? counts[k] || 0 : total);
+
+  // One-line context under each KPI number — turns a bare count into a glance.
+  const hintFor = (k) => {
+    const c = countFor(k);
+    switch (k) {
+      case "": return "live inbox";
+      case "NEW": return c === 0 ? "all caught up" : `${c} to triage`;
+      case "ASSIGNED": return c ? "in the field" : "none active";
+      case "IN_PROGRESS": return c ? "active now" : "none active";
+      case "CLOSED": return total ? `${Math.round((counts.CLOSED || 0) / total * 100)}% resolved` : "—";
+      default: return "";
+    }
+  };
 
   const visible = tickets.filter((t) => {
     if (filter && t.status !== filter) return false;
@@ -88,10 +102,10 @@ export default function Dashboard() {
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {STATS.map((s) => (
           <Kpi key={s.key} label={s.label} value={countFor(s.key)} icon={s.icon} color={s.color}
-            active={filter === s.key} ring={RING[s.color]} onClick={() => setFilter(s.key)} />
+            hint={hintFor(s.key)} active={filter === s.key} ring={RING[s.color]} onClick={() => setFilter(s.key)} />
         ))}
         <Kpi label="Low stock parts" value={lowStock ?? "—"} icon="box" color="orange"
-          onClick={() => navigate("/stock")} />
+          hint={lowStock ? "reorder soon" : "all stocked"} onClick={() => navigate("/stock")} />
       </div>
 
       {/* Requests table */}
@@ -134,17 +148,19 @@ function FilterChip({ label, onClear }) {
   );
 }
 
-function Kpi({ label, value, icon, color, active, ring, onClick }) {
+function Kpi({ label, value, icon, color, hint, active, ring, onClick }) {
   return (
     <button onClick={onClick} aria-pressed={active === undefined ? undefined : active}
-      className={`flex items-start justify-between rounded-xl border bg-white p-4 text-left shadow-card transition hover:shadow-pop focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 ${
+      className={`relative flex items-start justify-between overflow-hidden rounded-xl border bg-white py-3.5 pl-5 pr-3.5 text-left shadow-card transition hover:shadow-pop focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 ${
         active ? `border-transparent ring-2 ${ring}` : "border-slate-200"
       }`}>
-      <div>
+      <span className={`absolute inset-y-0 left-0 w-1 ${ACCENT[color]}`} aria-hidden="true" />
+      <div className="min-w-0">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
-        <div className="mt-2 text-2xl font-bold text-slate-900">{value}</div>
+        <div className="mt-1 text-2xl font-bold leading-none text-slate-900">{value}</div>
+        <div className="mt-1 truncate text-[11px] text-slate-400">{hint || " "}</div>
       </div>
-      <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${ICON_BG[color]}`}>
+      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${ICON_BG[color]}`}>
         <Icon name={icon} className="h-4 w-4" />
       </span>
     </button>
