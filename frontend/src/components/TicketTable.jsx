@@ -83,13 +83,13 @@ export default function TicketTable({ tickets, emptyHint }) {
       {/* ---------- Desktop: table ---------- */}
       <div className="hidden overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card sm:block">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[64rem] table-fixed text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-[11px] uppercase tracking-wide text-slate-500">
-                <th className="w-28 px-4 py-2.5 font-semibold">Ticket</th>
-                <th className="px-4 py-2.5 font-semibold">Customer</th>
+                <th className="w-32 px-4 py-2.5 font-semibold">Ticket</th>
+                <th className="w-60 px-4 py-2.5 font-semibold">Customer</th>
                 <th className="px-4 py-2.5 font-semibold">Issue</th>
-                <th className="w-44 px-4 py-2.5 font-semibold">Technician</th>
+                <th className="w-40 px-4 py-2.5 font-semibold">Technician</th>
                 <th className="w-32 px-4 py-2.5 font-semibold">Status</th>
                 <th className="w-24 px-4 py-2.5 text-right font-semibold">Created</th>
               </tr>
@@ -120,7 +120,7 @@ export default function TicketTable({ tickets, emptyHint }) {
                         </div>
                       </div>
                     </td>
-                    <td className="max-w-0 px-4 py-2.5 text-slate-600">
+                    <td className="px-4 py-2.5 text-slate-600">
                       <span className="flex items-center gap-1.5">
                         {t.issue_description
                           ? <Icon name="drop" className="h-3.5 w-3.5 shrink-0 text-slate-300" />
@@ -130,7 +130,7 @@ export default function TicketTable({ tickets, emptyHint }) {
                         </span>
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-slate-600">
+                    <td className="truncate px-4 py-2.5 text-slate-600">
                       {t.technician?.full_name || <span className="text-slate-300">Unassigned</span>}
                     </td>
                     <td className="px-4 py-2.5"><StatusCell t={t} /></td>
