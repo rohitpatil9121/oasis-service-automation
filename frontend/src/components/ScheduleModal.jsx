@@ -22,11 +22,17 @@ export default function ScheduleModal({ ticket, onClose, onScheduled }) {
 
   const rescheduling = !!ticket.scheduled_start;
 
+  // Today as YYYY-MM-DD (local) — used to block scheduling a visit in the past.
+  const pad = (n) => String(n).padStart(2, "0");
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
   async function submit(e) {
     e.preventDefault();
     if (!date || !startTime) return setErr("Please pick a date and start time.");
     const start = new Date(`${date}T${startTime}`).toISOString();
     const end = endTime ? new Date(`${date}T${endTime}`).toISOString() : null;
+    if (new Date(start) < new Date()) return setErr("Visit time can't be in the past.");
     if (end && end <= start) return setErr("End time must be after the start time.");
     setBusy(true); setErr("");
     try {
@@ -40,7 +46,7 @@ export default function ScheduleModal({ ticket, onClose, onScheduled }) {
       subtitle={`Ticket ${ticket.ticket_number}${ticket.technician ? " · " + ticket.technician.full_name : ""}`} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <Alert>{err}</Alert>
-        <Field label="Visit date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></Field>
+        <Field label="Visit date"><Input type="date" min={todayStr} value={date} onChange={(e) => setDate(e.target.value)} required /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Start time"><Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required /></Field>
           <Field label="End time (optional)"><Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} /></Field>

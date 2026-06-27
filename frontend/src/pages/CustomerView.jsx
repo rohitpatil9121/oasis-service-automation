@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
 import StatusBadge from "../components/StatusBadge.jsx";
+import RatingStars from "../components/RatingStars.jsx";
 import ChatPanel from "../components/ChatPanel.jsx";
 import { Card, Icon, Spinner, Alert } from "../components/ui.jsx";
 
@@ -87,6 +88,7 @@ export default function CustomerView() {
                   <th className="px-4 py-3 font-semibold">Appliance</th>
                   <th className="px-4 py-3 font-semibold">Technician</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold">Rating</th>
                   <th className="px-4 py-3 font-semibold text-right">Created</th>
                 </tr>
               </thead>
@@ -98,6 +100,9 @@ export default function CustomerView() {
                     <td className="whitespace-nowrap px-4 py-3 text-slate-500">{t.appliance || "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">{t.technician?.full_name || <span className="text-slate-300">—</span>}</td>
                     <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {t.rating != null ? <RatingStars value={t.rating} /> : <span className="text-slate-300">—</span>}
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right text-xs text-slate-400">{fmt(t.created_at)}</td>
                   </tr>
                 ))}

@@ -31,6 +31,9 @@ export const env = {
   metaAccessToken: process.env.META_ACCESS_TOKEN,
   metaVerifyToken: process.env.META_VERIFY_TOKEN || "oasis_verify_token",
   metaGraphVersion: process.env.META_GRAPH_VERSION || "v21.0",
+  // App secret (Meta app → Settings → Basic) — used to verify the X-Hub-Signature-256
+  // on inbound webhooks so forged requests are rejected.
+  metaAppSecret: process.env.META_APP_SECRET,
 
   // AI intake (Groq). When AI_INTAKE=true the WhatsApp agent uses the LLM
   // for natural conversation instead of the deterministic state machine.

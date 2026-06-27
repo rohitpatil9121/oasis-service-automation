@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 // Small, dependency-free UI primitives shared across the dashboard so styling
 // stays consistent. Tailwind utility classes under the hood.
 
@@ -99,13 +101,41 @@ export function Alert({ children }) {
 }
 
 // ---------- Modal ----------
+// Closes on Escape and on backdrop click. Moves focus into the dialog on open,
+// keeps Tab from escaping (focus trap), and restores focus to the trigger on
+// close — the basics a screen-reader / keyboard user expects from a dialog.
+const FOCUSABLE = 'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])';
 export function Modal({ title, subtitle, onClose, children }) {
+  const panelRef = useRef(null);
+  const titleId = title ? "modal-title" : undefined;
+
+  useEffect(() => {
+    const opener = document.activeElement;
+    const panel = panelRef.current;
+    // focus the first field (or the panel itself) once mounted
+    const first = panel?.querySelector(FOCUSABLE);
+    (first || panel)?.focus();
+
+    function onKeyDown(e) {
+      if (e.key === "Escape") { e.stopPropagation(); onClose?.(); return; }
+      if (e.key !== "Tab") return;
+      const items = panel?.querySelectorAll(FOCUSABLE);
+      if (!items?.length) return;
+      const first = items[0], last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.removeEventListener("keydown", onKeyDown); opener?.focus?.(); };
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
       onMouseDown={onClose}>
-      <div className="w-full max-w-md animate-in rounded-2xl bg-white p-6 shadow-pop"
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
+        className="w-full max-w-md animate-in rounded-2xl bg-white p-6 shadow-pop outline-none"
         onMouseDown={(e) => e.stopPropagation()}>
-        {title && <h3 className="text-lg font-semibold text-slate-900">{title}</h3>}
+        {title && <h3 id={titleId} className="text-lg font-semibold text-slate-900">{title}</h3>}
         {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
         <div className="mt-4 space-y-3">{children}</div>
       </div>
