@@ -6,7 +6,7 @@ import { handleInboundAI } from "../services/aiIntake.js";
 import { runAgent } from "../services/agent/run.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
 import { isAgentHandling, storeBotMessage } from "../services/conversation.js";
-import { handleRatingButton } from "../services/rating.js";
+import { handleRatingReply } from "../services/rating.js";
 import { supabase } from "../config/supabase.js";
 import { normalizePhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
@@ -175,17 +175,19 @@ router.post("/whatsapp", async (req, res) => {
       const mediaType = msg.image?.mime_type || msg.video?.mime_type || msg.document?.mime_type || null;
       const waMessageId = msg.id || null; // wamid — lets the manager later "reply" to this exact message
       const replyToWamid = msg.context?.id || null; // set when the sender quoted an earlier message
-      // Interactive reply-button tap (e.g. the post-close rating buttons).
-      const buttonReply = msg.type === "interactive" ? msg.interactive?.button_reply : null;
-      log.info(`[WA IN] ${from}: ${text || buttonReply?.title || (mediaId ? `(media ${mediaType})` : "(non-text message)")}`);
+      // Interactive tap — list row (the post-close star rating) or reply button.
+      const interactiveReply = msg.type === "interactive"
+        ? (msg.interactive?.list_reply || msg.interactive?.button_reply)
+        : null;
+      log.info(`[WA IN] ${from}: ${text || interactiveReply?.title || (mediaId ? `(media ${mediaType})` : "(non-text message)")}`);
 
-      // A rating button is a structured one-tap response, not a conversation:
+      // A rating tap is a structured one-tap response, not a conversation:
       // record it, log the tap to the thread, and acknowledge once — never route
       // it through intake (which would otherwise treat it as a new request).
-      if (buttonReply) {
-        const ack = await handleRatingButton(buttonReply.id);
+      if (interactiveReply) {
+        const ack = await handleRatingReply(interactiveReply.id);
         if (ack !== null) {
-          await logInbound(from, buttonReply.title || buttonReply.id, { waMessageId });
+          await logInbound(from, interactiveReply.title || interactiveReply.id, { waMessageId });
           await sendWhatsApp(from, ack);
           await storeBotMessage(normalizePhone(from), ack);
           return;

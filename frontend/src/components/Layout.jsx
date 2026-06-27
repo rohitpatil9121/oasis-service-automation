@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, NavLink, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { Icon } from "./ui.jsx";
+import { Icon, Logo } from "./ui.jsx";
 import NotificationBell from "./NotificationBell.jsx";
 
 // Real, working pages only — grouped like an ERP for a richer feel.
@@ -48,12 +48,11 @@ export default function Layout({ children }) {
     <div className="flex min-h-screen bg-slate-50">
       {/* ---------- Sidebar ---------- */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col bg-slate-900 lg:flex">
-        <div className="flex h-16 items-center gap-2.5 px-5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-sm font-extrabold text-white">OG</span>
-          <div className="leading-tight">
-            <div className="text-sm font-bold text-white">Oasis Globe</div>
-            <div className="text-[10px] font-medium uppercase tracking-wider text-slate-500">Service</div>
-          </div>
+        <div className="flex h-16 items-center px-4">
+          {/* logo art is dark navy — sits on a white chip so it reads on the dark rail */}
+          <Link to="/" className="flex items-center rounded-lg bg-white px-3 py-2">
+            <Logo className="h-7" badge="h-7 w-7 rounded-lg text-xs" />
+          </Link>
         </div>
 
         <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
@@ -99,8 +98,8 @@ export default function Layout({ children }) {
         {/* Top bar */}
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6">
           {/* mobile brand */}
-          <Link to="/" aria-label="Oasis Globe home" className="flex items-center gap-2 lg:hidden">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-xs font-extrabold text-white">OG</span>
+          <Link to="/" aria-label="Oasis Globe home" className="flex items-center lg:hidden">
+            <Logo className="h-8" badge="h-8 w-8 rounded-lg text-xs" />
           </Link>
 
           <div className="relative max-w-xl flex-1">
