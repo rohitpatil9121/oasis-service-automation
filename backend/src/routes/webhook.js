@@ -4,6 +4,7 @@ import { handleInboundAI } from "../services/aiIntake.js";
 import { runAgent } from "../services/agent/run.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
 import { isAgentHandling, storeBotMessage } from "../services/conversation.js";
+import { handleRatingButton } from "../services/rating.js";
 import { supabase } from "../config/supabase.js";
 import { normalizePhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
@@ -141,7 +142,22 @@ router.post("/whatsapp", async (req, res) => {
       const mediaType = msg.image?.mime_type || msg.video?.mime_type || msg.document?.mime_type || null;
       const waMessageId = msg.id || null; // wamid — lets the manager later "reply" to this exact message
       const replyToWamid = msg.context?.id || null; // set when the sender quoted an earlier message
-      log.info(`[WA IN] ${from}: ${text || (mediaId ? `(media ${mediaType})` : "(non-text message)")}`);
+      // Interactive reply-button tap (e.g. the post-close rating buttons).
+      const buttonReply = msg.type === "interactive" ? msg.interactive?.button_reply : null;
+      log.info(`[WA IN] ${from}: ${text || buttonReply?.title || (mediaId ? `(media ${mediaType})` : "(non-text message)")}`);
+
+      // A rating button is a structured one-tap response, not a conversation:
+      // record it, log the tap to the thread, and acknowledge once — never route
+      // it through intake (which would otherwise treat it as a new request).
+      if (buttonReply) {
+        const ack = await handleRatingButton(buttonReply.id);
+        if (ack !== null) {
+          await logInbound(from, buttonReply.title || buttonReply.id, { waMessageId });
+          await sendWhatsApp(from, ack);
+          await storeBotMessage(normalizePhone(from), ack);
+          return;
+        }
+      }
 
       // Debounced: waits for the customer to finish before the bot replies once.
       await enqueueReply(from, text, { mediaId, mediaType, waMessageId, replyToWamid }, (reply) => sendWhatsApp(from, reply));
