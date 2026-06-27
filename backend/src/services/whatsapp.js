@@ -52,29 +52,14 @@ async function sendViaMeta(toPhone, body, contextMessageId) {
   return { sid: data.messages?.[0]?.id };
 }
 
-// Send an interactive "reply buttons" message (Meta only). Up to 3 buttons.
-// `buttons` = [{ id, title }] — id ≤ 256 chars (we encode the ticket in it),
-// title ≤ 20 chars (WhatsApp limit). The customer's tap comes back as an
-// `interactive.button_reply` on the webhook carrying the id we set here.
-async function sendInteractiveButtonsViaMeta(toPhone, { body, buttons }) {
+// Send an interactive message (Meta only): reply buttons OR a single-select list.
+// `interactive` is the Meta `interactive` object ({ type: "button"|"list", body,
+// action }) — the caller builds it (see services/tickets.js for the rating list).
+// The customer's tap comes back on the webhook as interactive.button_reply or
+// interactive.list_reply, carrying the row/button id we set here.
+async function sendInteractiveViaMeta(toPhone, interactive) {
   const to = normalizePhone(toPhone).replace(/\D/g, "");
   const url = `https://graph.facebook.com/${env.metaGraphVersion}/${env.metaPhoneNumberId}/messages`;
-
-  const payload = {
-    messaging_product: "whatsapp",
-    to,
-    type: "interactive",
-    interactive: {
-      type: "button",
-      body: { text: body },
-      action: {
-        buttons: buttons.slice(0, 3).map((b) => ({
-          type: "reply",
-          reply: { id: String(b.id).slice(0, 256), title: String(b.title).slice(0, 20) },
-        })),
-      },
-    },
-  };
 
   const res = await fetch(url, {
     method: "POST",
@@ -82,7 +67,7 @@ async function sendInteractiveButtonsViaMeta(toPhone, { body, buttons }) {
       Authorization: `Bearer ${env.metaAccessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ messaging_product: "whatsapp", to, type: "interactive", interactive }),
   });
 
   const data = await res.json().catch(() => ({}));
@@ -171,25 +156,32 @@ export async function sendWhatsAppTemplate(toPhone, template, fallbackBody) {
   return { ...result, mock: false };
 }
 
-// Send up to 3 interactive reply buttons, with graceful fallbacks. Interactive
-// messages are a Meta feature: in mock mode we log, and on Twilio (no equivalent)
-// we send `fallbackBody` as plain text so the customer still gets the message.
-// `interactive` = { body, buttons: [{ id, title }] }.
-export async function sendWhatsAppButtons(toPhone, { body, buttons }, fallbackBody) {
+// Pull the tappable option titles out of either interactive shape, for the mock log.
+function interactiveOptions(interactive) {
+  if (interactive?.action?.buttons) return interactive.action.buttons.map((b) => b.reply?.title);
+  if (interactive?.action?.sections) return interactive.action.sections.flatMap((s) => (s.rows || []).map((r) => r.title));
+  return [];
+}
+
+// Send an interactive message with graceful fallbacks. Interactive messages are a
+// Meta feature: in mock mode we log, and on Twilio (no equivalent) we send
+// `fallbackBody` as plain text so the customer still gets the message.
+// `interactive` is the Meta interactive object (button or list).
+export async function sendWhatsAppInteractive(toPhone, interactive, fallbackBody) {
   if (env.whatsappMock) {
     const sid = "MOCK-" + Math.random().toString(36).slice(2, 10);
-    const opts = buttons.map((b) => `[${b.title}]`).join(" ");
-    log.info(`[WA MOCK BUTTONS] -> ${toPhone}\n${body}\n${opts}\n[sid ${sid}]`);
+    const opts = interactiveOptions(interactive).map((t) => `[${t}]`).join(" ");
+    log.info(`[WA MOCK INTERACTIVE] -> ${toPhone}\n${interactive?.body?.text || fallbackBody || ""}\n${opts}\n[sid ${sid}]`);
     return { sid, mock: true };
   }
 
   if (env.whatsappProvider !== "meta") {
-    const result = await sendViaTwilio(toPhone, fallbackBody || body);
+    const result = await sendViaTwilio(toPhone, fallbackBody || interactive?.body?.text || "");
     log.info(`[WA SENT twilio] ${result.sid} -> ${toPhone}`);
     return { ...result, mock: false };
   }
 
-  const result = await sendInteractiveButtonsViaMeta(toPhone, { body, buttons });
-  log.info(`[WA BUTTONS SENT] ${result.sid} -> ${toPhone}`);
+  const result = await sendInteractiveViaMeta(toPhone, interactive);
+  log.info(`[WA INTERACTIVE SENT ${interactive?.type}] ${result.sid} -> ${toPhone}`);
   return { ...result, mock: false };
 }

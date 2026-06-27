@@ -505,8 +505,9 @@ export async function updateStatus(id, toStatus, actorId, reason) {
   }
 
   // Tell the customer their request is completed when the manager closes it.
-  // Inside WhatsApp's 24-hour window we send 3 one-tap rating buttons (the ids
-  // encode ticket + score, attributed back on the webhook). Outside the window
+  // Inside WhatsApp's 24-hour window we send a list message: a "Rate our service"
+  // button opens a menu of 5 star options (★ to ★★★★★). Each row id encodes
+  // ticket + score, attributed back on the webhook. Outside the window
   // interactive/free-form silently fails, so we fall back to an approved
   // template — the customer still reliably learns the job is done.
   if (toStatus === "CLOSED" && current.customer?.phone) {
@@ -515,16 +516,17 @@ export async function updateStatus(id, toStatus, actorId, reason) {
       const body =
         `Your service request ${current.ticket_number} has been marked completed.\n\n` +
         `Service: ${current.issue_description || "—"}\n\n` +
-        `How was our service?`;
+        `How was our service? Tap below to rate us.`;
+      const row = (n) => ({ id: `rate_${id}_${n}`, title: "★".repeat(n), description: RATING_LABELS[n] });
       await queueNotification({
         recipient: current.customer.phone, audience: "customer", ticketId: id, body,
         interactive: {
-          body,
-          buttons: [
-            { id: `rate_${id}_5`, title: "Excellent" },
-            { id: `rate_${id}_3`, title: "Okay" },
-            { id: `rate_${id}_1`, title: "Poor" },
-          ],
+          type: "list",
+          body: { text: body },
+          action: {
+            button: "Rate our service",
+            sections: [{ title: "Tap your rating", rows: [row(5), row(4), row(3), row(2), row(1)] }],
+          },
         },
       });
     } else {

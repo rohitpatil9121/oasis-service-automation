@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { Button, Input, Field, PhoneInput, Alert, Icon } from "../components/ui.jsx";
+import { Button, Input, Field, PhoneInput, Alert, Icon, Logo } from "../components/ui.jsx";
 
 export default function Login() {
   const { loginPassword, requestOtp, loginOtp, user } = useAuth();
@@ -29,8 +29,7 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand to-brand-dark p-4">
       <div className="w-full max-w-sm animate-in rounded-2xl bg-white p-7 shadow-pop">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand text-sm font-extrabold text-white">OG</div>
-          <h1 className="text-xl font-bold text-slate-900">Oasis Globe</h1>
+          <Logo className="mx-auto mb-3 h-14" badge="mx-auto h-12 w-12 rounded-xl text-sm" />
           <p className="text-sm text-slate-400">Service Manager Login</p>
         </div>
 

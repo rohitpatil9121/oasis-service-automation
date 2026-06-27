@@ -13,7 +13,7 @@ const STATS = [
   { key: "", label: "All requests", icon: "inbox", color: "slate" },
   { key: "NEW", label: "New", icon: "alert", color: "blue" },
   { key: "ASSIGNED", label: "Assigned", icon: "wrench", color: "amber" },
-  { key: "IN_PROGRESS", label: "In progress", icon: "refresh", color: "violet" },
+  { key: "IN_PROGRESS", label: "In progress", icon: "refresh", color: "indigo" },
   { key: "CLOSED", label: "Closed", icon: "check", color: "emerald" },
 ];
 
