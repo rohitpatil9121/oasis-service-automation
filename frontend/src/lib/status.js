@@ -39,6 +39,16 @@ export const ICON_BG = {
   orange: "bg-orange-50 text-orange-600",
 };
 
+// Left accent bar on KPI cards (groups cards by state at a glance).
+export const ACCENT = {
+  slate: "bg-slate-300",
+  blue: "bg-blue-400",
+  amber: "bg-amber-400",
+  violet: "bg-violet-400",
+  emerald: "bg-emerald-500",
+  orange: "bg-orange-400",
+};
+
 // Focus/selected ring (used on the active KPI filter card).
 export const RING = {
   slate: "ring-slate-300",
