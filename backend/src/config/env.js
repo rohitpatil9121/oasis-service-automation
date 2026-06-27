@@ -42,6 +42,11 @@ export const env = {
   groqApiKey: process.env.GROQ_API_KEY,
   groqModel: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
 
+  // FAQ / company-info flow (Flow 3). OFF for now — the agent deflects general
+  // questions ("team will confirm") instead of quoting areas/timings/AMC/pricing
+  // that aren't verified yet. Set FAQ_ENABLED=true to turn it back on.
+  faqEnabled: bool(process.env.FAQ_ENABLED, false),
+
   managerWhatsapp: process.env.MANAGER_WHATSAPP || "",
   defaultCountryCode: process.env.DEFAULT_COUNTRY_CODE || "+91",
 

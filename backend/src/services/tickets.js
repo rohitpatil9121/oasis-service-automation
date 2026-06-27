@@ -68,6 +68,49 @@ export async function updateCustomer({ customerId, full_name, phone, address }) 
   return data;
 }
 
+// The brands/partners a manual request can be attributed to. Kept in sync with
+// the dropdown in NewTicketModal / EditCustomerModal.
+export const LEAD_SOURCES = ["our service team", "KENT"];
+
+// How a request reached us. Set automatically at creation (WhatsApp intake vs.
+// manual entry) but correctable from the edit modal.
+export const TICKET_SOURCES = ["whatsapp", "manual"];
+
+// Service Manager corrects how a request came in (WhatsApp / manual entry).
+export async function updateSource({ ticketId, source }) {
+  if (source == null) return; // not being changed
+  const val = String(source).trim();
+  if (!TICKET_SOURCES.includes(val)) { const e = new Error("Invalid source"); e.status = 400; throw e; }
+  const { error } = await supabase
+    .from("tickets").update({ source: val }).eq("id", ticketId);
+  if (error) throw new Error("updateSource: " + error.message);
+  log.info(`Source set to "${val}" for ticket ${ticketId}`);
+}
+
+// Service Manager corrects the lead source (which brand/partner the request came
+// through) on an existing ticket — e.g. after creating it with the wrong one.
+export async function updateLeadSource({ ticketId, lead_source }) {
+  if (lead_source == null) return; // not being changed
+  const val = String(lead_source).trim();
+  if (!LEAD_SOURCES.includes(val)) { const e = new Error("Invalid lead source"); e.status = 400; throw e; }
+  const { error } = await supabase
+    .from("tickets").update({ lead_source: val }).eq("id", ticketId);
+  if (error) throw new Error("updateLeadSource: " + error.message);
+  log.info(`Lead source set to "${val}" for ticket ${ticketId}`);
+}
+
+// Service Manager sets/corrects the purifier brand/model on a ticket. Free text —
+// manual requests don't capture it at creation, and AI intake only fills it when
+// the customer happens to mention it. Blank clears it.
+export async function updateAppliance({ ticketId, appliance }) {
+  if (appliance === undefined) return; // key absent → not being changed
+  const val = String(appliance || "").trim() || null;
+  const { error } = await supabase
+    .from("tickets").update({ appliance: val }).eq("id", ticketId);
+  if (error) throw new Error("updateAppliance: " + error.message);
+  log.info(`Appliance set to "${val || "—"}" for ticket ${ticketId}`);
+}
+
 // Edit the ticket's issue description (e.g. after clarifying with the customer).
 export async function updateIssue({ ticketId, issue_description, actorId }) {
   const desc = (issue_description || "").trim();

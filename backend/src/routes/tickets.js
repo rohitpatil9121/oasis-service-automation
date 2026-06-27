@@ -68,8 +68,11 @@ router.patch("/:id/issue", requireRole("owner", "manager"), async (req, res, nex
 router.patch("/:id/customer", requireRole("owner", "manager"), async (req, res, next) => {
   try {
     const ticket = await tickets.getTicket(req.params.id);
-    const { full_name, phone, address } = req.body || {};
+    const { full_name, phone, address, lead_source, appliance, source } = req.body || {};
     await tickets.updateCustomer({ customerId: ticket.customer.id, full_name, phone, address });
+    await tickets.updateLeadSource({ ticketId: req.params.id, lead_source });
+    await tickets.updateAppliance({ ticketId: req.params.id, appliance });
+    await tickets.updateSource({ ticketId: req.params.id, source });
     res.json({ ticket: await tickets.getTicket(req.params.id) });
   } catch (e) { next(e); }
 });

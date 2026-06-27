@@ -120,6 +120,17 @@ const shape = (t) => ({
 // Returns the company KB. `pricing: null` (or any empty field) signals the agent
 // to say "our team will confirm" rather than invent a value.
 function getCompanyInfo(_ctx, { topic } = {}) {
+  // FAQ turned off for now (FAQ_ENABLED=false): don't quote unverified company
+  // facts — tell the model to deflect to the team. Re-enable by setting the flag.
+  if (!env.faqEnabled) {
+    return {
+      disabled: true,
+      instruction:
+        "Company info is unavailable right now. Tell the customer our team will " +
+        "confirm these details and get back to them shortly. Do NOT list any " +
+        "services, brands, areas, timings, AMC, or prices.",
+    };
+  }
   return { topic: topic || null, info: COMPANY_INFO };
 }
 
