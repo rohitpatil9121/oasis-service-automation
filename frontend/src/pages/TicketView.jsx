@@ -129,6 +129,11 @@ export default function TicketView() {
           <Row label="Technician" value={ticket.technician?.full_name || "Unassigned"} />
           <Row label="Created" value={fmt(ticket.created_at)} />
           {ticket.closed_at && <Row label="Closed" value={fmt(ticket.closed_at)} />}
+          {(ticket.rating != null || ticket.status === "CLOSED") && (
+            <Row label="Rating" value={ticket.rating != null
+              ? <RatingStars value={ticket.rating} />
+              : <span className="text-slate-400">Awaiting customer rating…</span>} />
+          )}
         </dl>
       </Card>
 
@@ -253,6 +258,18 @@ function BackLink() {
     <Link to="/" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
       <Icon name="back" /> Back to inbox
     </Link>
+  );
+}
+
+const RATING_LABELS = { 1: "Poor", 2: "Fair", 3: "Okay", 4: "Good", 5: "Excellent" };
+function RatingStars({ value }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="text-amber-500" aria-label={`${value} out of 5`}>
+        {"★".repeat(value)}<span className="text-slate-300">{"★".repeat(5 - value)}</span>
+      </span>
+      <span className="text-slate-500">{RATING_LABELS[value] || `${value}/5`}</span>
+    </span>
   );
 }
 

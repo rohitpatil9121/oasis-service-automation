@@ -438,14 +438,49 @@ export async function updateStatus(id, toStatus, actorId, reason) {
     });
   }
 
-  // Tell the customer their request is completed when the manager closes it.
+  // Tell the customer their request is completed when the manager closes it, and
+  // ask them to rate the service with 3 one-tap WhatsApp buttons. The button ids
+  // encode the ticket + score so the tap can be attributed back on the webhook.
+  // (Interactive messages, like the old plain text, reach customers who messaged
+  // within WhatsApp's 24-hour window.)
   if (toStatus === "CLOSED" && current.customer?.phone) {
+    const body =
+      `Your service request ${current.ticket_number} has been marked completed.\n\n` +
+      `Service: ${current.issue_description || "—"}\n\n` +
+      `How was our service?`;
     await queueNotification({
-      recipient: current.customer.phone, audience: "customer", ticketId: id,
-      body: `Your service request ${current.ticket_number} has been marked completed.\n\n` +
-            `Service: ${current.issue_description || "—"}`,
+      recipient: current.customer.phone, audience: "customer", ticketId: id, body,
+      interactive: {
+        body,
+        buttons: [
+          { id: `rate_${id}_5`, title: "Excellent" },
+          { id: `rate_${id}_3`, title: "Okay" },
+          { id: `rate_${id}_1`, title: "Poor" },
+        ],
+      },
     });
   }
 
   return data;
+}
+
+// Score → label, used both ways: when 3 buttons map to 1/3/5, and to read back
+// any stored 1–5 rating (e.g. a typed reply) in messages and on the dashboard.
+export const RATING_LABELS = { 1: "Poor", 2: "Fair", 3: "Okay", 4: "Good", 5: "Excellent" };
+
+// The customer tapped a rating button after their request was closed. Store the
+// 1–5 score on the ticket and log it. Re-tapping just overwrites the score.
+export async function recordRating(ticketId, rating) {
+  const n = Number(rating);
+  if (!Number.isInteger(n) || n < 1 || n > 5) {
+    const e = new Error("Rating must be a whole number from 1 to 5"); e.status = 400; throw e;
+  }
+  const { data: ticket, error } = await supabase
+    .from("tickets").update({ rating: n, rated_at: new Date().toISOString() })
+    .eq("id", ticketId).select("id, ticket_number").single();
+  if (error) throw new Error("recordRating: " + error.message);
+  // Audit is best-effort — never lose a rating because the event insert failed.
+  try { await logEvent(ticketId, "rated", { meta: { rating: n } }); } catch (e) { log.error("rated event:", e.message); }
+  log.info(`Ticket ${ticket.ticket_number} rated ${n}/5`);
+  return ticket;
 }

@@ -1,11 +1,11 @@
 // Notification dispatch. We send the WhatsApp message INLINE and record the
 // outcome (SENT/FAILED) — no PENDING row for any external worker to grab.
 import { supabase } from "../config/supabase.js";
-import { sendWhatsApp, sendWhatsAppTemplate } from "./whatsapp.js";
+import { sendWhatsApp, sendWhatsAppTemplate, sendWhatsAppButtons } from "./whatsapp.js";
 import { log } from "../lib/logger.js";
 
 
-export async function queueNotification({ recipient, body, audience, ticketId, template, replyTo }) {
+export async function queueNotification({ recipient, body, audience, ticketId, template, replyTo, interactive }) {
   let row = {
     channel: "whatsapp",
     recipient,
@@ -22,9 +22,11 @@ export async function queueNotification({ recipient, body, audience, ticketId, t
   if (replyTo?.wamid) row.reply_to_wamid = replyTo.wamid;
 
   try {
-    const res = template
-      ? await sendWhatsAppTemplate(recipient, template, body)
-      : await sendWhatsApp(recipient, body, { contextMessageId: replyTo?.wamid });
+    const res = interactive
+      ? await sendWhatsAppButtons(recipient, interactive, body)
+      : template
+        ? await sendWhatsAppTemplate(recipient, template, body)
+        : await sendWhatsApp(recipient, body, { contextMessageId: replyTo?.wamid });
     row.provider_sid = res.sid;
   } catch (e) {
 
