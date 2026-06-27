@@ -125,6 +125,7 @@ export default function TicketView() {
           <Row label="Address" value={ticket.customer?.address || "—"} />
           <Row label="Appliance" value={ticket.appliance || "—"} />
           <Row label="Source" value={ticket.source === "whatsapp" ? "WhatsApp" : "Manual entry"} />
+          <Row label="Lead source" value={ticket.lead_source === "KENT" ? "KENT" : "Oasis Globe (our service team)"} />
           <Row label="Technician" value={ticket.technician?.full_name || "Unassigned"} />
           <Row label="Created" value={fmt(ticket.created_at)} />
           {ticket.closed_at && <Row label="Closed" value={fmt(ticket.closed_at)} />}
