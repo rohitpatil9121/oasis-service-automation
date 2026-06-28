@@ -19,6 +19,11 @@ import { SYSTEM_PROMPT, OPENING } from "./prompt.js";
 const GREETING_RE = /^(hi+|hey+|hello+|helo|hlo|namaste|namaskar|good\s*(morning|afternoon|evening)|start|service|enquiry|inquiry)[\s!.,]*$/i;
 const isBareGreeting = (t) => GREETING_RE.test((t || "").trim());
 
+// True when the model's reply is (a variant of) the opening greeting — used to
+// force the canonical OPENING so no numbered line is ever dropped.
+const looksLikeOpening = (t) =>
+  /oasis globe water purifier service support/i.test(t || "") && /please share/i.test(t || "");
+
 const MAX_STEPS = 6;    // safety cap on tool round-trips per message
 const MAX_HISTORY = 20; // turns of clean transcript kept for context
 
@@ -117,6 +122,13 @@ export async function runAgent({ fromPhone, text }) {
   // If the request was submitted, send the exact approved confirmation verbatim
   // (the model is unreliable at reproducing multi-line text — don't let it try).
   if (ctx.confirmation) reply = ctx.confirmation;
+
+  // Safety net: whenever the model produces the opening greeting it tends to drop
+  // a line (e.g. the purifier-photo point). If the reply looks like the opening,
+  // replace it with the canonical OPENING so all four points are always present.
+  // Works even when the bare-greeting short-circuit above was skipped (e.g. an
+  // existing session with history).
+  if (looksLikeOpening(reply)) reply = OPENING;
 
   if (!reply) reply = "Could you share a bit more so I can help?";
 

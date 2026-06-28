@@ -74,6 +74,14 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
   if (techErr || !tech) throw new Error("Technician not found");
   if (tech.role !== "technician") throw new Error("User is not a technician");
 
+  // Guard against duplicate assignments: if the ticket is ALREADY assigned to this
+  // exact technician, do nothing. A repeat action (double-click, re-assigning the
+  // same person) must not send the customer/technician a second "assigned" message.
+  if (ticket.assigned_technician_id === technicianId && ticket.status === "ASSIGNED") {
+    log.info(`Ticket ${ticket.ticket_number} already assigned to ${tech.full_name} — skipping duplicate notify`);
+    return { ...ticket, technician: tech };
+  }
+
   const { data: updated, error } = await supabase
     .from("tickets")
     .update({ assigned_technician_id: technicianId, status: "ASSIGNED" })
