@@ -35,7 +35,8 @@ const GREETING =
   "Please share:\n" +
   "1. Your name\n" +
   "2. Service issue\n" +
-  "3. Service address";
+  "3. Service address\n" +
+  "4. A photo of your purifier (optional)";
 
 // Returning customers (name/address already on file) get a short, personal
 // opener instead of re-asking everything.
@@ -172,6 +173,9 @@ Set "escalate" to FALSE for everything else:
 - General chat / a question → answer in one line.
 
 NEVER say "your request is logged" or announce a ticket number as if it is new.
+The system AUTOMATICALLY messages the customer when the request is ASSIGNED, SCHEDULED,
+COMPLETED or CANCELLED — do NOT repeat or re-announce any of these. Mention status ONLY if
+the customer asks. For a simple "ok"/"thanks", reply with ONE short line and no filler.
 Return ONLY the JSON object. No markdown.
 
 Example — "technician never came": {"escalate":true,"message":"We are forwarding this to our support team to follow up. They will get back to you."}
