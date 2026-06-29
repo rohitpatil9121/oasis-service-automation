@@ -43,8 +43,21 @@ export async function createTechnician({ full_name, phone, email }) {
   const normPhone = normalizePhone(phone);
 
   const { data: existing } = await supabase
-    .from("users").select("id, role").eq("phone", normPhone).maybeSingle();
+    .from("users").select("id, role, is_active").eq("phone", normPhone).maybeSingle();
   if (existing) {
+    // A previously removed technician (soft-deleted) is reactivated and updated
+    // rather than blocked — e.g. re-adding with a corrected name.
+    if (existing.role === "technician" && !existing.is_active) {
+      const { data: revived, error: reviveErr } = await supabase
+        .from("users")
+        .update({ full_name: name, email: (email || "").trim() || null, is_active: true })
+        .eq("id", existing.id)
+        .select("id, full_name, phone, email, is_active")
+        .single();
+      if (reviveErr) throw new Error("createTechnician(reactivate): " + reviveErr.message);
+      log.info(`Technician reactivated: ${name} (${normPhone})`);
+      return revived;
+    }
     const e = new Error("A user with this phone number already exists"); e.status = 409; throw e;
   }
 
