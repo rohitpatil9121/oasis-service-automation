@@ -36,7 +36,7 @@ const GREETING =
   "1. Your name\n" +
   "2. Service issue\n" +
   "3. Service address\n" +
-  "4. A photo of your purifier (optional)";
+  "4. Picture of your purifier";
 
 // Returning customers (name/address already on file) get a short, personal
 // opener instead of re-asking everything.
