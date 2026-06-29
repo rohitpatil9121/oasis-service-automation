@@ -136,6 +136,24 @@ Hi {{1}}, your Oasis Globe service visit is scheduled for {{2}} (Ref {{3}}). Our
 ```
 Samples: {{1}} `Mohit Sharma`, {{2}} `14 Jun 2026, 9:00 am – 11:00 am`, {{3}} `OG-140625-0001`
 
+## Template 5 — `login_otp`
+
+Sent to staff (technicians/managers) when they request a login OTP. They haven't
+messaged the business, so the code can't go as free-form text — this template
+delivers it. Now wired in `backend/src/services/auth.js`.
+
+- **Name:** `login_otp` · **Category:** `Authentication` · **Language:** `English` (`en`)
+
+Meta rejects login codes under Utility — pick **Authentication**. You don't type
+the body; Meta generates it. Just configure:
+
+- **Code delivery:** `Copy code` button (default).
+- **Add security recommendation:** ON → adds "For your security, do not share this code."
+- **Add expiry time for the code:** ON, set to **5 minutes** (matches `OTP_TTL_SECONDS=300`).
+
+This gives exactly **one** variable (the code). The backend already passes the
+code to both the body and the copy-code button, so nothing else to wire.
+
 ---
 
 ## After approval — nothing to deploy
