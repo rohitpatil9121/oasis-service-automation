@@ -80,7 +80,7 @@ async function sendInteractiveViaMeta(toPhone, interactive) {
 // Send a pre-approved template (Meta only). Templates bypass the 24-hour
 // customer-service window, so this is how staff alerts actually get delivered.
 // `template` = { name, language, variables: [...] } (see services/waTemplates.js).
-async function sendTemplateViaMeta(toPhone, { name, language = "en", variables = [] }) {
+async function sendTemplateViaMeta(toPhone, { name, language = "en", variables = [], otpCode }) {
   const to = normalizePhone(toPhone).replace(/\D/g, "");
   const url = `https://graph.facebook.com/${env.metaGraphVersion}/${env.metaPhoneNumberId}/messages`;
 
@@ -88,6 +88,16 @@ async function sendTemplateViaMeta(toPhone, { name, language = "en", variables =
   const components = variables.length
     ? [{ type: "body", parameters: variables.map((text) => ({ type: "text", text: String(text ?? "") })) }]
     : [];
+
+  // Authentication templates carry a copy-code button; Meta requires the code to
+  // be passed to that button too, or the send fails with a parameter mismatch.
+  if (otpCode)
+    components.push({
+      type: "button",
+      sub_type: "url",
+      index: "0",
+      parameters: [{ type: "text", text: String(otpCode) }],
+    });
 
   const res = await fetch(url, {
     method: "POST",

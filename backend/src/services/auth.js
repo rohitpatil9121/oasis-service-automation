@@ -5,6 +5,7 @@ import { supabase } from "../config/supabase.js";
 import { env } from "../config/env.js";
 import { normalizePhone } from "../lib/phone.js";
 import { queueNotification } from "./notifications.js";
+import { loginOtp } from "./waTemplates.js";
 import { log } from "../lib/logger.js";
 
 async function findByPhone(phone) {
@@ -34,11 +35,11 @@ export async function requestOtp(phone) {
     .update({ otp_code: await bcrypt.hash(code, 10), otp_expires_at: expires })
     .eq("id", user.id);
 
-  await queueNotification({
-    recipient: user.phone, audience: user.role,
-    body: `Your Oasis Globe login code is ${code}. It expires in ` +
-          `${Math.round(env.otpTtlSeconds / 60)} minutes.`,
-  });
+  // Send as an approved template, not free-form text: staff are almost always
+  // outside the 24-hour window, where free-form messages silently fail to
+  // deliver. `queueNotification` falls back to the body text on Twilio/mock.
+  const { template, body } = loginOtp({ code });
+  await queueNotification({ recipient: user.phone, audience: user.role, template, body });
   return { sent: true };
 }
 

@@ -110,6 +110,26 @@ export function requestCompletedCustomer({ ticketNumber, customerName, issue }) 
   };
 }
 
+// Login OTP for staff (technicians/managers). They usually haven't messaged the
+// business, so the code can't go as free-form text (24-hour rule) — this
+// approved template delivers it any time.
+//
+// This is an Authentication-category template: Meta fixes the body wording and
+// it has exactly ONE variable (the code). The expiry is configured on the
+// template itself, not passed as a variable. `otpCode` tells the Meta sender to
+// also bind the code to the copy-code button (Meta requires that parameter).
+export function loginOtp({ code }) {
+  return {
+    template: {
+      name: "login_otp",
+      language: WA_LANG,
+      variables: [v(code)],
+      otpCode: String(code),
+    },
+    body: `${code} is your Oasis Globe login code. Do not share it with anyone.`,
+  };
+}
+
 // {{1}} customer name  {{2}} ticket  {{3}} reason
 export function requestCancelledCustomer({ ticketNumber, customerName, reason }) {
   return {
