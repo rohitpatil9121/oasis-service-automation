@@ -13,7 +13,7 @@ export const OPENING =
   "1. Your name\n" +
   "2. Service issue\n" +
   "3. Service address\n" +
-  "4. A photo of your purifier ";
+  "4. Picture of your purifier";
 
 export const SYSTEM_PROMPT = `
 You are the WhatsApp assistant for "Oasis Globe", a water purifier service business
