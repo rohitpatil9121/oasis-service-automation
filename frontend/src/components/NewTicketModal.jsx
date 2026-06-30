@@ -9,7 +9,7 @@ export default function NewTicketModal({ onClose, onCreated }) {
   const [form, setForm] = useState({ full_name: "", phone: "", address: "", issue_description: "", lead_source: "our service team" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   async function submit(e) {
     e.preventDefault();
