@@ -1,6 +1,6 @@
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
-import { customerRequestReceived, managerNewRequest, visitScheduledTechnician, visitScheduledCustomer, requestCancelledCustomer, requestCompletedCustomer } from "./waTemplates.js";
+import { customerRequestReceived, managerNewRequest, visitScheduledTechnician, visitScheduledCustomer, requestCancelledCustomer, requestCompletedCustomer, serviceLine } from "./waTemplates.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
@@ -515,7 +515,7 @@ export async function updateStatus(id, toStatus, actorId, reason) {
     if (within24h) {
       const body =
         `Your service request ${current.ticket_number} has been marked completed.\n\n` +
-        `Service: ${current.issue_description || "—"}\n\n` +
+        serviceLine(current.issue_description) +
         `How was our service? Tap below to rate us.`;
       const row = (n) => ({ id: `rate_${id}_${n}`, title: "★".repeat(n), description: RATING_LABELS[n] });
       await queueNotification({
