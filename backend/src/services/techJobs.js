@@ -175,6 +175,14 @@ export async function listParts() {
   return (data || []).map((p) => ({ id: p.id, name: p.name, price: Number(p.unit_price || 0) }));
 }
 
+// Save the technician's FCM device token (for push notifications).
+export async function savePushToken(techId, token) {
+  if (!token) { const e = new Error("token required"); e.status = 400; throw e; }
+  const { error } = await supabase.from("users").update({ push_token: token }).eq("id", techId);
+  if (error) throw new Error("savePushToken: " + error.message);
+  return { ok: true };
+}
+
 export async function setOnline(techId, isOnline) {
   await supabase.from("users").update({ is_online: !!isOnline }).eq("id", techId);
   return { is_online: !!isOnline };

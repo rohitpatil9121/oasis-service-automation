@@ -2,6 +2,7 @@
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
 import { technicianNewJob } from "./waTemplates.js";
+import { sendPush } from "./push.js";
 import { getTicket } from "./tickets.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { log } from "../lib/logger.js";
@@ -82,7 +83,7 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
   const ticket = await getTicket(ticketId);
 
   const { data: tech, error: techErr } = await supabase
-    .from("users").select("id, full_name, phone, role")
+    .from("users").select("id, full_name, phone, role, push_token")
     .eq("id", technicianId).single();
   if (techErr || !tech) throw new Error("Technician not found");
   if (tech.role !== "technician") throw new Error("User is not a technician");
@@ -126,6 +127,13 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
     body: `Your service request ${ticket.ticket_number} has been assigned to our technician ${tech.full_name}.\n\n` +
           `Service: ${ticket.issue_description}\n\n` +
           `The technician will contact you before the visit.`,
+  });
+
+  // Phone push to the technician's device (no-op if FCM/token not set up).
+  await sendPush(tech.push_token, {
+    title: "New job assigned",
+    body: `${ticket.customer.full_name} — ${ticket.issue_description || "service request"} (${ticket.ticket_number})`,
+    data: { ticketId, type: "assignment" },
   });
 
   log.info(`Ticket ${ticket.ticket_number} assigned to ${tech.full_name}`);
