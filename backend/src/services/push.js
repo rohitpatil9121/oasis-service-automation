@@ -2,7 +2,8 @@
 // a service-account JSON in FIREBASE_SERVICE_ACCOUNT (stringified). If that env
 // var is absent or invalid, push becomes a no-op so the rest of the app keeps
 // working — exactly like WHATSAPP_MOCK keeps messaging working without creds.
-import admin from "firebase-admin";
+import { initializeApp, cert, getApps } from "firebase-admin/app";
+import { getMessaging } from "firebase-admin/messaging";
 import { log } from "../lib/logger.js";
 
 let app = null;
@@ -15,7 +16,7 @@ function getApp() {
   if (!raw) { log.warn("FIREBASE_SERVICE_ACCOUNT not set — push notifications disabled."); return null; }
   try {
     const creds = JSON.parse(raw);
-    app = admin.initializeApp({ credential: admin.credential.cert(creds) });
+    app = getApps().length ? getApps()[0] : initializeApp({ credential: cert(creds) });
     log.info("Firebase push initialised.");
     return app;
   } catch (e) {
@@ -29,7 +30,7 @@ function getApp() {
 export async function sendPush(token, { title, body, data = {} }) {
   if (!token || !getApp()) return;
   try {
-    await admin.messaging().send({
+    await getMessaging().send({
       token,
       notification: { title, body },
       data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),

@@ -1,7 +1,7 @@
 // Technician assignment. Phase 1 = simple manual assignment by the manager.
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
-import { technicianNewJob } from "./waTemplates.js";
+import { technicianNewJob, serviceLine } from "./waTemplates.js";
 import { sendPush } from "./push.js";
 import { getTicket } from "./tickets.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
@@ -122,10 +122,16 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
     body: techTpl.body, template: techTpl.template,
   });
 
+  // Surface a silent gap: a request being assigned with no issue recorded means
+  // intake didn't capture it (or it was created manually without one). The customer
+  // message now omits the empty line, but the team should still fill it in.
+  if (!String(ticket.issue_description ?? "").trim())
+    log.warn(`Ticket ${ticket.ticket_number} assigned with NO issue recorded`);
+
   await queueNotification({
     recipient: ticket.customer.phone, audience: "customer", ticketId,
     body: `Your service request ${ticket.ticket_number} has been assigned to our technician ${tech.full_name}.\n\n` +
-          `Service: ${ticket.issue_description}\n\n` +
+          serviceLine(ticket.issue_description) +
           `The technician will contact you before the visit.`,
   });
 

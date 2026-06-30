@@ -7,6 +7,15 @@ function v(val) {
   return s || "—";
 }
 
+// One source of truth for the customer-facing "Service:" line in free-text
+// messages. Returns the line (with a trailing blank line) when there's a real
+// issue, or "" so we NEVER send a blank/placeholder "Service: —" to the customer.
+// (Meta-template variables can't be empty, so those still use v() above.)
+export function serviceLine(issue) {
+  const s = String(issue ?? "").trim();
+  return s ? `Service: ${s}\n\n` : "";
+}
+
 // Sent to the CUSTOMER when the Service Manager creates a request on their
 // behalf (e.g. a KENT-referred lead). The customer hasn't messaged us, so we're
 // outside the 24-hour window — this approved template is how we open the chat.
