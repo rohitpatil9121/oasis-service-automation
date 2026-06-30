@@ -119,6 +119,12 @@ export function Alert({ children }) {
 const FOCUSABLE = 'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])';
 export function Modal({ title, subtitle, onClose, children }) {
   const panelRef = useRef(null);
+  // Keep onClose in a ref so the focus/keydown effect can run ONCE on mount and
+  // still call the latest onClose. Without this, a parent re-render (e.g. the
+  // dashboard's polling) hands down a new onClose identity, re-running the effect
+  // and yanking focus back to the first field mid-typing.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const titleId = title ? "modal-title" : undefined;
 
   useEffect(() => {
@@ -129,7 +135,7 @@ export function Modal({ title, subtitle, onClose, children }) {
     (first || panel)?.focus();
 
     function onKeyDown(e) {
-      if (e.key === "Escape") { e.stopPropagation(); onClose?.(); return; }
+      if (e.key === "Escape") { e.stopPropagation(); onCloseRef.current?.(); return; }
       if (e.key !== "Tab") return;
       const items = panel?.querySelectorAll(FOCUSABLE);
       if (!items?.length) return;
@@ -139,7 +145,7 @@ export function Modal({ title, subtitle, onClose, children }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => { document.removeEventListener("keydown", onKeyDown); opener?.focus?.(); };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"

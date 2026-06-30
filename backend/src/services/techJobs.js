@@ -135,15 +135,6 @@ export async function runStep(techId, ticketId, action, work = {}) {
             `They will reach you shortly.`,
     });
   }
-  if (action === "estimate" && cust?.phone) {
-    const total = Number(tech_work.total || 0);
-    await queueNotification({
-      recipient: cust.phone, audience: "customer", ticketId,
-      body: `Estimate for your ${ticket.appliance || "purifier"} (${ticket.ticket_number}): ` +
-            `₹${total.toLocaleString("en-IN")}. ${techName} will explain the details — ` +
-            `please approve to proceed. Work starts only after your approval.`,
-    });
-  }
 
   if (action === "close") {
     // Reuse the platform's close flow → sends the customer completion + rating
