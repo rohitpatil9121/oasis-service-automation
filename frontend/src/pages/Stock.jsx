@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { api } from "../api/client.js";
-import { Button, Card, Icon, Input, Field, Alert, EmptyState, Modal } from "../components/ui.jsx";
+import { Button, Card, Icon, Input, Select, Field, Alert, EmptyState, Modal } from "../components/ui.jsx";
 
 export default function Stock() {
   const [items, setItems] = useState([]);
@@ -63,6 +63,7 @@ export default function Stock() {
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-4 py-3 font-semibold">Item</th>
+                  <th className="px-4 py-3 font-semibold">Brand</th>
                   <th className="px-4 py-3 font-semibold">SKU</th>
                   <th className="px-4 py-3 font-semibold">In stock</th>
                   <th className="px-4 py-3 font-semibold">MRP</th>
@@ -75,6 +76,13 @@ export default function Stock() {
                   return (
                     <tr key={it.id} className="hover:bg-slate-50">
                       <td className="px-4 py-3 font-medium text-slate-800">{it.name}</td>
+                      <td className="px-4 py-3">
+                        {it.brand ? (
+                          <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium capitalize text-brand">
+                            {it.brand}{it.brand === "oasis" && it.base_cost > 0 ? ` · ₹${it.base_cost}` : ""}
+                          </span>
+                        ) : <span className="text-xs text-slate-400">—</span>}
+                      </td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-500">{it.sku || "—"}</td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center gap-1.5 font-medium ${low ? "text-amber-600" : "text-slate-700"}`}>
@@ -124,6 +132,8 @@ function ItemModal({ item, onClose, onSaved }) {
     qty_on_hand: editing ? String(item.qty_on_hand) : "",
     reorder_level: editing ? String(item.reorder_level) : "",
     unit_price: editing ? String(item.unit_price) : "",
+    brand: item?.brand || "",
+    base_cost: editing && item.base_cost ? String(item.base_cost) : "",
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -153,6 +163,23 @@ function ItemModal({ item, onClose, onSaved }) {
           <Field label={editing ? "In stock" : "Opening qty"}><Input type="number" min="0" value={form.qty_on_hand} onChange={set("qty_on_hand")} placeholder="0" /></Field>
           <Field label="Reorder at"><Input type="number" min="0" value={form.reorder_level} onChange={set("reorder_level")} placeholder="0" /></Field>
           <Field label="MRP ₹"><Input type="number" min="0" value={form.unit_price} onChange={set("unit_price")} placeholder="0" /></Field>
+        </div>
+        {/* Brand drives the technician incentive: Kent/Aquaguard earn 6–10% of the
+            sale; Oasis earns the margin over the fixed buy cost. */}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Brand (for incentive)" hint="Leave blank if no incentive applies">
+            <Select value={form.brand} onChange={set("brand")}>
+              <option value="">— None —</option>
+              <option value="kent">Kent</option>
+              <option value="aquaguard">Aquaguard</option>
+              <option value="oasis">Oasis</option>
+            </Select>
+          </Field>
+          {form.brand === "oasis" && (
+            <Field label="Fixed cost ₹" hint="Technician margin = sell − this">
+              <Input type="number" min="0" value={form.base_cost} onChange={set("base_cost")} placeholder="350" />
+            </Field>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>

@@ -18,6 +18,7 @@ const NAV = [
     group: "Operations",
     items: [
       { to: "/stock", label: "Inventory & Parts", icon: "box" },
+      { to: "/incentives", label: "Incentives", icon: "award" },
     ],
   },
 ];

@@ -61,4 +61,12 @@ export const api = {
     request(`/technicians/${techId}/stock-issue`, { method: "POST", body: { lines } }),
   reconcileStock: (issueId, lines) =>
     request(`/stock/issues/${issueId}/reconcile`, { method: "POST", body: { lines } }),
+  // incentives (computed payout report)
+  incentiveReport: ({ from, to } = {}) => {
+    const qs = new URLSearchParams();
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    const s = qs.toString();
+    return request(`/incentives${s ? `?${s}` : ""}`);
+  },
 };

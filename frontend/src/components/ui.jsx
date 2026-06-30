@@ -40,6 +40,7 @@ const PATHS = {
   reply: "M9 14 4 9l5-5 M20 20v-7a4 4 0 0 0-4-4H4",
   x: "M18 6 6 18 M6 6l12 12",
   drop: "M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z",
+  award: "M12 15a7 7 0 1 0 0-14 7 7 0 0 0 0 14z M8.21 13.89 7 23l5-3 5 3-1.21-9.12",
 };
 export function Icon({ name, className = "h-4 w-4", stroke = 2 }) {
   return (

@@ -3,6 +3,7 @@ import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/rbac.js";
 import * as tech from "../services/techJobs.js";
+import { technicianEarnings, todayProgress } from "../services/incentives.js";
 
 const router = Router();
 router.use(requireAuth, requireRole("technician"));
@@ -34,6 +35,18 @@ router.get("/parts", async (req, res, next) => {
 
 router.get("/reviews", async (req, res, next) => {
   try { res.json({ reviews: await tech.getMyReviews(req.user.id) }); }
+  catch (e) { next(e); }
+});
+
+// My incentive earnings (optional ?from=YYYY-MM-DD&to=YYYY-MM-DD, IST dates).
+router.get("/earnings", async (req, res, next) => {
+  try { res.json(await technicianEarnings(req.user.id, { from: req.query.from, to: req.query.to })); }
+  catch (e) { next(e); }
+});
+
+// Today's live progress toward the 10k bonus target (for the progress bar).
+router.get("/earnings/today", async (req, res, next) => {
+  try { res.json(await todayProgress(req.user.id)); }
   catch (e) { next(e); }
 });
 
