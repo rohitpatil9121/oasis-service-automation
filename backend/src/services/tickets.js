@@ -371,6 +371,21 @@ export async function getLatestTicketByCustomerPhone(phone) {
   return data;
 }
 
+// The customer's current OPEN ticket (anything not closed/cancelled), most
+// recent first — used by intake to fold new messages into an existing request
+// instead of creating a duplicate. Returns null if they have none open.
+export async function getOpenTicketForCustomer(customerId) {
+  if (!customerId) return null;
+  const { data } = await supabase
+    .from("tickets")
+    .select("*")
+    .eq("customer_id", customerId)
+    .not("status", "in", "(CLOSED,CANCELLED)")
+    .order("created_at", { ascending: false })
+    .limit(1).maybeSingle();
+  return data || null;
+}
+
 // Service Manager sets (or changes) the visit slot. Notifies the assigned
 // technician (where + when to go) and the customer. Used for both schedule and
 // reschedule — the only difference is the audit event type + message wording.
