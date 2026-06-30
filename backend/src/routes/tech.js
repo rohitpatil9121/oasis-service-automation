@@ -42,4 +42,10 @@ router.patch("/availability", async (req, res, next) => {
   catch (e) { next(e); }
 });
 
+// Register this device's FCM token for push notifications.
+router.post("/push-token", async (req, res, next) => {
+  try { res.json(await tech.savePushToken(req.user.id, req.body?.token)); }
+  catch (e) { next(e); }
+});
+
 export default router;

@@ -145,6 +145,10 @@ Example — "it's an Aquaguard": {"fields":{"appliance":"Aquaguard"},"message":"
 // about that existing request and must NOT create or "log" a new one.
 function followUpSystemPrompt(collected, ticket) {
   const tech = ticket.technician?.full_name;
+  const knownIssue = ticket.issue_description || collected.issue;
+  // When the request on file has no issue recorded yet, this follow-up message may
+  // actually be the customer stating it for the first time — capture it.
+  const captureIssue = !knownIssue;
   return `
 ${AGENT_INTRO}
 
@@ -154,12 +158,18 @@ This customer ALREADY has a service request with us. Do NOT create a new request
 Their request on file:
 - Ticket: ${ticket.ticket_number}
 - Status: ${ticket.status}${tech ? `\n- Technician: ${tech}` : ""}
-- Issue: ${ticket.issue_description || collected.issue || "(on file)"}
+- Issue: ${knownIssue || "(NOT recorded yet)"}
 
 Hold a SHORT chat about THIS existing request only (operational tone, no emoji — see STYLE).
-
-EVERY reply MUST be a single JSON object with exactly these two keys, in this order:
-{"escalate": true|false, "message": "..."}
+${captureIssue ? `
+This request has NO issue recorded yet. If the customer's message describes what they need
+(e.g. "install new purifier", "water leaking", "service due"), capture it: add a "fields"
+object with an "issue" (and "appliance" if a model/brand is mentioned). Do NOT ask them to
+repeat it if they already stated it — just acknowledge it briefly.
+` : ""}
+EVERY reply MUST be a single JSON object with these keys:
+{"escalate": true|false, "message": "..."${captureIssue ? `, "fields": {"issue": "...", "appliance": "..."}` : ""}}
+${captureIssue ? `Include "fields" ONLY when the customer actually states the issue; omit it otherwise.` : ""}
 
 Set "escalate" to TRUE only when the customer reports a PROBLEM a human must follow up on: the
 technician did not come, it is still not fixed, it stopped working / the problem recurred after
@@ -321,6 +331,11 @@ export async function handleInboundAI({ fromPhone, text }) {
     const inFollowUp = recentTicket && recentTicket.status !== "CANCELLED" &&
       Date.now() - new Date(recentTicket.created_at).getTime() < FOLLOW_UP_DAYS * 86400000;
     if (inFollowUp) {
+      // Seed what's already on the ticket so we ENRICH rather than overwrite, and so
+      // a request created with a BLANK issue can still be filled in from this message.
+      if (!collected.issue && recentTicket.issue_description) collected.issue = recentTicket.issue_description;
+      if (!collected.appliance && recentTicket.appliance) collected.appliance = recentTicket.appliance;
+
       let reply, escalate = false;
       try {
         const parsed = JSON.parse(await getAIResponse([
@@ -330,12 +345,22 @@ export async function handleInboundAI({ fromPhone, text }) {
         ]));
         reply = (parsed.message || "").trim();
         escalate = parsed.escalate === true;
+        mergeFields(collected, parsed.fields);
       } catch (e) {
         log.error("follow-up AI error:", e.message);
         reply = "🙏 Thanks for your message — our team will look into it and update you here.";
         escalate = true; // couldn't parse — surface to a human rather than drop it
       }
       if (!reply) reply = "🙏 Noted — our team will get back to you.";
+
+      // Persist any detail the customer just gave onto the EXISTING request (no new
+      // ticket). Critical for tickets that were created with no issue recorded — this
+      // is what keeps the dashboard / assignment / completion messages from showing
+      // an empty "Service: —". updateTicketIntake no-ops on empty fields.
+      try {
+        await upsertCustomerByPhone(phone, { full_name: collected.name, address: collected.address });
+        await updateTicketIntake(recentTicket.id, { issue: collected.issue, appliance: collected.appliance });
+      } catch (e) { log.error("follow-up intake update failed:", e.message); }
       // Keep the bot's "we'll forward this" promise real: reopen the request and
       // alert the manager(s) instead of just saying it.
       if (escalate) {
