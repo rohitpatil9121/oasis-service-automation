@@ -50,14 +50,24 @@ export const TOOL_DEFS = [
       name: "update_request",
       description:
         "Add or update details on the customer's current request. Call this " +
-        "whenever the customer describes a symptom, the appliance, or an address. " +
-        "If the issue was built up over several messages, pass the full combined issue.",
+        "whenever the customer describes a symptom, the appliance, an address, or " +
+        "gives any EXTRA information (preferred visit timings, access/parking notes, " +
+        "landmarks, 'call before coming', etc.). If a field was built up over several " +
+        "messages, pass its full combined value.",
       parameters: {
         type: "object",
         properties: {
           issue: { type: "string", description: "What is wrong, e.g. 'water leaking', 'low flow', 'not working'" },
           appliance: { type: "string", description: "Purifier brand/model if mentioned, e.g. 'Kent RO'" },
           address: { type: "string", description: "Service address, if given here" },
+          notes: {
+            type: "string",
+            description:
+              "Any extra info beyond the core issue that the manager and technician " +
+              "should see — preferred timings ('after 5pm', 'Sunday only'), access " +
+              "instructions, landmarks, 'call before coming'. Pass the full combined " +
+              "notes if given over several messages.",
+          },
         },
       },
     },

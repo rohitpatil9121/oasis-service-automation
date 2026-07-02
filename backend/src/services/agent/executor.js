@@ -67,13 +67,13 @@ async function createOrGetRequest(ctx) {
   };
 }
 
-async function updateRequest(ctx, { issue, appliance, address } = {}) {
+async function updateRequest(ctx, { issue, appliance, address, notes } = {}) {
   if (address) await upsertCustomerByPhone(ctx.phone, { address });
-  if (issue || appliance) {
+  if (issue || appliance || notes) {
     await ensureTicket(ctx);
-    await updateTicketIntake(ctx.ticketId, { issue, appliance });
+    await updateTicketIntake(ctx.ticketId, { issue, appliance, notes });
   }
-  return { ok: true, saved: { issue: issue || null, appliance: appliance || null, address: address || null } };
+  return { ok: true, saved: { issue: issue || null, appliance: appliance || null, address: address || null, notes: notes || null } };
 }
 
 async function submitRequest(ctx) {

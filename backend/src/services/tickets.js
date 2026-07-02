@@ -222,11 +222,14 @@ export async function createDraftTicket({ customerId, source = "whatsapp" }) {
   return ticket;
 }
 
-// Patch the issue / appliance as the agent collects them.
-export async function updateTicketIntake(ticketId, { issue, appliance } = {}) {
+// Patch the issue / appliance / notes as the agent collects them. `notes` is the
+// customer's extra info (timings, access instructions, etc.); the agent passes the
+// full combined notes, so we overwrite — same as issue.
+export async function updateTicketIntake(ticketId, { issue, appliance, notes } = {}) {
   const patch = {};
   if (issue) patch.issue_description = issue;
   if (appliance) patch.appliance = appliance;
+  if (notes) patch.notes = notes;
   if (!Object.keys(patch).length) return;
   await supabase.from("tickets").update(patch).eq("id", ticketId);
 }

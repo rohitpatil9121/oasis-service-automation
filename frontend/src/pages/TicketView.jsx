@@ -169,6 +169,15 @@ export default function TicketView() {
         <ChatPanel ticket={ticket} />
       </div>
 
+      {/* Customer notes — extra info shared on WhatsApp (timings, access, etc.).
+          Also visible to the technician in the app. */}
+      {ticket.notes && (
+        <Card className="mb-5 border-amber-200 bg-amber-50 p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-amber-600">Customer notes</h3>
+          <p className="mt-1 whitespace-pre-wrap text-slate-700">{ticket.notes}</p>
+        </Card>
+      )}
+
       {/* Visit schedule */}
       <Card className="mb-5 p-5">
         <div className="flex items-center justify-between gap-3">

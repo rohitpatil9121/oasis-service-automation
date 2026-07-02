@@ -7,13 +7,13 @@ function v(val) {
   return s || "—";
 }
 
-// One source of truth for the customer-facing "Service:" line in free-text
+// One source of truth for the customer-facing "Service Issue:" line in free-text
 // messages. Returns the line (with a trailing blank line) when there's a real
-// issue, or "" so we NEVER send a blank/placeholder "Service: —" to the customer.
-// (Meta-template variables can't be empty, so those still use v() above.)
+// issue, or "" so we NEVER send a blank/placeholder "Service Issue: —" to the
+// customer. (Meta-template variables can't be empty, so those still use v() above.)
 export function serviceLine(issue) {
   const s = String(issue ?? "").trim();
-  return s ? `Service: ${s}\n\n` : "";
+  return s ? `Service Issue: ${s}\n\n` : "";
 }
 
 // Sent to the CUSTOMER when the Service Manager creates a request on their
@@ -30,7 +30,7 @@ export function customerRequestReceived({ customerName, source, ticketNumber, is
     body:
       `Hello ${customerName}, we have received your water purifier service request from ${source}.\n\n` +
       `Service request ID: ${ticketNumber}\n` +
-      `Service: ${issue}\n` +
+      `Service Issue: ${issue}\n` +
       `Address: ${address || "N/A"}\n\n` +
       `We will assign a technician and update you here.\n\n` +
       `If any detail is incorrect, please reply to this message.`,
@@ -114,7 +114,7 @@ export function requestCompletedCustomer({ ticketNumber, customerName, issue }) 
     },
     body:
       `Hi ${customerName}, your Oasis Globe service request ${ticketNumber} has been marked completed.\n\n` +
-      `Service: ${issue || "—"}\n\n` +
+      `Service Issue: ${issue || "—"}\n\n` +
       `Thank you for choosing Oasis Globe. If you need anything else, just reply here.`,
   };
 }
