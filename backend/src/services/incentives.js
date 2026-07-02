@@ -100,17 +100,19 @@ function istDate(iso) {
   return new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }
 
-// When a job actually billed: paid time, else work-done, else the ticket close.
+// When a job actually billed: paid time, else work-done, else the technician's
+// close time (stored inside tech_work — there is no tickets.closed_at column),
+// else the ticket's created_at.
 function billedAt(t) {
   const w = t.tech_work || {};
-  return w.paid_at || w.work_done_at || t.closed_at || t.created_at;
+  return w.paid_at || w.work_done_at || w.closed_at || t.created_at;
 }
 
 // Fetch the closed/billed tickets for the window, optionally for one technician.
 async function fetchBilledTickets({ techId, from, to } = {}) {
   let q = supabase
     .from("tickets")
-    .select("id, ticket_number, assigned_technician_id, status, closed_at, created_at, tech_work")
+    .select("id, ticket_number, assigned_technician_id, status, created_at, tech_work")
     .eq("status", "CLOSED");
   if (techId) q = q.eq("assigned_technician_id", techId);
   const { data, error } = await q;
