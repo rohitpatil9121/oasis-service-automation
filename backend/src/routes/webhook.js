@@ -33,12 +33,30 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Returns false when the message must be swallowed (staff / manager handoff).
 async function logInbound(from, text, { mediaId, mediaType, waMessageId, replyToWamid } = {}) {
   const phone = normalizePhone(from);
+
+  // Idempotency: Meta (and network retries) can deliver the SAME message more than
+  // once. Each duplicate would otherwise trigger another bot reply and re-run
+  // intake — the source of duplicate replies AND duplicate tickets. If we've
+  // already stored this wamid, swallow the redelivery.
+  if (waMessageId) {
+    const { data: seen } = await supabase
+      .from("wa_inbound").select("id").eq("wa_message_id", waMessageId).maybeSingle();
+    if (seen) { log.info(`[dedupe] duplicate inbound ${waMessageId} ignored`); return false; }
+  }
+
   const row = { from_phone: phone, body: text };
   if (mediaId) { row.media_id = mediaId; row.media_type = mediaType || null; }
   if (waMessageId) row.wa_message_id = waMessageId; // for native WhatsApp "reply" quoting
   if (replyToWamid) row.reply_to_wamid = replyToWamid; // the message THIS one quotes (customer/tech tagged a reply)
   let { error } = await supabase.from("wa_inbound").insert(row);
   if (error) {
+    // A concurrent duplicate delivery raced past the check above and hit the
+    // unique index on wa_message_id (Postgres 23505). It's the same message —
+    // swallow it exactly like the pre-check duplicate.
+    if (error.code === "23505") {
+      log.info(`[dedupe] duplicate inbound ${waMessageId} ignored (unique index)`);
+      return false;
+    }
     // An optional-feature migration may not be run yet (e.g. media_* or
     // wa_message_id columns). Never lose the customer's message — retry with
     // only the core columns that always exist.
@@ -68,11 +86,20 @@ async function logInbound(from, text, { mediaId, mediaType, waMessageId, replyTo
   return true;
 }
 
+// Intake path selection.
+//  - USE_TOOL_AGENT=true  → the tool-calling agent (AGENT_TOOLS). This is what
+//    we want: it uses function-calling tools to read/write the request.
+//  - Otherwise fall back to env: single-prompt AI_INTAKE, else the deterministic
+//    step-by-step flow.
+// Forcing the tool agent here means it runs even if the Render AGENT_TOOLS env
+// var isn't set — but that env var still needs GROQ_API_KEY configured to work.
+const USE_TOOL_AGENT = true;
+
 // Run intake on the (possibly coalesced) text and store the bot's reply so the
 // Service Manager sees the full thread on the dashboard.
 async function runIntake(from, text) {
   const phone = normalizePhone(from);
-  const reply = env.agentTools
+  const reply = (USE_TOOL_AGENT || env.agentTools)
     ? await runAgent({ fromPhone: from, text })
     : env.aiIntake
       ? await handleInboundAI({ fromPhone: from, text })

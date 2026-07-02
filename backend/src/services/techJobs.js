@@ -25,6 +25,36 @@ const ACTIONS = {
 
 const CHARGE_FREE = new Set(["warranty", "repeat"]);
 
+// Charge id → customer-facing label for the estimate bill. Matches the technician
+// app's charge options (Service/Visit ₹250, Warranty/Repeat ₹0).
+const CHARGE_LABELS = {
+  service: "Service Charge",
+  visit: "Visit Charge",
+  warranty: "No Charge (Under Warranty)",
+  repeat: "Repeat Call",
+};
+
+const rupees = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+
+// Build the itemised estimate the customer receives on WhatsApp: charge line +
+// each part with its price + grand total. `work` is the technician's step data
+// ({ charge, parts:[{name,price}], total }).
+function formatEstimateBill(ticket, work = {}) {
+  const parts = Array.isArray(work.parts) ? work.parts : [];
+  const partsTotal = parts.reduce((s, p) => s + Number(p.price || 0), 0);
+  const chargeAmt = CHARGE_FREE.has(work.charge) ? 0 : 250;
+  const total = Number(work.total ?? chargeAmt + partsTotal);
+  const chargeLabel = CHARGE_LABELS[work.charge] || "Service Charge";
+
+  const lines = [`Oasis Globe — Estimate`, `Request: ${ticket.ticket_number}`];
+  if (ticket.issue_description) lines.push(`Service Issue: ${ticket.issue_description}`);
+  lines.push("", `${chargeLabel}: ${rupees(chargeAmt)}`);
+  for (const p of parts) lines.push(`${p.name}: ${rupees(p.price)}`);
+  lines.push(`------------------------------`, `Total: ${rupees(total)}`, "",
+    `Please reply to confirm and our technician will proceed.`);
+  return lines.join("\n");
+}
+
 function shortArea(address = "") {
   // Best-effort "area" for the job card: the second-to-last comma segment
   // (usually the locality), else the first.
@@ -67,6 +97,7 @@ function toJob(t) {
     bucket,
     model: t.appliance || "—",
     issue: t.issue_description || "",
+    notes: t.notes || "",
     lastService: null,
     visitCharge,
     tags: [],
@@ -133,6 +164,14 @@ export async function runStep(techId, ticketId, action, work = {}) {
       body: `Namaste ${cust.full_name || ""}, ${techName} is on the way for your ` +
             `${ticket.appliance || "purifier"} service (${ticket.ticket_number}). ` +
             `They will reach you shortly.`,
+    });
+  }
+
+  // Estimate → send the customer the itemised bill on WhatsApp for approval.
+  if (action === "estimate" && cust?.phone) {
+    await queueNotification({
+      recipient: cust.phone, audience: "customer", ticketId,
+      body: formatEstimateBill(ticket, work),
     });
   }
 
