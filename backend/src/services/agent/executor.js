@@ -90,6 +90,15 @@ async function submitRequest(ctx) {
 
   const done = await completeIntake(ctx.ticketId); // marks complete + alerts managers
   ctx.submitted = true;
+
+  // Already logged earlier (customer re-messaged and we folded onto the same open
+  // request): do NOT re-send the full confirmation block — that repetition is what
+  // showed up as duplicate "your request is logged" messages across days. Tell the
+  // model it's already logged so it can reply briefly instead.
+  if (done.alreadyComplete) {
+    return { ok: true, ticket_number: done.ticket_number, already_logged: true };
+  }
+
   // Canonical confirmation in the exact approved format — returned so the agent
   // sends it verbatim instead of composing its own wording.
   // Stash on ctx so run.js sends it VERBATIM as the final reply — the model is

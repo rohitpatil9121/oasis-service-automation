@@ -252,7 +252,9 @@ export async function completeIntake(ticketId) {
   // onto it). Reopen it so it returns to the active board, and alert managers.
   const reopened = ticket.status === "CLOSED";
   // Already finished AND still open → nothing to do (avoids duplicate alerts).
-  if (ticket.intake_complete && !reopened) return ticket;
+  // Flag it so callers don't re-send the customer confirmation either (that's
+  // what produced repeated "your request is logged" messages across days).
+  if (ticket.intake_complete && !reopened) return { ...ticket, alreadyComplete: true };
 
   const patch = { intake_complete: true };
   if (reopened) patch.status = "NEW";
@@ -273,7 +275,7 @@ export async function completeIntake(ticketId) {
     await queueNotification({ recipient: phone, audience: "manager", ticketId, body: mgrTpl.body, template: mgrTpl.template });
   }
   log.info(`Intake complete for ${ticket.ticket_number}`);
-  return { ...ticket, intake_complete: true, status: reopened ? "NEW" : ticket.status };
+  return { ...ticket, intake_complete: true, status: reopened ? "NEW" : ticket.status, alreadyComplete: false };
 }
 
 // All customers for the Clients page.

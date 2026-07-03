@@ -89,11 +89,18 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
   if (tech.role !== "technician") throw new Error("User is not a technician");
 
   // Guard against duplicate assignments: if the ticket is ALREADY assigned to this
-  // exact technician, do nothing. A repeat action (double-click, re-assigning the
-  // same person) must not send the customer/technician a second "assigned" message.
-  if (ticket.assigned_technician_id === technicianId && ticket.status === "ASSIGNED") {
+  // exact technician, do nothing but keep the board correct. A repeat action
+  // (double-click, or re-assigning the same person after the ticket was reopened /
+  // its status changed) must not send the customer/technician a second identical
+  // "assigned" message. We check the technician only — NOT status — because a
+  // reopened ticket (status back to NEW) previously slipped past this guard and
+  // fired duplicate messages.
+  if (ticket.assigned_technician_id === technicianId) {
+    if (ticket.status !== "ASSIGNED") {
+      await supabase.from("tickets").update({ status: "ASSIGNED" }).eq("id", ticketId);
+    }
     log.info(`Ticket ${ticket.ticket_number} already assigned to ${tech.full_name} — skipping duplicate notify`);
-    return { ...ticket, technician: tech };
+    return { ...ticket, status: "ASSIGNED", technician: tech };
   }
 
   const { data: updated, error } = await supabase

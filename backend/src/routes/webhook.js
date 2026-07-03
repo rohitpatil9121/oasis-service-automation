@@ -62,7 +62,10 @@ async function logInbound(from, text, { mediaId, mediaType, waMessageId, replyTo
     // only the core columns that always exist.
     log.error("wa_inbound insert failed, retrying with core columns:", error.message);
     ({ error } = await supabase.from("wa_inbound").insert({ from_phone: phone, body: text }));
-    if (error) log.error("wa_inbound core insert failed:", error.message);
+    // A failed CORE insert means the customer's message is lost — it will never
+    // appear in the dashboard chat even though the bot still replies. Shout about
+    // it loudly (this is the exact symptom behind "received messages not showing").
+    if (error) log.error(`❌ wa_inbound CORE insert FAILED for ${phone} — customer message NOT saved, will be MISSING from the dashboard chat:`, error.message, error.code ? `(code ${error.code})` : "");
   }
 
   // If a registered TECHNICIAN messages the company number, don't run customer
