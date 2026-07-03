@@ -41,6 +41,8 @@ export const api = {
   setBot: (id, on) => request(`/tickets/${id}/bot`, { method: "POST", body: { on } }),
   setStatus: (id, status, reason) =>
     request(`/tickets/${id}/status`, { method: "PATCH", body: { status, reason } }),
+  // conversations (all-chats inbox)
+  listConversations: () => request("/conversations"),
   // customers
   listCustomers: () => request("/customers"),
   getCustomer: (id) => request(`/customers/${id}`),

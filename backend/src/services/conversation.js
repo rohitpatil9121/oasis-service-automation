@@ -88,6 +88,68 @@ function buildThread(inboundRows = [], outboundRows = []) {
     .sort((a, b) => new Date(a.at) - new Date(b.at));
 }
 
+// Inbox for the "all chats" screen — one row per customer who has a WhatsApp
+// thread, newest activity first (WhatsApp-Web style list). Built from the same
+// two tables getConversation merges, but we only keep the LATEST message per
+// phone (for the preview line + sort) rather than the whole thread. The latest
+// ticket id rides along as the entry point ChatPanel needs to open the thread.
+export async function listConversations() {
+  const [custRes, ticketRes, inboundRes, outboundRes] = await Promise.all([
+    supabase.from("customers").select("id, full_name, phone, ai_paused_until"),
+    supabase.from("tickets").select("id, customer_id, created_at")
+      .order("created_at", { ascending: false }),
+    supabase.from("wa_inbound").select("from_phone, body, media_id, created_at")
+      .order("created_at", { ascending: false }).limit(3000),
+    supabase.from("notifications").select("recipient, body, audience, sent_at, created_at")
+      .in("audience", ["customer", "agent", "bot"])
+      .order("created_at", { ascending: false }).limit(3000),
+  ]);
+
+  // Latest ticket id per customer (rows come newest-first, so first wins).
+  const latestTicket = new Map();
+  for (const t of ticketRes.data || []) {
+    if (!latestTicket.has(t.customer_id)) latestTicket.set(t.customer_id, t.id);
+  }
+  // Latest inbound + latest outbound per phone.
+  const lastIn = new Map();
+  for (const m of inboundRes.data || []) if (!lastIn.has(m.from_phone)) lastIn.set(m.from_phone, m);
+  const lastOut = new Map();
+  for (const m of outboundRes.data || []) if (!lastOut.has(m.recipient)) lastOut.set(m.recipient, m);
+
+  const preview = (body, hasMedia) => {
+    const t = (body || "").replace(/\s+/g, " ").trim();
+    if (t) return t.length > 80 ? t.slice(0, 80) + "…" : t;
+    return hasMedia ? "📎 Attachment" : "";
+  };
+
+  const rows = [];
+  for (const c of custRes.data || []) {
+    const ticketId = latestTicket.get(c.id);
+    if (!ticketId) continue; // no ticket → no chat entry point (rare in practice)
+    const inb = lastIn.get(c.phone);
+    const out = lastOut.get(c.phone);
+    const outAt = out ? out.sent_at || out.created_at : null;
+
+    // Preview = the newer of the customer's last inbound and our last outbound.
+    let lastAt = null, lastMessage = "", lastDir = null;
+    if (inb && (!outAt || new Date(inb.created_at) >= new Date(outAt))) {
+      lastAt = inb.created_at; lastMessage = preview(inb.body, !!inb.media_id); lastDir = "in";
+    } else if (out) {
+      lastAt = outAt; lastMessage = preview(out.body, false); lastDir = out.audience === "bot" ? "bot" : "out";
+    }
+    if (!lastAt) continue; // never exchanged a message → skip empty threads
+
+    rows.push({
+      customer: { id: c.id, full_name: c.full_name, phone: c.phone },
+      ticketId, lastMessage, lastAt, lastDir,
+      lastInboundAt: inb ? inb.created_at : null,
+      botOn: !isPaused(c.ai_paused_until),
+    });
+  }
+  rows.sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
+  return { conversations: rows };
+}
+
 export async function getConversation(ticketId) {
   const ticket = await getTicket(ticketId);
   const phone = ticket.customer?.phone;
