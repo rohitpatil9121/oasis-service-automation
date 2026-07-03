@@ -507,15 +507,28 @@ export async function escalateFollowUp({ ticketId, customerMessage }) {
 export async function updateStatus(id, toStatus, actorId, reason) {
   const current = await getTicket(id);
 
+  // Idempotency guard. Closing/cancelling fires a one-time customer WhatsApp
+  // (completion + rating, or cancellation). Two close paths exist — the manager
+  // dashboard and the technician app — plus retries and double-taps. Without this
+  // guard the same transition re-sends that message: the customer is notified
+  // once while the portal shows a second, "failed" duplicate row. If the status
+  // isn't actually changing, do nothing.
+  if (current.status === toStatus) return current;
+
   // Cancelling requires a reason, which we relay to the customer.
   if (toStatus === "CANCELLED") {
     reason = String(reason || "").trim();
     if (!reason) { const e = new Error("A cancellation reason is required"); e.status = 400; throw e; }
   }
 
+  // Flip only if the ticket is still in the status we read. A concurrent close
+  // (e.g. tech app + dashboard racing) that already moved it matches no row, so
+  // we bail out and let the winning writer own the one-time customer message.
   const { data, error } = await supabase
-    .from("tickets").update({ status: toStatus }).eq("id", id).select().single();
+    .from("tickets").update({ status: toStatus })
+    .eq("id", id).eq("status", current.status).select().maybeSingle();
   if (error) throw new Error("updateStatus: " + error.message);
+  if (!data) return current; // lost the race — the other writer sent the message
   await logEvent(id, "status_changed", {
     from_status: current.status, to_status: toStatus, actor_id: actorId,
     ...(toStatus === "CANCELLED" ? { meta: { reason } } : {}),
