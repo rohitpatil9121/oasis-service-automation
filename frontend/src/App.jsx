@@ -9,6 +9,7 @@ import Stock from "./pages/Stock.jsx";
 import Incentives from "./pages/Incentives.jsx";
 import Customers from "./pages/Customers.jsx";
 import CustomerView from "./pages/CustomerView.jsx";
+import Inbox from "./pages/Inbox.jsx";
 import Layout from "./components/Layout.jsx";
 import { Spinner } from "./components/ui.jsx";
 
@@ -30,6 +31,7 @@ export default function App() {
       <Route path="/technicians/:id" element={<Protected><TechnicianView /></Protected>} />
       <Route path="/stock" element={<Protected><Stock /></Protected>} />
       <Route path="/incentives" element={<Protected><Incentives /></Protected>} />
+      <Route path="/chats" element={<Protected><Inbox /></Protected>} />
       <Route path="/clients" element={<Protected><Customers /></Protected>} />
       <Route path="/clients/:id" element={<Protected><CustomerView /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />

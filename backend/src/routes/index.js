@@ -5,6 +5,7 @@ import technicianRoutes from "./technicians.js";
 import techRoutes from "./tech.js";
 import stockRoutes from "./stock.js";
 import customerRoutes from "./customers.js";
+import conversationRoutes from "./conversations.js";
 import mediaRoutes from "./media.js";
 import incentiveRoutes from "./incentives.js";
 
@@ -15,6 +16,7 @@ router.use("/technicians", technicianRoutes);
 router.use("/tech", techRoutes);
 router.use("/stock", stockRoutes);
 router.use("/customers", customerRoutes);
+router.use("/conversations", conversationRoutes);
 router.use("/media", mediaRoutes);
 router.use("/incentives", incentiveRoutes);
 export default router;
