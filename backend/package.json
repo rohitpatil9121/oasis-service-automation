@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
+    "test": "node --test --experimental-test-module-mocks \"test/**/*.test.mjs\"",
     "hash": "node scripts/hash.js",
     "smoke": "node scripts/smoke.js",
     "diagnose:inbound": "node scripts/diagnose-inbound.js",

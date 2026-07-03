@@ -18,8 +18,10 @@ const phone = normalizePhone(raw);
 const line = () => console.log("─".repeat(60));
 
 console.log(`\nDiagnosing inbound for: ${raw}  →  normalized: ${phone}`);
-if (!env.supabaseUrl || !env.supabaseServiceKey) {
-  console.error("\n✗ SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set — point this at your real DB via .env.");
+if (!env.supabaseUrl || !env.supabaseServiceKey || /PASTE_YOUR/.test(env.supabaseUrl + env.supabaseServiceKey)) {
+  console.error("\n✗ Supabase credentials not filled in.");
+  console.error("  Open backend/.env and replace the PASTE_YOUR_… placeholders with your");
+  console.error("  Project URL and service_role key (Supabase → Project Settings → API), then re-run.");
   process.exit(1);
 }
 line();
