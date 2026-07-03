@@ -9,6 +9,7 @@
     "dev": "node --watch src/index.js",
     "hash": "node scripts/hash.js",
     "smoke": "node scripts/smoke.js",
+    "diagnose:inbound": "node scripts/diagnose-inbound.js",
     "test:twilio": "node scripts/test-twilio.js"
   },
   "dependencies": {
