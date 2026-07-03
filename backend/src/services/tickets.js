@@ -229,9 +229,17 @@ export async function updateTicketIntake(ticketId, { issue, appliance, notes } =
   const patch = {};
   if (issue) patch.issue_description = issue;
   if (appliance) patch.appliance = appliance;
-  if (notes) patch.notes = notes;
-  if (!Object.keys(patch).length) return;
-  await supabase.from("tickets").update(patch).eq("id", ticketId);
+  if (Object.keys(patch).length) {
+    const { error } = await supabase.from("tickets").update(patch).eq("id", ticketId);
+    if (error) log.error("updateTicketIntake:", error.message);
+  }
+  // `notes` sits behind an optional migration (phase6_notes.sql). Update it in a
+  // SEPARATE statement and swallow the error, so a not-yet-added notes column can
+  // NEVER block the core issue/appliance save (which would break intake).
+  if (notes) {
+    const { error } = await supabase.from("tickets").update({ notes }).eq("id", ticketId);
+    if (error) log.error("updateTicketIntake notes (run phase6_notes.sql?):", error.message);
+  }
 }
 
 // Required fields all in → mark complete and alert managers.
