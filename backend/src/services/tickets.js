@@ -243,8 +243,8 @@ export async function updateTicketIntake(ticketId, { issue, appliance, notes } =
 }
 
 // Required fields all in → mark complete and alert managers.
-// Customer confirmation is NOT sent here — the caller (aiIntake.js) sends a
-// single consolidated reply so the customer doesn't get duplicate messages.
+// Customer confirmation is NOT sent here — the caller (agent submit_request) sends
+// a single consolidated reply so the customer doesn't get duplicate messages.
 export async function completeIntake(ticketId) {
   const ticket = await getTicket(ticketId);
   // A CLOSED ticket completing intake again means the customer re-engaged within
