@@ -30,6 +30,31 @@ const MAX_HISTORY = 20; // turns of clean transcript kept for context
 let client = null;
 const groq = () => (client ||= new Groq({ apiKey: env.groqApiKey }));
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Groq (like any hosted LLM) occasionally returns a transient 429/5xx or drops
+// the connection. A single failure otherwise surfaces to the customer as the
+// "technical issue, send again" message — so retry a couple of times with a
+// short backoff before giving up. A 4xx (bad request) won't fix on retry, so we
+// fail fast on those.
+async function chatWithRetry(params, tries = 3) {
+  let lastErr;
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    try {
+      return await groq().chat.completions.create(params);
+    } catch (e) {
+      lastErr = e;
+      const status = e?.status ?? e?.response?.status;
+      if (status && status >= 400 && status < 500 && status !== 429) throw e;
+      if (attempt < tries) {
+        log.warn(`Groq call failed (attempt ${attempt}/${tries}): ${e.message} — retrying`);
+        await sleep(500 * attempt);
+      }
+    }
+  }
+  throw lastErr;
+}
+
 // ---- session state (reuses intake_sessions; data = { history, ticketId, customerId }) ----
 async function getActiveSession(phone) {
   const { data } = await supabase
@@ -85,7 +110,7 @@ export async function runAgent({ fromPhone, text }) {
   let reply = "";
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
-      const res = await groq().chat.completions.create({
+      const res = await chatWithRetry({
         model: env.groqModel,
         messages,
         tools: TOOL_DEFS,

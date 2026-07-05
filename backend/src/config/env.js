@@ -35,13 +35,8 @@ export const env = {
   // on inbound webhooks so forged requests are rejected.
   metaAppSecret: process.env.META_APP_SECRET,
 
-  // AI intake (Groq). When AI_INTAKE=true the WhatsApp agent uses the LLM
-  // for natural conversation instead of the deterministic state machine.
-  aiIntake: bool(process.env.AI_INTAKE, false),
-  // Tool-calling agent (Groq function calling). When AGENT_TOOLS=true the
-  // WhatsApp intake runs the tool-calling agent (services/agent/) instead of the
-  // single-prompt AI intake. Takes precedence over AI_INTAKE.
-  agentTools: bool(process.env.AGENT_TOOLS, false),
+  // WhatsApp intake runs the Groq tool-calling agent (services/agent/). It needs
+  // a GROQ_API_KEY to work — see checkEnv below.
   groqApiKey: process.env.GROQ_API_KEY,
   groqModel: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
 
@@ -64,8 +59,8 @@ export function checkEnv(log) {
     log.warn("WHATSAPP_MOCK=false but Twilio creds missing - messages will fail.");
   if (!env.whatsappMock && env.whatsappProvider === "meta" && (!env.metaAccessToken || !env.metaPhoneNumberId))
     log.warn("WHATSAPP_PROVIDER=meta but META_ACCESS_TOKEN / META_PHONE_NUMBER_ID missing - messages will fail.");
-  if (env.aiIntake && !env.groqApiKey)
-    log.warn("AI_INTAKE=true but GROQ_API_KEY missing - get a free key at console.groq.com.");
+  if (!env.groqApiKey)
+    log.warn("GROQ_API_KEY missing - the WhatsApp agent needs it; get a free key at console.groq.com.");
   if (env.jwtSecret === "dev-insecure-secret-change-me")
     log.warn("JWT_SECRET is using the insecure default - set it in .env.");
 }

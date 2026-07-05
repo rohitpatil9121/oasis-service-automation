@@ -156,6 +156,72 @@ code to both the body and the copy-code button, so nothing else to wire.
 
 ---
 
+# Customer templates (REQUIRED — these were missing)
+
+The templates above are staff alerts. The backend ALSO sends three **customer**
+templates on request received / completed / cancelled. If these aren't approved
+in Meta you'll see `(#132001) Template name does not exist` and the customer
+message shows **FAILED** on the dashboard (never delivered). Create all three the
+same way — **Category `Utility`, Language `English` (`en`)**.
+
+## Template 6 — `customer_request_received`
+
+Sent to the CUSTOMER when a request is created on their behalf (e.g. a manual /
+KENT-referred request) — they haven't messaged us, so it must be a template.
+
+- **Name:** `customer_request_received` · **Category:** `Utility` · **Language:** `English` (`en`)
+
+**Body:**
+```
+Hello {{1}}, we have received your water purifier service request from {{2}}.
+
+Service request ID: {{3}}
+Service Issue: {{4}}
+Address: {{5}}
+
+We will assign a technician and update you here.
+
+If any detail is incorrect, please reply to this message.
+```
+Samples: {{1}} `Mohit Sharma`, {{2}} `KENT`, {{3}} `OG-140625-0001`, {{4}} `RO purifier leaking`, {{5}} `12 Shivaji Nagar, Pune 411005`
+
+## Template 7 — `request_completed_customer`
+
+Sent to the CUSTOMER when the request is CLOSED and the 24-hour window has lapsed.
+**This is the one failing as "job completed" in the dashboard.**
+
+- **Name:** `request_completed_customer` · **Category:** `Utility` · **Language:** `English` (`en`)
+
+**Body:** (does not end with a variable — good)
+```
+Hi {{1}}, your Oasis Globe service request {{2}} has been marked completed.
+
+Service Issue: {{3}}
+
+Thank you for choosing Oasis Globe. If you need anything else, just reply here.
+```
+Samples: {{1}} `Mohit Sharma`, {{2}} `OG-140625-0001`, {{3}} `RO purifier leaking`
+
+## Template 8 — `request_cancelled_customer`
+
+Sent to the CUSTOMER when a request is cancelled.
+
+- **Name:** `request_cancelled_customer` · **Category:** `Utility` · **Language:** `English` (`en`)
+
+**Body:**
+```
+Hi {{1}}, your Oasis Globe service request {{2}} has been cancelled. Reason: {{3}}
+
+If this isn't right or you'd like to raise it again, just reply here.
+```
+Samples: {{1}} `Mohit Sharma`, {{2}} `OG-140625-0001`, {{3}} `Customer requested cancellation`
+
+> The delivered wording is whatever you type in Meta's Body — but the **name**,
+> **language (`en`)**, and the **number of `{{n}}` variables** must match the code
+> exactly (see `waTemplates.js`), or Meta rejects the send with #132000/#132001.
+
+---
+
 ## After approval — nothing to deploy
 
 The code already references these names. Once both show **Approved** in Meta:

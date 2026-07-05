@@ -1,8 +1,6 @@
 import { Router } from "express";
 import crypto from "crypto";
 import twilio from "twilio";
-import { handleInbound } from "../services/intake.js";
-import { handleInboundAI } from "../services/aiIntake.js";
 import { runAgent } from "../services/agent/run.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
 import { isAgentHandling, storeBotMessage } from "../services/conversation.js";
@@ -89,24 +87,11 @@ async function logInbound(from, text, { mediaId, mediaType, waMessageId, replyTo
   return true;
 }
 
-// Intake path selection.
-//  - USE_TOOL_AGENT=true  → the tool-calling agent (AGENT_TOOLS). This is what
-//    we want: it uses function-calling tools to read/write the request.
-//  - Otherwise fall back to env: single-prompt AI_INTAKE, else the deterministic
-//    step-by-step flow.
-// Forcing the tool agent here means it runs even if the Render AGENT_TOOLS env
-// var isn't set — but that env var still needs GROQ_API_KEY configured to work.
-const USE_TOOL_AGENT = true;
-
-// Run intake on the (possibly coalesced) text and store the bot's reply so the
-// Service Manager sees the full thread on the dashboard.
+// Run intake through the Groq tool-calling agent (the only intake path) and store
+// the bot's reply so the Service Manager sees the full thread on the dashboard.
 async function runIntake(from, text) {
   const phone = normalizePhone(from);
-  const reply = (USE_TOOL_AGENT || env.agentTools)
-    ? await runAgent({ fromPhone: from, text })
-    : env.aiIntake
-      ? await handleInboundAI({ fromPhone: from, text })
-      : await handleInbound({ fromPhone: from, text });
+  const reply = await runAgent({ fromPhone: from, text });
   if (reply) await storeBotMessage(phone, reply);
   return reply;
 }
@@ -123,7 +108,7 @@ async function enqueueReply(from, text, media, send) {
   if (!(await logInbound(from, text, media))) return;
   const phone = normalizePhone(from);
   let p = pending.get(phone);
-  if (!p) { p = { parts: [] }; pending.set(phone, p); }
+  if (!p) { p = { parts: [], busy: false }; pending.set(phone, p); }
   if (text) p.parts.push(text);
   p.send = send;
   if (p.timer) clearTimeout(p.timer);
@@ -133,15 +118,33 @@ async function enqueueReply(from, text, media, send) {
 async function flushReply(phone, from) {
   const p = pending.get(phone);
   if (!p) return;
-  pending.delete(phone);
+  // A reply is already being generated for this phone. Don't start a SECOND,
+  // parallel cycle — that's what makes the bot fire several replies at once.
+  // Whatever the customer sends meanwhile stays buffered in p.parts and is
+  // handled in one follow-up flush when the in-flight reply finishes.
+  if (p.busy) return;
+  if (!p.parts.length) { pending.delete(phone); return; }
+
+  p.busy = true;
+  const text = p.parts.join("\n");
+  p.parts = [];
   try {
-    const reply = await runIntake(from, p.parts.join("\n"));
+    const reply = await runIntake(from, text);
     if (reply) {
       if (SEND_DELAY_MS > 0) await sleep(SEND_DELAY_MS); // human-like typing pause
       await p.send(reply);
     }
   } catch (e) {
     log.error("flushReply error:", e.message);
+  } finally {
+    p.busy = false;
+    // Messages that arrived while we were replying → flush them together, once.
+    if (p.parts.length) {
+      if (p.timer) clearTimeout(p.timer);
+      p.timer = setTimeout(() => flushReply(phone, from), REPLY_DELAY_MS);
+    } else {
+      pending.delete(phone);
+    }
   }
 }
 
