@@ -1,9 +1,4 @@
-// Tool registry for the WhatsApp intake agent — Groq / OpenAI function-calling
-// format ({ type:"function", function:{ name, description, parameters } }).
-// Flow 1 (Inquiry Submission) tools + escalate_to_human. Each description says
-// WHEN to call the tool, which improves tool-selection accuracy.
-//
-// Execution lives in executor.js; the agent loop is in run.js.
+
 
 export const TOOL_DEFS = [
   {
