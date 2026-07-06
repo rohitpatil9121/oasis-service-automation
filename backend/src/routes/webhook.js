@@ -78,6 +78,12 @@ async function logInbound(from, text, { mediaId, mediaType, waMessageId, replyTo
     return false;
   }
 
+  // Estimate APPROVE/REJECT ("1"/"2"/yes/no) is a deterministic ticket update,
+  // not an AI chat reply — process it BEFORE the handoff pause below. Otherwise
+  // a customer in a manager-handoff window taps Approve and the job never advances.
+  try { if (await handleEstimateReply(phone, text)) return false; }
+  catch (e) { log.error("handleEstimateReply:", e.message); }
+
   // Human handoff: if a manager messaged this customer in the last 12h, stay
   // silent and let them handle it. The inbound is still logged above, so the
   // reply shows in the dashboard chat. AI auto-resumes once the window lapses.
@@ -91,12 +97,8 @@ async function logInbound(from, text, { mediaId, mediaType, waMessageId, replyTo
 // Run intake through the Groq tool-calling agent (the only intake path) and store
 // the bot's reply so the Service Manager sees the full thread on the dashboard.
 async function runIntake(from, text) {
-  const phone = normalizePhone(from);
-  // Estimate APPROVE/REJECT reply → update the ticket directly, skip the agent.
-  try { if (await handleEstimateReply(phone, text)) return null; }
-  catch (e) { log.error("handleEstimateReply:", e.message); }
   const reply = await runAgent({ fromPhone: from, text });
-  if (reply) await storeBotMessage(phone, reply);
+  if (reply) await storeBotMessage(normalizePhone(from), reply);
   return reply;
 }
 
