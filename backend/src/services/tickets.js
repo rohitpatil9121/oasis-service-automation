@@ -4,16 +4,12 @@ import { customerRequestReceived, managerNewRequest, visitScheduledTechnician, v
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
+import { attachBoardBucket, TICKET_REUSE_DAYS, closedAtOf } from "../lib/boardBucket.js";
+
+export { TICKET_REUSE_DAYS };
 
 const TICKET_SELECT =
   "*, customer:customers(*), technician:users!tickets_assigned_technician_id_fkey(id,full_name,phone)";
-
-// How long after a request is raised we treat further messages from the SAME
-// customer as that same request — so we fold them onto the existing ticket
-// instead of opening a duplicate. A recently CLOSED request the customer
-// follows up on within this window is reused (and reopened) rather than
-// duplicated. Both intake paths (deterministic + AI) share this window.
-export const TICKET_REUSE_DAYS = 7;
 
 // Human-readable slot for notifications, e.g. "14 Jun 2026, 9:00 am – 11:00 am" (IST).
 function formatSlot(startISO, endISO) {
@@ -257,13 +253,11 @@ export async function completeIntake(ticketId) {
   if (ticket.intake_complete && !reopened) return { ...ticket, alreadyComplete: true };
 
   const patch = { intake_complete: true };
-  if (reopened) patch.status = "NEW";
-  await supabase.from("tickets").update(patch).eq("id", ticketId);
   if (reopened) {
-    await logEvent(ticketId, "status_changed", {
-      from_status: "CLOSED", to_status: "NEW", meta: { reopened: "reuse_window" },
-    });
-    log.info(`Ticket ${ticket.ticket_number} reopened — customer re-engaged within ${TICKET_REUSE_DAYS}d`);
+    await reopenTicket(ticketId, null, { source: "intake" });
+    await supabase.from("tickets").update(patch).eq("id", ticketId);
+  } else {
+    await supabase.from("tickets").update(patch).eq("id", ticketId);
   }
 
   const managers = await getManagerRecipients();
@@ -304,7 +298,7 @@ export async function getCustomerWithHistory(id) {
   return { customer, tickets: tickets || [] };
 }
 
-export async function listTickets({ status } = {}) {
+export async function listTickets({ status, bucket } = {}) {
   let q = supabase
     .from("tickets")
     .select("*, customer:customers(*), technician:users!tickets_assigned_technician_id_fkey(id,full_name,phone)")
@@ -313,8 +307,6 @@ export async function listTickets({ status } = {}) {
   const { data, error } = await q;
   if (error) throw new Error("listTickets: " + error.message);
 
-  // Attach the latest inbound (customer) message time per ticket so the dashboard
-  // can show an "unread" badge + sound alert when a customer sends a new message.
   const { data: inbound } = await supabase
     .from("wa_inbound").select("from_phone, created_at")
     .order("created_at", { ascending: false }).limit(3000);
@@ -322,10 +314,16 @@ export async function listTickets({ status } = {}) {
   for (const m of inbound || []) {
     if (!latestByPhone.has(m.from_phone)) latestByPhone.set(m.from_phone, m.created_at);
   }
-  for (const t of data) {
+
+  let rows = (data || []).map((t) => {
     t.last_inbound_at = t.customer?.phone ? latestByPhone.get(t.customer.phone) || null : null;
+    return attachBoardBucket(t);
+  });
+
+  if (bucket && bucket !== "all") {
+    rows = rows.filter((t) => t.board_bucket === bucket);
   }
-  return data;
+  return rows;
 }
 
 export async function getTicket(id) {
@@ -334,7 +332,7 @@ export async function getTicket(id) {
     .select("*, customer:customers(*), technician:users!tickets_assigned_technician_id_fkey(id,full_name,phone)")
     .eq("id", id).single();
   if (error) throw new Error("getTicket: " + error.message);
-  return data;
+  return attachBoardBucket(data);
 }
 
 export async function getTicketHistory(id) {
@@ -365,9 +363,11 @@ export async function getReusableTicketForCustomer(customerId) {
   if (!data) return null;
   if (data.status === "CANCELLED") return null; // deliberate end → new request
   if (data.status !== "CLOSED") return data;    // still open → always reuse
+  const closedAt = closedAtOf(data);
+  if (!closedAt) return data;                   // legacy rows without closed_at
   const withinWindow =
-    Date.now() - new Date(data.created_at).getTime() < TICKET_REUSE_DAYS * 86400000;
-  return withinWindow ? data : null;            // recent close → reuse, else new
+    Date.now() - new Date(closedAt).getTime() < TICKET_REUSE_DAYS * 86400000;
+  return withinWindow ? data : null;            // recent close → reuse, else new ticket
 }
 
 // Latest ticket for a WhatsApp number - powers the customer "status" command.
@@ -449,6 +449,37 @@ export async function scheduleVisit({ ticketId, start, end, actorId }) {
   return ticket;
 }
 
+export async function reopenTicket(ticketId, actorId, meta = {}) {
+  const ticket = await getTicket(ticketId);
+  if (ticket.status !== "CLOSED") return ticket;
+
+  const tech_work = { ...(ticket.tech_work || {}), tech_status: "NEW" };
+  const ts = new Date().toISOString();
+  tech_work.reopened_at = ts;
+
+  let { error } = await supabase.from("tickets").update({
+    status: "NEW",
+    assigned_technician_id: null,
+    reopened_at: ts,
+    tech_work,
+  }).eq("id", ticketId);
+
+  // Graceful until phase8_board_buckets.sql is applied in Supabase.
+  if (error?.message?.includes("reopened_at")) {
+    ({ error } = await supabase.from("tickets").update({
+      status: "NEW", assigned_technician_id: null, tech_work,
+    }).eq("id", ticketId));
+  }
+  if (error) throw new Error("reopenTicket: " + error.message);
+
+  await logEvent(ticketId, "status_changed", {
+    from_status: "CLOSED", to_status: "NEW", actor_id: actorId,
+    meta: { reopened: true, ...meta },
+  });
+  log.info(`Ticket ${ticket.ticket_number} reopened → Pending board`);
+  return getTicket(ticketId);
+}
+
 // A customer reported a fresh problem on an existing request (e.g. the machine
 // stopped again after the visit). Keep the bot's "we'll forward this" promise:
 // reopen a closed request onto the active board, log it, and alert the
@@ -457,13 +488,7 @@ export async function escalateFollowUp({ ticketId, customerMessage }) {
   const ticket = await getTicket(ticketId);
   const reopened = ticket.status === "CLOSED";
 
-  // Reopen a closed request so it returns to the active board.
-  if (reopened) {
-    await supabase.from("tickets").update({ status: "NEW" }).eq("id", ticketId);
-    await logEvent(ticketId, "status_changed", {
-      from_status: "CLOSED", to_status: "NEW", meta: { reopened: "customer_follow_up" },
-    });
-  }
+  if (reopened) await reopenTicket(ticketId, null, { source: "customer_follow_up" });
 
   // Don't re-alert managers for every line of a back-and-forth: skip if we
   // already escalated this ticket in the last 6 hours (a reopen always alerts).
@@ -524,9 +549,23 @@ export async function updateStatus(id, toStatus, actorId, reason) {
   // Flip only if the ticket is still in the status we read. A concurrent close
   // (e.g. tech app + dashboard racing) that already moved it matches no row, so
   // we bail out and let the winning writer own the one-time customer message.
-  const { data, error } = await supabase
-    .from("tickets").update({ status: toStatus })
+  const closedAt = toStatus === "CLOSED" ? new Date().toISOString() : null;
+  const tech_work = closedAt
+    ? { ...(current.tech_work || {}), closed_at: closedAt, tech_status: "CLOSED" }
+    : current.tech_work;
+
+  let patch = { status: toStatus, ...(tech_work ? { tech_work } : {}) };
+  if (closedAt) patch.closed_at = closedAt;
+
+  let { data, error } = await supabase
+    .from("tickets").update(patch)
     .eq("id", id).eq("status", current.status).select().maybeSingle();
+
+  if (error?.message?.includes("closed_at") && closedAt) {
+    ({ data, error } = await supabase
+      .from("tickets").update({ status: toStatus, tech_work })
+      .eq("id", id).eq("status", current.status).select().maybeSingle());
+  }
   if (error) throw new Error("updateStatus: " + error.message);
   if (!data) return current; // lost the race — the other writer sent the message
   await logEvent(id, "status_changed", {
