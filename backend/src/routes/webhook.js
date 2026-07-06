@@ -2,6 +2,7 @@ import { Router } from "express";
 import crypto from "crypto";
 import twilio from "twilio";
 import { runAgent } from "../services/agent/run.js";
+import { handleEstimateReply } from "../services/techJobs.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
 import { isAgentHandling, storeBotMessage } from "../services/conversation.js";
 import { handleRatingReply } from "../services/rating.js";
@@ -91,6 +92,9 @@ async function logInbound(from, text, { mediaId, mediaType, waMessageId, replyTo
 // the bot's reply so the Service Manager sees the full thread on the dashboard.
 async function runIntake(from, text) {
   const phone = normalizePhone(from);
+  // Estimate APPROVE/REJECT reply → update the ticket directly, skip the agent.
+  try { if (await handleEstimateReply(phone, text)) return null; }
+  catch (e) { log.error("handleEstimateReply:", e.message); }
   const reply = await runAgent({ fromPhone: from, text });
   if (reply) await storeBotMessage(phone, reply);
   return reply;

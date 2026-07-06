@@ -1,6 +1,7 @@
 // Technician App backend. Everything here is scoped to ONE logged-in technician
 // (their own assigned tickets). The rich per-step workflow data lives in the
 // tickets.tech_work JSONB column; the dashboard keeps using the coarse status.
+import bcrypt from "bcryptjs";
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
 import { updateStatus, getTicket } from "./tickets.js";
@@ -45,13 +46,14 @@ function formatEstimateBill(ticket, work = {}) {
   const chargeAmt = CHARGE_FREE.has(work.charge) ? 0 : 250;
   const total = Number(work.total ?? chargeAmt + partsTotal);
   const chargeLabel = CHARGE_LABELS[work.charge] || "Service Charge";
+  const problem = (Array.isArray(work.problems) && work.problems.join(", "))
+    || ticket.issue_description || "—";
 
-  const lines = [`Oasis Globe — Estimate`, `Request: ${ticket.ticket_number}`];
-  if (ticket.issue_description) lines.push(`Service Issue: ${ticket.issue_description}`);
-  lines.push("", `${chargeLabel}: ${rupees(chargeAmt)}`);
+  const lines = ["Problem found", "", `Issue: ${problem}`, "", "Estimate:",
+    `${chargeLabel}: ${rupees(chargeAmt)}`];
   for (const p of parts) lines.push(`${p.name}: ${rupees(p.price)}`);
-  lines.push(`------------------------------`, `Total: ${rupees(total)}`, "",
-    `Please reply to confirm and our technician will proceed.`);
+  lines.push("------------------------------", `Total: ${rupees(total)}`, "",
+    "Reply:", "1 - Approve", "2 - Reject");
   return lines.join("\n");
 }
 
@@ -106,6 +108,31 @@ function toJob(t) {
   };
 }
 
+// Attach the customer-sent WhatsApp images (purifier photos) to each job so the
+// technician can see them. Images live on wa_inbound (keyed by the customer's
+// phone), so we fetch the recent image rows for the jobs' customer phones in one
+// query and map them back. Returns the jobs (mutated in place).
+async function attachCustomerPhotos(jobs) {
+  const phones = [...new Set(jobs.map((j) => j.phone).filter(Boolean))];
+  if (!phones.length) return jobs;
+  const { data, error } = await supabase
+    .from("wa_inbound")
+    .select("from_phone, media_id, media_type, created_at")
+    .in("from_phone", phones)
+    .like("media_type", "image/%")
+    .order("created_at", { ascending: false });
+  if (error) { log.error("attachCustomerPhotos:", error.message); return jobs; }
+  const byPhone = new Map();
+  for (const r of data || []) {
+    if (!r.media_id) continue;
+    const arr = byPhone.get(r.from_phone) || [];
+    if (arr.length < 6) arr.push(r.media_id); // cap per customer
+    byPhone.set(r.from_phone, arr);
+  }
+  for (const j of jobs) j.customerPhotos = byPhone.get(j.phone) || [];
+  return jobs;
+}
+
 export async function listMyJobs(techId) {
   const { data, error } = await supabase
     .from("tickets").select(SELECT)
@@ -113,7 +140,7 @@ export async function listMyJobs(techId) {
     .neq("status", "CANCELLED")
     .order("created_at", { ascending: false });
   if (error) throw new Error("listMyJobs: " + error.message);
-  return (data || []).map(toJob);
+  return attachCustomerPhotos((data || []).map(toJob));
 }
 
 async function loadOwned(techId, ticketId) {
@@ -127,7 +154,95 @@ async function loadOwned(techId, ticketId) {
 }
 
 export async function getMyJob(techId, ticketId) {
-  return toJob(await loadOwned(techId, ticketId));
+  const [job] = await attachCustomerPhotos([toJob(await loadOwned(techId, ticketId))]);
+  return job;
+}
+
+// Estimate approval from the customer's WhatsApp reply. When the customer has a
+// ticket awaiting approval (tech_status ESTIMATE_SENT) and replies APPROVE/REJECT
+// (or yes/no, haan/nahi), mark it VERIFIED/REJECTED and confirm. Returns true if
+// it handled the message (so the intake agent is skipped for that reply).
+const APPROVE_RE = /\b(approve|approved|yes|ok|okay|confirm|confirmed|haan|ha|theek|thik|done|accept|accepted)\b/i;
+const REJECT_RE = /\b(reject|rejected|no|nahi|cancel|decline|declined)\b/i;
+
+export async function handleEstimateReply(phone, text) {
+  const s = String(text || "").trim();
+  if (!s) return false;
+  const { data: cust } = await supabase
+    .from("customers").select("id").eq("phone", phone).maybeSingle();
+  if (!cust) return false;
+  const { data: tickets } = await supabase
+    .from("tickets").select("id, ticket_number, tech_work, customer:customers(full_name)")
+    .eq("customer_id", cust.id).neq("status", "CLOSED").neq("status", "CANCELLED")
+    .order("created_at", { ascending: false }).limit(5);
+  const t = (tickets || []).find((x) => x.tech_work?.tech_status === "ESTIMATE_SENT");
+  if (!t) return false;
+
+  // Customer replies "1" = Approve, "2" = Reject (also word variants).
+  const approve = s === "1" || APPROVE_RE.test(s);
+  const reject = s === "2" || REJECT_RE.test(s);
+  if (!approve && !reject) return false;
+  const verified = approve && !reject;
+
+  const tech_work = {
+    ...(t.tech_work || {}),
+    tech_status: verified ? "VERIFIED" : "REJECTED",
+    [verified ? "approved_at" : "rejected_at"]: new Date().toISOString(),
+  };
+  await supabase.from("tickets").update({ tech_work }).eq("id", t.id);
+  // Approve → confirm + work starts. Reject → no message (the technician will
+  // send a revised estimate or collect the visit charge only, each with its own).
+  if (verified) {
+    await queueNotification({
+      recipient: phone, audience: "customer", ticketId: t.id,
+      body: `Estimate approved\n\nTechnician has started the work.`,
+    });
+  }
+  return true;
+}
+
+// "Reached": send the customer a 4-digit OTP on WhatsApp. The customer reads it
+// out to the on-site technician, who enters it to prove arrival. No GPS check.
+export async function sendArrivalOtp(techId, ticketId) {
+  const ticket = await loadOwned(techId, ticketId);
+  const cust = ticket.customer;
+  const code = String(Math.floor(1000 + Math.random() * 9000));
+  const tech_work = {
+    ...(ticket.tech_work || {}),
+    arrival_otp: await bcrypt.hash(code, 10),
+    arrival_otp_expires: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  };
+  const { error } = await supabase.from("tickets").update({ tech_work }).eq("id", ticketId);
+  if (error) throw new Error("sendArrivalOtp: " + error.message);
+  if (cust?.phone) {
+    await queueNotification({
+      recipient: cust.phone, audience: "customer", ticketId,
+      body: `Technician has reached\n\nOTP: ${code}\n\nShare this OTP only after he reaches your home.`,
+    });
+  }
+  return { ok: true };
+}
+
+// Verify the arrival OTP the customer shared. On success → status ARRIVED.
+export async function verifyArrivalOtp(techId, ticketId, code) {
+  const ticket = await loadOwned(techId, ticketId);
+  const tw = ticket.tech_work || {};
+  if (!tw.arrival_otp || !tw.arrival_otp_expires) {
+    return { ok: false, error: "Tap Reached to send the code first." };
+  }
+  if (new Date(tw.arrival_otp_expires).getTime() < Date.now()) {
+    return { ok: false, error: "Code expired — tap Reached to resend." };
+  }
+  if (!(await bcrypt.compare(String(code || ""), tw.arrival_otp))) {
+    return { ok: false, error: "Invalid code" };
+  }
+  const tech_work = {
+    ...tw, tech_status: "ARRIVED", arrived_at: new Date().toISOString(),
+    arrival_otp: null, arrival_otp_expires: null,
+  };
+  const { error } = await supabase.from("tickets").update({ tech_work }).eq("id", ticketId);
+  if (error) throw new Error("verifyArrivalOtp: " + error.message);
+  return { ok: true, job: toJob(await loadOwned(techId, ticketId)) };
 }
 
 // Advance one workflow step. `work` is the technician's per-step data (stored
@@ -151,8 +266,9 @@ export async function runStep(techId, ticketId, action, work = {}) {
     .from("tickets").update({ tech_work }).eq("id", ticketId);
   if (error) throw new Error("runStep update: " + error.message);
 
-  // Coarse status + dashboard side effects.
-  if (action === "accept" && ticket.status !== "IN_PROGRESS") {
+  // Coarse status + dashboard side effects. The flow starts at "Start Travel"
+  // (enroute) — no separate accept step — so that marks the job in progress.
+  if ((action === "accept" || action === "enroute") && ticket.status !== "IN_PROGRESS") {
     await updateStatus(ticketId, "IN_PROGRESS", techId);
   }
 
@@ -161,17 +277,38 @@ export async function runStep(techId, ticketId, action, work = {}) {
   if (action === "enroute" && cust?.phone) {
     await queueNotification({
       recipient: cust.phone, audience: "customer", ticketId,
-      body: `Namaste ${cust.full_name || ""}, ${techName} is on the way for your ` +
-            `${ticket.appliance || "purifier"} service (${ticket.ticket_number}). ` +
-            `They will reach you shortly.`,
+      body: `Technician is on the way\n\nName: ${techName}\nETA: Around 30 minutes`,
     });
   }
 
-  // Estimate → send the customer the itemised bill on WhatsApp for approval.
+  // Estimate → send the customer the itemised bill and ask them to reply.
+  // Approval/rejection is detected from the customer's WhatsApp reply (handled by
+  // the intake agent), never marked manually by the technician.
   if (action === "estimate" && cust?.phone) {
     await queueNotification({
       recipient: cust.phone, audience: "customer", ticketId,
       body: formatEstimateBill(ticket, work),
+    });
+  }
+
+  // Work done → tell the customer the amount due and to pay in the tech's presence.
+  if (action === "workdone" && cust?.phone) {
+    const due = Number(work.total ?? tech_work.total ?? 0);
+    await queueNotification({
+      recipient: cust.phone, audience: "customer", ticketId,
+      body: work.visitOnly
+        ? `Repair not approved\n\nVisit charge payable: ${rupees(due)}`
+        : `Work completed\n\nAmount due: ${rupees(due)}\n\nPlease pay now in technician's presence.`,
+    });
+  }
+
+  // Payment collected → confirm to the customer with amount + mode (not if pending).
+  if (action === "payment" && cust?.phone && !work.pending) {
+    const mode = (Array.isArray(work.payments) && work.payments[0]?.method) || work.mode || "—";
+    const reason = (work.visitOnly || tech_work.visitOnly) ? `\nReason: Visit charge` : "";
+    await queueNotification({
+      recipient: cust.phone, audience: "customer", ticketId,
+      body: `Payment received\n\nAmount: ${rupees(work.total ?? tech_work.total ?? 0)}\nMode: ${mode}${reason}`,
     });
   }
 
@@ -199,10 +336,50 @@ export async function runStep(techId, ticketId, action, work = {}) {
 
 export async function listParts() {
   const { data, error } = await supabase
-    .from("stock_items").select("id, name, unit_price")
+    .from("stock_items").select("id, name, unit_price, brand")
     .eq("is_active", true).order("name");
   if (error) throw new Error("listParts: " + error.message);
-  return (data || []).map((p) => ({ id: p.id, name: p.name, price: Number(p.unit_price || 0) }));
+  return (data || []).map((p) => ({
+    id: p.id, name: p.name, price: Number(p.unit_price || 0), brand: p.brand || "other",
+  }));
+}
+
+// Save a technician-captured job photo (base64 data URL) to Supabase Storage and
+// attach its public URL to the ticket's tech_work.tech_photos.
+const PHOTO_BUCKET = "tech-photos";
+export async function saveJobPhoto(techId, ticketId, dataUrl) {
+  await loadOwned(techId, ticketId); // ownership + existence check
+  const m = /^data:(image\/\w+);base64,(.+)$/.exec(dataUrl || "");
+  if (!m) { const e = new Error("Invalid image"); e.status = 400; throw e; }
+  const contentType = m[1];
+  const buffer = Buffer.from(m[2], "base64");
+  const path = `${ticketId}/${Date.now()}.${contentType.split("/")[1] || "jpg"}`;
+
+  let up = await supabase.storage.from(PHOTO_BUCKET).upload(path, buffer, { contentType });
+  if (up.error && /bucket|not found/i.test(up.error.message)) {
+    await supabase.storage.createBucket(PHOTO_BUCKET, { public: true });
+    up = await supabase.storage.from(PHOTO_BUCKET).upload(path, buffer, { contentType });
+  }
+  if (up.error) throw new Error("saveJobPhoto: " + up.error.message);
+
+  const url = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
+  const ticket = await loadOwned(techId, ticketId);
+  const tech_work = {
+    ...(ticket.tech_work || {}),
+    tech_photos: [...(ticket.tech_work?.tech_photos || []), url],
+  };
+  await supabase.from("tickets").update({ tech_work }).eq("id", ticketId);
+  return { ok: true, job: toJob(await loadOwned(techId, ticketId)) };
+}
+
+// Store the technician's latest GPS fix (live location for the dashboard).
+export async function saveLocation(techId, lat, lng) {
+  if (lat == null || lng == null) { const e = new Error("lat/lng required"); e.status = 400; throw e; }
+  const { error } = await supabase.from("users")
+    .update({ last_lat: Number(lat), last_lng: Number(lng), location_at: new Date().toISOString() })
+    .eq("id", techId);
+  if (error) throw new Error("saveLocation: " + error.message);
+  return { ok: true };
 }
 
 // Save the technician's FCM device token (for push notifications).

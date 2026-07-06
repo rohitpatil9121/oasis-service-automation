@@ -12,16 +12,20 @@ export default function TechnicianView() {
   const { id } = useParams();
   const [tech, setTech] = useState(null);
   const [issues, setIssues] = useState([]);
+  const [incentive, setIncentive] = useState(null);
   const [err, setErr] = useState("");
   const [showIssue, setShowIssue] = useState(false);
   const [reconcileIssue, setReconcileIssue] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      const [{ technician }, { issues }] = await Promise.all([
+      const [{ technician }, { issues }, report] = await Promise.all([
         api.getTechnician(id), api.getTechnicianStock(id),
+        api.incentiveReport().catch(() => null),
       ]);
-      setTech(technician); setIssues(issues || []); setErr("");
+      setTech(technician); setIssues(issues || []);
+      setIncentive(report?.technicians?.find((t) => t.technician_id === id) || null);
+      setErr("");
     } catch (e) { setErr(e.message); }
   }, [id]);
 
@@ -48,6 +52,38 @@ export default function TechnicianView() {
       </div>
 
       {err && <div className="mb-4"><Alert>{err}</Alert></div>}
+
+      {/* Live location + incentive for this technician */}
+      <div className="mb-5 grid gap-3 sm:grid-cols-2">
+        <Card className="p-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Live location</h3>
+          {tech.last_lat != null && tech.last_lng != null ? (
+            <>
+              <div className="mt-1 font-mono text-sm text-slate-700">
+                {Number(tech.last_lat).toFixed(5)}, {Number(tech.last_lng).toFixed(5)}
+              </div>
+              <div className="text-xs text-slate-400">Updated {fmt(tech.location_at)}</div>
+              <a className="mt-2 inline-block text-sm font-medium text-brand hover:underline"
+                href={`https://maps.google.com/?q=${tech.last_lat},${tech.last_lng}`} target="_blank" rel="noreferrer">
+                Open in Google Maps ↗
+              </a>
+            </>
+          ) : (
+            <p className="mt-1 text-sm text-slate-400">No location yet — shows once the technician opens the app with location enabled.</p>
+          )}
+        </Card>
+        <Card className="p-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Incentive earned</h3>
+          {incentive ? (
+            <>
+              <div className="mt-1 text-2xl font-bold text-emerald-600">₹{Number(incentive.total_payout).toLocaleString("en-IN")}</div>
+              <div className="text-xs text-slate-400">On ₹{Number(incentive.total_billing).toLocaleString("en-IN")} billed</div>
+            </>
+          ) : (
+            <p className="mt-1 text-sm text-slate-400">No incentive earned yet.</p>
+          )}
+        </Card>
+      </div>
 
       {/* WhatsApp chat with this technician (92 number) */}
       <div className="mb-5">

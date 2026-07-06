@@ -178,6 +178,20 @@ export default function TicketView() {
         </Card>
       )}
 
+      {/* Technician photos captured on site */}
+      {ticket.tech_work?.tech_photos?.length > 0 && (
+        <Card className="mb-5 p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Technician photos</h3>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {ticket.tech_work.tech_photos.map((url) => (
+              <a key={url} href={url} target="_blank" rel="noreferrer">
+                <img src={url} alt="Job" className="h-28 w-28 rounded-lg border border-slate-200 object-cover" />
+              </a>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* Visit schedule */}
       <Card className="mb-5 p-5">
         <div className="flex items-center justify-between gap-3">
