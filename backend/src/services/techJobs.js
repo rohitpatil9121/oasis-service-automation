@@ -4,7 +4,8 @@
 import bcrypt from "bcryptjs";
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
-import { updateStatus, getTicket } from "./tickets.js";
+import { sendPush } from "./push.js";
+import { updateStatus, getTicket, RATING_LABELS } from "./tickets.js";
 import { log } from "../lib/logger.js";
 
 const SELECT =
@@ -105,6 +106,7 @@ function toJob(t) {
     tags: [],
     status: techStatus,
     work,
+    rating: t.rating != null ? Number(t.rating) : null,
   };
 }
 
@@ -172,7 +174,7 @@ export async function handleEstimateReply(phone, text) {
     .from("customers").select("id").eq("phone", phone).maybeSingle();
   if (!cust) return false;
   const { data: tickets } = await supabase
-    .from("tickets").select("id, ticket_number, tech_work, customer:customers(full_name)")
+    .from("tickets").select("id, ticket_number, assigned_technician_id, tech_work, customer:customers(full_name)")
     .eq("customer_id", cust.id).neq("status", "CLOSED").neq("status", "CANCELLED")
     .order("created_at", { ascending: false }).limit(5);
   const t = (tickets || []).find((x) => x.tech_work?.tech_status === "ESTIMATE_SENT");
@@ -197,6 +199,17 @@ export async function handleEstimateReply(phone, text) {
       recipient: phone, audience: "customer", ticketId: t.id,
       body: `Estimate approved\n\nTechnician has started the work.`,
     });
+  }
+  if (t.assigned_technician_id) {
+    const { data: tech } = await supabase
+      .from("users").select("push_token").eq("id", t.assigned_technician_id).maybeSingle();
+    if (tech?.push_token) {
+      await sendPush(tech.push_token, {
+        title: verified ? "Estimate approved" : "Estimate rejected",
+        body: `${t.ticket_number} — customer ${verified ? "approved" : "rejected"}`,
+        data: { ticketId: t.id },
+      });
+    }
   }
   return true;
 }
@@ -398,7 +411,7 @@ export async function setOnline(techId, isOnline) {
 export async function getMyReviews(techId) {
   const { data, error } = await supabase
     .from("tickets")
-    .select("rating, rated_at, customer:customers(full_name)")
+    .select("rating, rated_at, ticket_number, customer:customers(full_name)")
     .eq("assigned_technician_id", techId)
     .not("rating", "is", null)
     .order("rated_at", { ascending: false });
@@ -409,16 +422,36 @@ export async function getMyReviews(techId) {
   const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
   const round1 = (n) => Math.round(n * 10) / 10;
 
+  const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+  const weekScores = rows
+    .filter((r) => new Date(r.rated_at).getTime() >= weekAgo)
+    .map((r) => Number(r.rating));
+  const weekAvg = weekScores.length
+    ? weekScores.reduce((a, b) => a + b, 0) / weekScores.length
+    : 0;
+
   return {
     average: round1(avg),
-    thisWeek: round1(avg),
+    thisWeek: round1(weekAvg),
     jobsRated: rows.length,
     fiveStar: scores.filter((s) => s === 5).length,
     topStreak: scores.length ? Math.max(...scores) : 0,
     needsWork: scores.length ? Math.min(...scores) : 0,
-    categories: [], // per-category ratings not captured yet
-    recent: rows.slice(0, 8).map((r) => ({
-      name: r.customer?.full_name || "Customer", stars: Number(r.rating), text: "",
+    distribution: [5, 4, 3, 2, 1].map((stars) => ({
+      stars,
+      count: scores.filter((s) => s === stars).length,
     })),
+    categories: [], // per-category ratings not captured yet
+    recent: rows.slice(0, 10).map((r) => {
+      const stars = Number(r.rating);
+      return {
+        name: (r.customer?.full_name || "Customer").trim(),
+        stars,
+        label: RATING_LABELS[stars] || "",
+        text: "",
+        at: r.rated_at,
+        ticket: r.ticket_number,
+      };
+    }),
   };
 }

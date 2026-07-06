@@ -5,17 +5,9 @@ import TicketTable from "../components/TicketTable.jsx";
 import NewTicketModal from "../components/NewTicketModal.jsx";
 import { Button, Icon, Spinner } from "../components/ui.jsx";
 import { ICON_BG, RING, ACCENT } from "../lib/status.js";
+import { DASHBOARD_BUCKETS, BUCKET_HINT } from "../lib/boardBucket.js";
 
 const REFRESH_MS = 8000;
-
-// Status KPI cards double as filters. Each has an icon + colour accent.
-const STATS = [
-  { key: "", label: "All requests", icon: "inbox", color: "slate" },
-  { key: "NEW", label: "New", icon: "alert", color: "blue" },
-  { key: "ASSIGNED", label: "Assigned", icon: "wrench", color: "amber" },
-  { key: "IN_PROGRESS", label: "In progress", icon: "refresh", color: "indigo" },
-  { key: "CLOSED", label: "Closed", icon: "check", color: "emerald" },
-];
 
 export default function Dashboard() {
   const [tickets, setTickets] = useState([]);
@@ -30,13 +22,12 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     try {
-      const { tickets } = await api.listTickets();
-      setTickets(tickets);
+      const { tickets: rows } = await api.listTickets();
+      setTickets(rows);
       setErr("");
     } catch (e) { setErr(e.message); } finally { setLoaded(true); }
   }, []);
 
-  // Low-stock count for the KPI card (best-effort; ignore if stock not set up).
   const loadStock = useCallback(async () => {
     try {
       const { items } = await api.listStock();
@@ -50,25 +41,19 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, [load, loadStock]);
 
-  const counts = tickets.reduce((a, t) => ((a[t.status] = (a[t.status] || 0) + 1), a), {});
-  const total = tickets.length;
-  const countFor = (k) => (k ? counts[k] || 0 : total);
+  const countFor = (key) => {
+    if (!key) return tickets.filter((t) => t.board_bucket !== "cancelled").length;
+    return tickets.filter((t) => t.board_bucket === key).length;
+  };
 
-  // One-line context under each KPI number — turns a bare count into a glance.
-  const hintFor = (k) => {
-    const c = countFor(k);
-    switch (k) {
-      case "": return "live inbox";
-      case "NEW": return c === 0 ? "all caught up" : `${c} to triage`;
-      case "ASSIGNED": return c ? "in the field" : "none active";
-      case "IN_PROGRESS": return c ? "active now" : "none active";
-      case "CLOSED": return total ? `${Math.round((counts.CLOSED || 0) / total * 100)}% resolved` : "—";
-      default: return "";
-    }
+  const hintFor = (key) => {
+    if (key) return BUCKET_HINT[key] || "";
+    return `${tickets.length} total`;
   };
 
   const visible = tickets.filter((t) => {
-    if (filter && t.status !== filter) return false;
+    if (filter && t.board_bucket !== filter) return false;
+    if (filter === "" && t.board_bucket === "cancelled") return false;
     if (!search) return true;
     const query = search.toLowerCase();
     return (
@@ -79,17 +64,18 @@ export default function Dashboard() {
     );
   });
 
+  const activeLabel = DASHBOARD_BUCKETS.find((s) => s.key === filter)?.label || "All requests";
+
   return (
     <div>
-      {/* Page header */}
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-brand">Oasis Globe · Service Desk</p>
-          <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">Today's Operations</h1>
+          <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">Service Requests</h1>
           <p className="mt-0.5 flex items-center gap-1.5 text-sm text-slate-400">
-            Live inbox of customer requests
+            New → Pending → Assigned → Service Done → Completed
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-            auto-refreshing
+            live
           </p>
         </div>
         <div className="flex gap-2">
@@ -98,26 +84,42 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* KPI cards */}
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {STATS.map((s) => (
-          <Kpi key={s.key} label={s.label} value={countFor(s.key)} icon={s.icon} color={s.color}
-            hint={hintFor(s.key)} active={filter === s.key} ring={RING[s.color]} onClick={() => setFilter(s.key)} />
+      {/* Board bucket KPIs */}
+      <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+        {DASHBOARD_BUCKETS.map((s) => (
+          <Kpi
+            key={s.key || "all"}
+            label={s.label}
+            value={countFor(s.key)}
+            icon={s.icon}
+            color={s.color}
+            hint={hintFor(s.key)}
+            active={filter === s.key}
+            ring={RING[s.color]}
+            onClick={() => setFilter(s.key)}
+          />
         ))}
-        <Kpi label="Low stock parts" value={lowStock ?? "—"} icon="box" color="orange"
-          hint={lowStock ? "reorder soon" : "all stocked"} onClick={() => navigate("/stock")} />
       </div>
 
-      {/* Requests table */}
+      {/* Low stock quick link */}
+      {lowStock != null && lowStock > 0 && (
+        <button
+          type="button"
+          onClick={() => navigate("/stock")}
+          className="mb-4 flex w-full items-center justify-between rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-left text-sm transition hover:bg-orange-100/80 sm:w-auto"
+        >
+          <span className="flex items-center gap-2 font-medium text-orange-800">
+            <Icon name="box" className="h-4 w-4" /> {lowStock} part{lowStock === 1 ? "" : "s"} low on stock
+          </span>
+          <span className="text-xs text-orange-600">View inventory →</span>
+        </button>
+      )}
+
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-semibold text-slate-700">
-          {filter ? STATS.find((s) => s.key === filter)?.label : "All"} requests
-        </h2>
+        <h2 className="text-sm font-semibold text-slate-700">{activeLabel}</h2>
         <span className="text-sm text-slate-400">· {visible.length}</span>
-        {/* Active filters surface as removable chips so it's always clear what's
-            being shown — and one click clears them. */}
         {filter && (
-          <FilterChip label={STATS.find((s) => s.key === filter)?.label} onClear={() => setFilter("")} />
+          <FilterChip label={activeLabel} onClear={() => setFilter("")} />
         )}
         {search && (
           <FilterChip label={`“${search}”`} onClear={() => navigate("/")} />
@@ -128,7 +130,7 @@ export default function Dashboard() {
 
       {!loaded
         ? <div className="flex justify-center rounded-xl border border-slate-200 bg-white py-16"><Spinner className="h-7 w-7" /></div>
-        : <TicketTable tickets={visible} emptyHint={search || filter ? "Try a different filter or search." : undefined} />}
+        : <TicketTable tickets={visible} emptyHint={search || filter ? "Try a different filter or search." : undefined} showBoard />}
 
       {showNew && (
         <NewTicketModal onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); load(); }} />
@@ -151,18 +153,20 @@ function FilterChip({ label, onClear }) {
 function Kpi({ label, value, icon, color, hint, active, ring, onClick }) {
   return (
     <button onClick={onClick} aria-pressed={active === undefined ? undefined : active}
-      className={`relative flex items-start justify-between overflow-hidden rounded-xl border bg-white py-3.5 pl-5 pr-3.5 text-left shadow-card transition hover:shadow-pop focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 ${
+      className={`relative flex min-h-[88px] flex-col justify-between overflow-hidden rounded-xl border bg-white p-3.5 text-left shadow-card transition hover:shadow-pop focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 ${
         active ? `border-transparent ring-2 ${ring}` : "border-slate-200"
       }`}>
       <span className={`absolute inset-y-0 left-0 w-1 ${ACCENT[color]}`} aria-hidden="true" />
-      <div className="min-w-0">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
-        <div className="mt-1 text-2xl font-bold leading-none text-slate-900">{value}</div>
-        <div className="mt-1 truncate text-[11px] text-slate-400">{hint || " "}</div>
+      <div className="flex items-start justify-between gap-2 pl-1">
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</div>
+          <div className="mt-1 text-2xl font-bold leading-none text-slate-900">{value}</div>
+        </div>
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${ICON_BG[color]}`}>
+          <Icon name={icon} className="h-4 w-4" />
+        </span>
       </div>
-      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${ICON_BG[color]}`}>
-        <Icon name={icon} className="h-4 w-4" />
-      </span>
+      <div className="mt-2 truncate pl-1 text-[10px] leading-snug text-slate-400">{hint || " "}</div>
     </button>
   );
 }

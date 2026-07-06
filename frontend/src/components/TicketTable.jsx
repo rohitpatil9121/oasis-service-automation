@@ -1,4 +1,5 @@
 import { useNavigate, Link } from "react-router-dom";
+import BoardBadge from "./BoardBadge.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import RatingStars from "./RatingStars.jsx";
 import { EmptyState, timeAgo, Icon } from "./ui.jsx";
@@ -40,7 +41,7 @@ function StatusCell({ t }) {
   return <StatusBadge status={t.status} />;
 }
 
-export default function TicketTable({ tickets, emptyHint }) {
+export default function TicketTable({ tickets, emptyHint, showBoard }) {
   const nav = useNavigate();
   if (!tickets.length)
     return <EmptyState title="No requests here" hint={emptyHint || "New WhatsApp requests will show up automatically."} />;
@@ -67,8 +68,11 @@ export default function TicketTable({ tickets, emptyHint }) {
                     </div>
                   </div>
                 </div>
-                <div className="mt-2.5 flex items-center justify-between">
-                  <StatusCell t={t} />
+                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusCell t={t} />
+                    {showBoard && <BoardBadge bucket={t.board_bucket} reopened={!!(t.reopened_at || t.tech_work?.reopened_at)} />}
+                  </div>
                   <span className="flex items-center gap-2 text-xs text-slate-400">
                     {t.rating != null && <RatingStars value={t.rating} />}
                     <span>{timeAgo(t.created_at)}</span>
@@ -83,14 +87,16 @@ export default function TicketTable({ tickets, emptyHint }) {
       {/* ---------- Desktop: table ---------- */}
       <div className="hidden overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card sm:block">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[64rem] table-fixed text-sm">
+          <table className="w-full min-w-[72rem] table-fixed text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-[11px] uppercase tracking-wide text-slate-500">
                 <th className="w-32 px-4 py-2.5 font-semibold">Ticket</th>
                 <th className="w-60 px-4 py-2.5 font-semibold">Customer</th>
                 <th className="px-4 py-2.5 font-semibold">Issue</th>
                 <th className="w-40 px-4 py-2.5 font-semibold">Technician</th>
+                <th className="w-28 px-4 py-2.5 font-semibold">Board</th>
                 <th className="w-32 px-4 py-2.5 font-semibold">Status</th>
+                <th className="w-20 px-4 py-2.5 font-semibold">Rating</th>
                 <th className="w-24 px-4 py-2.5 text-right font-semibold">Created</th>
               </tr>
             </thead>
@@ -133,7 +139,13 @@ export default function TicketTable({ tickets, emptyHint }) {
                     <td className="truncate px-4 py-2.5 text-slate-600">
                       {t.technician?.full_name || <span className="text-slate-300">Unassigned</span>}
                     </td>
+                    <td className="px-4 py-2.5">
+                      {showBoard ? <BoardBadge bucket={t.board_bucket} reopened={!!(t.reopened_at || t.tech_work?.reopened_at)} /> : "—"}
+                    </td>
                     <td className="px-4 py-2.5"><StatusCell t={t} /></td>
+                    <td className="px-4 py-2.5">
+                      {t.rating != null ? <RatingStars value={t.rating} showLabel /> : <span className="text-slate-300">—</span>}
+                    </td>
                     <td className="whitespace-nowrap px-4 py-2.5 text-right text-xs text-slate-400">{timeAgo(t.created_at)}</td>
                   </tr>
                 );

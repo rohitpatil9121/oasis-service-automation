@@ -13,7 +13,7 @@ const STATUSES = ["NEW", "ASSIGNED", "IN_PROGRESS", "CLOSED", "CANCELLED"];
 // List / inbox (manager + owner). Optional ?status= filter.
 router.get("/", requireRole("owner", "manager"), async (req, res, next) => {
   try {
-    res.json({ tickets: await tickets.listTickets({ status: req.query.status }) });
+    res.json({ tickets: await tickets.listTickets({ status: req.query.status, bucket: req.query.bucket }) });
   } catch (e) { next(e); }
 });
 

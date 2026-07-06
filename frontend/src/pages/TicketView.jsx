@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client.js";
+import BoardBadge from "../components/BoardBadge.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import AssignModal from "../components/AssignModal.jsx";
 import ScheduleModal from "../components/ScheduleModal.jsx";
@@ -81,9 +82,10 @@ export default function TicketView() {
           <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand/10 text-base font-bold text-brand">{initials}</span>
           <div>
             <h1 className="text-xl font-bold leading-tight text-slate-900">{ticket.customer?.full_name || "Customer"}</h1>
-            <div className="mt-0.5 flex items-center gap-2">
+            <div className="mt-0.5 flex flex-wrap items-center gap-2">
               <span className="font-mono text-xs font-semibold text-brand">{ticket.ticket_number}</span>
               <StatusBadge status={ticket.status} />
+              {ticket.board_bucket && <BoardBadge bucket={ticket.board_bucket} reopened={!!(ticket.reopened_at || ticket.tech_work?.reopened_at)} />}
             </div>
           </div>
         </div>
