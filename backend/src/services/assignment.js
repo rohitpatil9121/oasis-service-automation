@@ -9,7 +9,7 @@ import { log } from "../lib/logger.js";
 
 export async function listTechnicians() {
   const { data, error } = await supabase
-    .from("users").select("id, full_name, phone, email, is_active")
+    .from("users").select("id, full_name, phone, email, is_active, is_online, last_lat, last_lng, location_at")
     .eq("role", "technician").eq("is_active", true)
     .order("full_name");
   if (error) throw new Error("listTechnicians: " + error.message);
@@ -18,7 +18,8 @@ export async function listTechnicians() {
 
 export async function getTechnicianById(id) {
   const { data, error } = await supabase
-    .from("users").select("id, full_name, phone, email, is_active, role")
+    .from("users")
+    .select("id, full_name, phone, email, is_active, role, is_online, last_lat, last_lng, location_at")
     .eq("id", id).eq("role", "technician").maybeSingle();
   if (error) throw new Error("getTechnicianById: " + error.message);
   return data;
@@ -137,9 +138,9 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
 
   await queueNotification({
     recipient: ticket.customer.phone, audience: "customer", ticketId,
-    body: `Your service request ${ticket.ticket_number} has been assigned to our technician ${tech.full_name}.\n\n` +
-          serviceLine(ticket.issue_description) +
-          `The technician will contact you before the visit.`,
+    body: `Technician assigned\n\nName: ${tech.full_name}\n` +
+          `Service: ${ticket.issue_description || "—"}\n\n` +
+          `You will get an update when he starts.`,
   });
 
   // Phone push to the technician's device (no-op if FCM/token not set up).

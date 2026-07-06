@@ -28,6 +28,24 @@ router.post("/jobs/:id/step", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Technician captures a job photo (base64 data URL in body.image).
+router.post("/jobs/:id/photo", async (req, res, next) => {
+  try { res.json(await tech.saveJobPhoto(req.user.id, req.params.id, req.body?.image)); }
+  catch (e) { next(e); }
+});
+
+// "Reached" → send the arrival OTP to the customer on WhatsApp.
+router.post("/jobs/:id/arrival-otp", async (req, res, next) => {
+  try { res.json(await tech.sendArrivalOtp(req.user.id, req.params.id)); }
+  catch (e) { next(e); }
+});
+
+// Verify the arrival OTP the customer shared → status ARRIVED.
+router.post("/jobs/:id/verify-arrival", async (req, res, next) => {
+  try { res.json(await tech.verifyArrivalOtp(req.user.id, req.params.id, req.body?.code)); }
+  catch (e) { next(e); }
+});
+
 router.get("/parts", async (req, res, next) => {
   try { res.json({ parts: await tech.listParts() }); }
   catch (e) { next(e); }
@@ -58,6 +76,12 @@ router.patch("/availability", async (req, res, next) => {
 // Register this device's FCM token for push notifications.
 router.post("/push-token", async (req, res, next) => {
   try { res.json(await tech.savePushToken(req.user.id, req.body?.token)); }
+  catch (e) { next(e); }
+});
+
+// Stream the technician's live GPS location.
+router.post("/location", async (req, res, next) => {
+  try { res.json(await tech.saveLocation(req.user.id, req.body?.lat, req.body?.lng)); }
   catch (e) { next(e); }
 });
 
