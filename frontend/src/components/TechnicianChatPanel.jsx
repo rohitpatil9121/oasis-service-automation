@@ -46,7 +46,7 @@ export default function TechnicianChatPanel({ technician }) {
   const snippet = (m) => (m?.body || "").trim() || (m?.mediaId ? "📎 Attachment" : "");
 
   async function send(e) {
-    e.preventDefault();
+    e?.preventDefault?.();
     const body = text.trim();
     if (!body) return;
     const quoting = replyTo;
@@ -60,6 +60,13 @@ export default function TechnicianChatPanel({ technician }) {
       if (!res.ok) setWarn("Couldn't deliver — the technician may be outside WhatsApp's 24-hour window. They need to message first.");
       await load();
     } catch (err) { setWarn(err.message); } finally { setSending(false); }
+  }
+
+  function onComposerKeyDown(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send(e);
+    }
   }
 
   return (
@@ -140,12 +147,14 @@ export default function TechnicianChatPanel({ technician }) {
         </div>
       )}
 
-      <form onSubmit={send} className="flex items-center gap-2 border-t border-slate-100 p-2.5">
-        <input
+      <form onSubmit={send} className="flex items-end gap-2 border-t border-slate-100 p-2.5">
+        <textarea
+          rows={2}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Type a WhatsApp message…"
-          className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
+          onKeyDown={onComposerKeyDown}
+          placeholder="Type a WhatsApp message… (Shift+Enter for new line)"
+          className="flex-1 resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
         />
         <button type="submit" disabled={sending || !text.trim()}
           className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white transition hover:bg-emerald-700 disabled:opacity-50"
