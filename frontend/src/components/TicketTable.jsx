@@ -96,7 +96,7 @@ export default function TicketTable({ tickets, emptyHint, showBoard }) {
                 <th className="w-40 px-4 py-2.5 font-semibold">Technician</th>
                 <th className="w-28 px-4 py-2.5 font-semibold">Board</th>
                 <th className="w-32 px-4 py-2.5 font-semibold">Status</th>
-                <th className="w-20 px-4 py-2.5 font-semibold">Rating</th>
+                <th className="w-28 px-4 py-2.5 font-semibold">Rating</th>
                 <th className="w-24 px-4 py-2.5 text-right font-semibold">Created</th>
               </tr>
             </thead>
@@ -144,7 +144,7 @@ export default function TicketTable({ tickets, emptyHint, showBoard }) {
                     </td>
                     <td className="px-4 py-2.5"><StatusCell t={t} /></td>
                     <td className="px-4 py-2.5">
-                      {t.rating != null ? <RatingStars value={t.rating} showLabel /> : <span className="text-slate-300">—</span>}
+                      {t.rating != null ? <RatingStars value={t.rating} showLabel stacked /> : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="whitespace-nowrap px-4 py-2.5 text-right text-xs text-slate-400">{timeAgo(t.created_at)}</td>
                   </tr>
