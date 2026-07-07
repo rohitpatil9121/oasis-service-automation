@@ -11,8 +11,7 @@ const REFRESH_MS = 8000;
 
 export default function Dashboard() {
   const [tickets, setTickets] = useState([]);
-  const [filter, setFilter] = useState("");
-  const [lowStock, setLowStock] = useState(null);
+  const [filter, setFilter] = useState("new");
   const [err, setErr] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -28,18 +27,11 @@ export default function Dashboard() {
     } catch (e) { setErr(e.message); } finally { setLoaded(true); }
   }, []);
 
-  const loadStock = useCallback(async () => {
-    try {
-      const { items } = await api.listStock();
-      setLowStock(items.filter((i) => Number(i.qty_on_hand) <= Number(i.reorder_level)).length);
-    } catch { setLowStock(null); }
-  }, []);
-
   useEffect(() => {
-    load(); loadStock();
+    load();
     const id = setInterval(load, REFRESH_MS);
     return () => clearInterval(id);
-  }, [load, loadStock]);
+  }, [load]);
 
   const countFor = (key) => {
     if (!key) return tickets.filter((t) => t.board_bucket !== "cancelled").length;
@@ -79,7 +71,7 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => { load(); loadStock(); }}><Icon name="refresh" /> Refresh</Button>
+          <Button variant="secondary" onClick={load}><Icon name="refresh" /> Refresh</Button>
           <Button onClick={() => setShowNew(true)}><Icon name="plus" /> New request</Button>
         </div>
       </div>
@@ -100,20 +92,6 @@ export default function Dashboard() {
           />
         ))}
       </div>
-
-      {/* Low stock quick link */}
-      {lowStock != null && lowStock > 0 && (
-        <button
-          type="button"
-          onClick={() => navigate("/stock")}
-          className="mb-4 flex w-full items-center justify-between rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-left text-sm transition hover:bg-orange-100/80 sm:w-auto"
-        >
-          <span className="flex items-center gap-2 font-medium text-orange-800">
-            <Icon name="box" className="h-4 w-4" /> {lowStock} part{lowStock === 1 ? "" : "s"} low on stock
-          </span>
-          <span className="text-xs text-orange-600">View inventory →</span>
-        </button>
-      )}
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold text-slate-700">{activeLabel}</h2>
