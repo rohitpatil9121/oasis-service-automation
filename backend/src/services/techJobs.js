@@ -268,6 +268,33 @@ export async function runStep(techId, ticketId, action, work = {}) {
   const ticket = await loadOwned(techId, ticketId);
   const techName = ticket.technician?.full_name || "our technician";
 
+  // Estimate guard: a part's price must stay between its minimum price
+  // (base_cost, if set) and MRP (unit_price, if set).
+  if (action === "estimate" && Array.isArray(work.parts) && work.parts.length) {
+    const ids = work.parts.map((p) => p.id).filter(Boolean);
+    if (ids.length) {
+      const { data: rows, error: pErr } = await supabase
+        .from("stock_items").select("id, name, unit_price, base_cost").in("id", ids);
+      if (pErr) throw new Error("runStep parts check: " + pErr.message);
+      const byId = new Map((rows || []).map((r) => [r.id, r]));
+      for (const p of work.parts) {
+        const row = p.id && byId.get(p.id);
+        if (!row) continue;
+        const price = Number(p.price || 0);
+        const min = Number(row.base_cost || 0);
+        const mrp = Number(row.unit_price || 0);
+        if (min > 0 && price < min) {
+          const e = new Error(`${row.name}: price ₹${price} is below minimum ₹${min}`);
+          e.status = 400; throw e;
+        }
+        if (mrp > 0 && price > mrp) {
+          const e = new Error(`${row.name}: price ₹${price} is above MRP ₹${mrp}`);
+          e.status = 400; throw e;
+        }
+      }
+    }
+  }
+
   const tech_work = {
     ...(ticket.tech_work || {}),
     ...work,
@@ -349,11 +376,12 @@ export async function runStep(techId, ticketId, action, work = {}) {
 
 export async function listParts() {
   const { data, error } = await supabase
-    .from("stock_items").select("id, name, unit_price, brand")
+    .from("stock_items").select("id, name, unit_price, brand, base_cost")
     .eq("is_active", true).order("name");
   if (error) throw new Error("listParts: " + error.message);
   return (data || []).map((p) => ({
     id: p.id, name: p.name, price: Number(p.unit_price || 0), brand: p.brand || "other",
+    minPrice: Number(p.base_cost || 0),
   }));
 }
 
