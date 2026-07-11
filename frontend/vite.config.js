@@ -9,7 +9,7 @@ export default defineConfig({
     // Use 127.0.0.1 (not "localhost") so Windows doesn't resolve to IPv6 ::1
     // and fail to reach an IPv4-bound backend (causes 502s in the dev proxy).
     proxy: {
-      "/api": { target: "http://127.0.0.1:3000", changeOrigin: true },
+      "/api": { target: process.env.VITE_PROXY_TARGET || "http://127.0.0.1:3000", changeOrigin: true },
     },
   },
 });
