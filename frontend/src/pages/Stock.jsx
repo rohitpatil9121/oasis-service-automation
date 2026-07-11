@@ -7,6 +7,7 @@ export default function Stock() {
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState("");
   const [search, setSearch] = useState("");
+  const [brandFilter, setBrandFilter] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [editItem, setEditItem] = useState(null);
 
@@ -26,6 +27,7 @@ export default function Stock() {
   }
 
   const visible = items.filter((it) => {
+    if (brandFilter && it.brand !== brandFilter) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return it.name?.toLowerCase().includes(q) || it.sku?.toLowerCase().includes(q);
@@ -47,6 +49,20 @@ export default function Stock() {
         </span>
         <Input value={search} onChange={(e) => setSearch(e.target.value)}
           placeholder="Search item name or SKU…" className="pl-9" />
+      </div>
+
+      <div className="mb-4 flex gap-2">
+        {["oasis", "kent", "aquaguard"].map((b) => (
+          <button key={b} type="button"
+            onClick={() => setBrandFilter(brandFilter === b ? "" : b)}
+            className={`rounded-full border px-3.5 py-1.5 text-sm font-medium capitalize transition ${
+              brandFilter === b
+                ? "border-brand bg-brand text-white"
+                : "border-slate-200 bg-white text-slate-600 hover:border-brand/40 hover:text-brand"
+            }`}>
+            {b}
+          </button>
+        ))}
       </div>
 
       {err && <Alert>{err}</Alert>}
