@@ -48,7 +48,7 @@ export default function Stock() {
           <Icon name="search" />
         </span>
         <Input value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search item name or SKU…" className="pl-9" />
+          placeholder="Search item name…" className="pl-9" />
       </div>
 
       <div className="mb-4 flex gap-2">
@@ -80,9 +80,9 @@ export default function Stock() {
                 <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-4 py-3 font-semibold">Item</th>
                   <th className="px-4 py-3 font-semibold">Brand</th>
-                  <th className="px-4 py-3 font-semibold">SKU</th>
                   <th className="px-4 py-3 font-semibold">In stock</th>
                   <th className="px-4 py-3 font-semibold">MRP</th>
+                  <th className="px-4 py-3 font-semibold">Min price</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -99,7 +99,6 @@ export default function Stock() {
                           </span>
                         ) : <span className="text-xs text-slate-400">—</span>}
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-500">{it.sku || "—"}</td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center gap-1.5 font-medium ${low ? "text-amber-600" : "text-slate-700"}`}>
                           {it.qty_on_hand} {it.unit}
@@ -107,6 +106,7 @@ export default function Stock() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-600">₹{it.unit_price}</td>
+                      <td className="px-4 py-3 text-slate-600">₹{it.base_cost || 0}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-3">
                           <button onClick={() => setEditItem(it)} title="Edit item"
@@ -143,7 +143,6 @@ function ItemModal({ item, onClose, onSaved }) {
   const editing = !!item;
   const [form, setForm] = useState({
     name: item?.name || "",
-    sku: item?.sku || "",
     unit: item?.unit || "pcs",
     qty_on_hand: editing ? String(item.qty_on_hand) : "",
     reorder_level: editing ? String(item.reorder_level) : "",
@@ -171,32 +170,27 @@ function ItemModal({ item, onClose, onSaved }) {
       <form onSubmit={submit} className="space-y-3">
         <Alert>{err}</Alert>
         <Field label="Item name"><Input value={form.name} onChange={set("name")} required autoFocus placeholder="RO Sediment Filter" /></Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="SKU (optional)"><Input value={form.sku} onChange={set("sku")} placeholder="RO-SED-10" /></Field>
-          <Field label="Unit"><Input value={form.unit} onChange={set("unit")} placeholder="pcs" /></Field>
-        </div>
         <div className="grid grid-cols-3 gap-3">
           <Field label={editing ? "In stock" : "Opening qty"}><Input type="number" min="0" value={form.qty_on_hand} onChange={set("qty_on_hand")} placeholder="0" /></Field>
           <Field label="Reorder at"><Input type="number" min="0" value={form.reorder_level} onChange={set("reorder_level")} placeholder="0" /></Field>
+          <Field label="Unit"><Input value={form.unit} onChange={set("unit")} placeholder="pcs" /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <Field label="MRP ₹"><Input type="number" min="0" value={form.unit_price} onChange={set("unit_price")} placeholder="0" /></Field>
+          <Field label="Minimum price ₹" hint="Lowest price a technician can charge">
+            <Input type="number" min="0" value={form.base_cost} onChange={set("base_cost")} placeholder="0" />
+          </Field>
         </div>
         {/* Brand drives the technician incentive: Kent/Aquaguard earn 6–10% of the
-            sale; Oasis earns the margin over the fixed buy cost. */}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Brand (for incentive)" hint="Leave blank if no incentive applies">
-            <Select value={form.brand} onChange={set("brand")}>
-              <option value="">— None —</option>
-              <option value="kent">Kent</option>
-              <option value="aquaguard">Aquaguard</option>
-              <option value="oasis">Oasis</option>
-            </Select>
-          </Field>
-          {form.brand === "oasis" && (
-            <Field label="Fixed cost ₹" hint="Technician margin = sell − this">
-              <Input type="number" min="0" value={form.base_cost} onChange={set("base_cost")} placeholder="350" />
-            </Field>
-          )}
-        </div>
+            sale; Oasis earns the margin over the minimum (buy) price. */}
+        <Field label="Brand (for incentive)" hint="Leave blank if no incentive applies">
+          <Select value={form.brand} onChange={set("brand")}>
+            <option value="">— None —</option>
+            <option value="kent">Kent</option>
+            <option value="aquaguard">Aquaguard</option>
+            <option value="oasis">Oasis</option>
+          </Select>
+        </Field>
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button type="submit" disabled={busy}>{busy ? "Saving…" : editing ? "Save changes" : "Add item"}</Button>
