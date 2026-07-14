@@ -139,6 +139,144 @@ export function loginOtp({ code }) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Technician-workflow milestones sent to the CUSTOMER. These used to go as
+// free-form text and silently failed whenever the customer was outside the
+// 24-hour window (manager/KENT-referred leads, or any gap > 24h). Each is now an
+// approved template so it delivers any time. `body` stays as the readable
+// fallback (Twilio/mock, and the free-text fallback in queueNotification).
+// ---------------------------------------------------------------------------
+
+// {{1}} ticket  {{2}} technician name  {{3}} service/issue
+export function customerTechnicianAssigned({ ticketNumber, techName, issue }) {
+  return {
+    template: {
+      name: "customer_technician_assigned",
+      language: WA_LANG,
+      variables: [v(ticketNumber), v(techName), v(issue)],
+    },
+    body:
+      `Technician assigned for your request ${ticketNumber}.\n` +
+      `Name: ${techName}\n` +
+      `Service: ${issue || "—"}\n\n` +
+      `You will get an update when he starts.`,
+  };
+}
+
+// {{1}} ticket  {{2}} technician name  {{3}} ETA in minutes
+export function customerTechnicianEnroute({ ticketNumber, techName, etaMinutes = "30" }) {
+  return {
+    template: {
+      name: "customer_technician_enroute",
+      language: WA_LANG,
+      variables: [v(ticketNumber), v(techName), v(etaMinutes)],
+    },
+    body:
+      `Technician is on the way for your request ${ticketNumber}.\n` +
+      `Name: ${techName}\n` +
+      `ETA: Around ${etaMinutes} minutes.`,
+  };
+}
+
+// Arrival code the customer reads out to the on-site technician. Meta forces any
+// verification code into the AUTHENTICATION category (Utility submits get
+// rejected), so this is an Authentication template: Meta fixes the body wording,
+// it has exactly ONE variable (the code), and the code must also be bound to the
+// copy-code button — same shape as loginOtp. `otpCode` tells the Meta sender to
+// bind it to that button. No ticket/context is possible in this category.
+export function customerArrivalOtp({ code }) {
+  return {
+    template: {
+      name: "customer_arrival_otp",
+      language: WA_LANG,
+      variables: [v(code)],
+      otpCode: String(code),
+    },
+    body: `${code} is your Oasis Globe technician arrival code.`,
+  };
+}
+
+// {{1}} ticket  {{2}} problem  {{3}} itemised charges (single line)  {{4}} total.
+// The itemised parts list is collapsed into ONE comma-joined variable so it fits
+// a fixed-shape template (Meta can't have a variable number of {{n}}). The full
+// readable bill is passed as `body` for the fallback path.
+export function customerEstimate({ ticketNumber, problem, charges, total, body }) {
+  return {
+    template: {
+      name: "customer_estimate",
+      language: WA_LANG,
+      variables: [v(ticketNumber), v(problem), v(charges), v(total)],
+    },
+    body:
+      body ||
+      `Estimate for your request ${ticketNumber}.\n` +
+      `Problem: ${problem || "—"}\n` +
+      `Charges: ${charges}\n` +
+      `Total: ${total}\n\n` +
+      `Reply 1 to Approve or 2 to Reject.`,
+  };
+}
+
+// {{1}} ticket
+export function customerEstimateApproved({ ticketNumber }) {
+  return {
+    template: {
+      name: "customer_estimate_approved",
+      language: WA_LANG,
+      variables: [v(ticketNumber)],
+    },
+    body:
+      `Estimate approved for request ${ticketNumber}.\n\n` +
+      `The technician has started the work.`,
+  };
+}
+
+// {{1}} ticket  {{2}} amount due
+export function customerWorkCompleted({ ticketNumber, amount }) {
+  return {
+    template: {
+      name: "customer_work_completed",
+      language: WA_LANG,
+      variables: [v(ticketNumber), v(amount)],
+    },
+    body:
+      `Work completed for your request ${ticketNumber}.\n\n` +
+      `Amount due: ${amount}\n\n` +
+      `Please pay now in the technician's presence.`,
+  };
+}
+
+// {{1}} ticket  {{2}} visit charge payable
+export function customerVisitCharge({ ticketNumber, amount }) {
+  return {
+    template: {
+      name: "customer_visit_charge",
+      language: WA_LANG,
+      variables: [v(ticketNumber), v(amount)],
+    },
+    body:
+      `Repair not approved for your request ${ticketNumber}.\n\n` +
+      `Visit charge payable: ${amount}\n\n` +
+      `Please pay the visit charge in the technician's presence.`,
+  };
+}
+
+// {{1}} ticket  {{2}} amount  {{3}} payment mode
+export function customerPaymentReceived({ ticketNumber, amount, mode }) {
+  return {
+    template: {
+      name: "customer_payment_received",
+      language: WA_LANG,
+      variables: [v(ticketNumber), v(amount), v(mode)],
+    },
+    body:
+      `Payment received for your request ${ticketNumber}.\n\n` +
+      `Amount: ${amount}\n` +
+      `Mode: ${mode}\n\n` +
+      `Thank you for choosing Oasis Globe.`,
+  };
+}
+
 // {{1}} customer name  {{2}} ticket  {{3}} reason
 export function requestCancelledCustomer({ ticketNumber, customerName, reason }) {
   return {

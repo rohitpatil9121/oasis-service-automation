@@ -1,7 +1,7 @@
 // Technician assignment. Phase 1 = simple manual assignment by the manager.
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
-import { technicianNewJob, serviceLine } from "./waTemplates.js";
+import { technicianNewJob, serviceLine, customerTechnicianAssigned } from "./waTemplates.js";
 import { sendPush } from "./push.js";
 import { getTicket } from "./tickets.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
@@ -136,11 +136,13 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
   if (!String(ticket.issue_description ?? "").trim())
     log.warn(`Ticket ${ticket.ticket_number} assigned with NO issue recorded`);
 
+  const assignedTpl = customerTechnicianAssigned({
+    ticketNumber: ticket.ticket_number, techName: tech.full_name,
+    issue: ticket.issue_description,
+  });
   await queueNotification({
     recipient: ticket.customer.phone, audience: "customer", ticketId,
-    body: `Technician assigned\n\nName: ${tech.full_name}\n` +
-          `Service: ${ticket.issue_description || "—"}\n\n` +
-          `You will get an update when he starts.`,
+    body: assignedTpl.body, template: assignedTpl.template,
   });
 
   // Phone push to the technician's device (no-op if FCM/token not set up).
