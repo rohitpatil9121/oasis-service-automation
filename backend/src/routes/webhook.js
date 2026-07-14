@@ -209,7 +209,13 @@ router.post("/whatsapp", async (req, res) => {
       if (!msg) return; // delivery/read status events have no messages — ignore
 
       const from = "+" + msg.from; // Meta sends e.g. "918668732890" (no +)
-      const text = msg.type === "text" ? msg.text?.body || "" : (msg.image?.caption || msg.video?.caption || "");
+      // Template quick-reply buttons (e.g. estimate Approve/Reject) come back as
+      // type "button" carrying button.text/payload — treat the tapped label as the
+      // customer's text so handleEstimateReply / intake see "Approve" / "Reject".
+      const buttonTap = msg.type === "button" ? (msg.button?.payload || msg.button?.text || "") : "";
+      const text = msg.type === "text" ? (msg.text?.body || "")
+        : msg.type === "button" ? buttonTap
+        : (msg.image?.caption || msg.video?.caption || "");
       const mediaId = msg.image?.id || msg.video?.id || msg.document?.id || null;
       const mediaType = msg.image?.mime_type || msg.video?.mime_type || msg.document?.mime_type || null;
       const waMessageId = msg.id || null; // wamid — lets the manager later "reply" to this exact message
@@ -234,7 +240,9 @@ router.post("/whatsapp", async (req, res) => {
       }
 
       // Debounced: waits for the customer to finish before the bot replies once.
-      await enqueueReply(from, text, { mediaId, mediaType, waMessageId, replyToWamid }, (reply) => sendWhatsApp(from, reply));
+      // Fall back to an interactive tap's label (non-rating reply buttons) so those
+      // taps also reach estimate approval / intake instead of arriving as empty text.
+      await enqueueReply(from, text || interactiveReply?.title || "", { mediaId, mediaType, waMessageId, replyToWamid }, (reply) => sendWhatsApp(from, reply));
     } catch (e) {
       log.error("meta webhook error:", e.message);
     }

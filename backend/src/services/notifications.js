@@ -29,9 +29,24 @@ export async function queueNotification({ recipient, body, audience, ticketId, t
         : await sendWhatsApp(recipient, body, { contextMessageId: replyTo?.wamid });
     row.provider_sid = res.sid;
   } catch (e) {
-
-    row = { ...row, status: "FAILED", sent_at: null, attempts: 5, last_error: e.message };
-    log.error("notification send failed:", e.message);
+    // A template send can fail because the template isn't approved in Meta yet
+    // (#132001) or another template error. If we have a readable body, fall back
+    // to free-form text so in-window customers still get the message — this keeps
+    // the switch to templates safe even before every template is approved.
+    if (template && body) {
+      try {
+        const res = await sendWhatsApp(recipient, body, { contextMessageId: replyTo?.wamid });
+        row.provider_sid = res.sid;
+        row.last_error = `template failed, sent as text: ${e.message}`;
+        log.warn("notification template failed, sent as text:", e.message);
+      } catch (e2) {
+        row = { ...row, status: "FAILED", sent_at: null, attempts: 5, last_error: e2.message };
+        log.error("notification send failed (template + text):", e2.message);
+      }
+    } else {
+      row = { ...row, status: "FAILED", sent_at: null, attempts: 5, last_error: e.message };
+      log.error("notification send failed:", e.message);
+    }
   }
 
   let { data, error } = await supabase

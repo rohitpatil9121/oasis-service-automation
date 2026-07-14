@@ -6,6 +6,11 @@ import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
 import { sendPush } from "./push.js";
 import { updateStatus, getTicket, RATING_LABELS } from "./tickets.js";
+import {
+  customerTechnicianEnroute, customerArrivalOtp, customerEstimate,
+  customerEstimateApproved, customerWorkCompleted, customerVisitCharge,
+  customerPaymentReceived,
+} from "./waTemplates.js";
 import { log } from "../lib/logger.js";
 
 const SELECT =
@@ -195,9 +200,10 @@ export async function handleEstimateReply(phone, text) {
   // Approve → confirm + work starts. Reject → no message (the technician will
   // send a revised estimate or collect the visit charge only, each with its own).
   if (verified) {
+    const tpl = customerEstimateApproved({ ticketNumber: t.ticket_number });
     await queueNotification({
       recipient: phone, audience: "customer", ticketId: t.id,
-      body: `Estimate approved\n\nTechnician has started the work.`,
+      body: tpl.body, template: tpl.template,
     });
   }
   if (t.assigned_technician_id) {
@@ -228,9 +234,10 @@ export async function sendArrivalOtp(techId, ticketId) {
   const { error } = await supabase.from("tickets").update({ tech_work }).eq("id", ticketId);
   if (error) throw new Error("sendArrivalOtp: " + error.message);
   if (cust?.phone) {
+    const tpl = customerArrivalOtp({ code });
     await queueNotification({
       recipient: cust.phone, audience: "customer", ticketId,
-      body: `Technician has reached\n\nOTP: ${code}\n\nShare this OTP only after he reaches your home.`,
+      body: tpl.body, template: tpl.template,
     });
   }
   return { ok: true };
@@ -315,9 +322,12 @@ export async function runStep(techId, ticketId, action, work = {}) {
   // ---- Minimal customer WhatsApp messages (one per key milestone only) ----
   const cust = ticket.customer;
   if (action === "enroute" && cust?.phone) {
+    const tpl = customerTechnicianEnroute({
+      ticketNumber: ticket.ticket_number, techName, etaMinutes: "30",
+    });
     await queueNotification({
       recipient: cust.phone, audience: "customer", ticketId,
-      body: `Technician is on the way\n\nName: ${techName}\nETA: Around 30 minutes`,
+      body: tpl.body, template: tpl.template,
     });
   }
 
@@ -325,30 +335,49 @@ export async function runStep(techId, ticketId, action, work = {}) {
   // Approval/rejection is detected from the customer's WhatsApp reply (handled by
   // the intake agent), never marked manually by the technician.
   if (action === "estimate" && cust?.phone) {
+    // Collapse the itemised bill into fixed template variables (charges as one
+    // comma-joined line, since a Meta template can't have a variable count of
+    // parts). The full readable bill stays as the fallback body.
+    const eParts = Array.isArray(work.parts) ? work.parts : [];
+    const eChargeAmt = CHARGE_FREE.has(work.charge) ? 0 : 250;
+    const eTotal = Number(work.total ?? eChargeAmt + eParts.reduce((s, p) => s + Number(p.price || 0), 0));
+    const eProblem = (Array.isArray(work.problems) && work.problems.join(", "))
+      || ticket.issue_description || "—";
+    const charges = [`${CHARGE_LABELS[work.charge] || "Service Charge"}: ${rupees(eChargeAmt)}`,
+      ...eParts.map((p) => `${p.name}: ${rupees(p.price)}`)].join(", ");
+    const tpl = customerEstimate({
+      ticketNumber: ticket.ticket_number, problem: eProblem, charges,
+      total: rupees(eTotal), body: formatEstimateBill(ticket, work),
+    });
     await queueNotification({
       recipient: cust.phone, audience: "customer", ticketId,
-      body: formatEstimateBill(ticket, work),
+      body: tpl.body, template: tpl.template,
     });
   }
 
   // Work done → tell the customer the amount due and to pay in the tech's presence.
   if (action === "workdone" && cust?.phone) {
     const due = Number(work.total ?? tech_work.total ?? 0);
+    const tpl = work.visitOnly
+      ? customerVisitCharge({ ticketNumber: ticket.ticket_number, amount: rupees(due) })
+      : customerWorkCompleted({ ticketNumber: ticket.ticket_number, amount: rupees(due) });
     await queueNotification({
       recipient: cust.phone, audience: "customer", ticketId,
-      body: work.visitOnly
-        ? `Repair not approved\n\nVisit charge payable: ${rupees(due)}`
-        : `Work completed\n\nAmount due: ${rupees(due)}\n\nPlease pay now in technician's presence.`,
+      body: tpl.body, template: tpl.template,
     });
   }
 
   // Payment collected → confirm to the customer with amount + mode (not if pending).
   if (action === "payment" && cust?.phone && !work.pending) {
-    const mode = (Array.isArray(work.payments) && work.payments[0]?.method) || work.mode || "—";
-    const reason = (work.visitOnly || tech_work.visitOnly) ? `\nReason: Visit charge` : "";
+    let mode = (Array.isArray(work.payments) && work.payments[0]?.method) || work.mode || "—";
+    if (work.visitOnly || tech_work.visitOnly) mode = `${mode} (Visit charge)`;
+    const tpl = customerPaymentReceived({
+      ticketNumber: ticket.ticket_number,
+      amount: rupees(work.total ?? tech_work.total ?? 0), mode,
+    });
     await queueNotification({
       recipient: cust.phone, audience: "customer", ticketId,
-      body: `Payment received\n\nAmount: ${rupees(work.total ?? tech_work.total ?? 0)}\nMode: ${mode}${reason}`,
+      body: tpl.body, template: tpl.template,
     });
   }
 

@@ -222,6 +222,150 @@ Samples: {{1}} `Mohit Sharma`, {{2}} `OG-140625-0001`, {{3}} `Customer requested
 
 ---
 
+# Customer workflow templates (NEW — technician milestones)
+
+These cover every step message the technician flow sends to the customer. They
+used to go as free-form text and silently failed whenever the customer was
+outside the 24-hour window (manager/KENT-referred leads, or any gap). The backend
+now sends them as templates with a **free-text fallback** — so nothing breaks
+before approval, and once approved they deliver every time.
+
+Create them the same way: **Category `Utility`, Language `English` (`en`)**, name
+exactly as given, paste the Body, fill the samples. **Exception:** Template 11
+(`customer_arrival_otp`) is **Authentication** (Meta rejects codes under Utility).
+
+## Template 9 — `customer_technician_assigned`
+
+- **Name:** `customer_technician_assigned` · **Category:** `Utility` · **Language:** `en`
+
+**Body:**
+```
+Technician assigned for your request {{1}}.
+Name: {{2}}
+Service: {{3}}
+
+You will get an update when he starts.
+```
+Samples: {{1}} `OG-140725-0003`, {{2}} `Bhushan`, {{3}} `Water taste & quality deteriorated`
+
+## Template 10 — `customer_technician_enroute`
+
+- **Name:** `customer_technician_enroute` · **Category:** `Utility` · **Language:** `en`
+
+**Body:**
+```
+Technician is on the way for your request {{1}}.
+Name: {{2}}
+ETA: Around {{3}} minutes.
+Please keep someone available at the location.
+```
+Samples: {{1}} `OG-140725-0003`, {{2}} `Bhushan`, {{3}} `30`
+
+## Template 11 — `customer_arrival_otp` (AUTHENTICATION)
+
+Meta rejects any verification code under Utility, so this is an **Authentication**
+template — same as `login_otp`. You don't type the body; Meta generates it. Just
+configure:
+
+- **Name:** `customer_arrival_otp` · **Category:** `Authentication` · **Language:** `en`
+- **Code delivery:** `Copy code` button (default).
+- **Add security recommendation:** **OFF** — otherwise it adds "do not share this
+  code", which is the opposite of what we want (the customer shares it with the
+  technician).
+- **Add expiry time for the code:** ON, **60 minutes** (matches the 1-hour code
+  expiry in `sendArrivalOtp`).
+
+This gives exactly **one** variable (the code). The backend passes the code to both
+the body and the copy-code button, so nothing else to wire. The customer sees
+roughly: **"9265 is your verification code"** + a Copy button — they read/relay it
+to the on-site technician, who enters it in the app to confirm arrival.
+
+## Template 12 — `customer_estimate` (WITH APPROVE / REJECT BUTTONS)
+
+- **Name:** `customer_estimate` · **Category:** `Utility` · **Language:** `en`
+
+**Body:** (the parts list arrives as ONE comma-joined line in {{3}})
+```
+Estimate for your request {{1}}.
+Problem: {{2}}
+Charges: {{3}}
+Total: {{4}}
+
+Please tap Approve or Reject below.
+```
+Samples: {{1}} `OG-140725-0003`, {{2}} `Water taste & quality deteriorated`, {{3}} `Repeat Call: Free, Oasis Booster pump: ₹10, Oasis RO membranes: ₹20`, {{4}} `₹30`
+
+**Buttons:** In the template editor, under **Buttons**, choose **Quick reply** and add
+TWO buttons — this gives the customer tappable options instead of typing 1/2:
+
+| Button type | Button text |
+|-------------|-------------|
+| Quick reply | `Approve` |
+| Quick reply | `Reject`  |
+
+> The button **text must be exactly `Approve` and `Reject`** — the backend reads the
+> tapped label and marks the estimate approved/rejected. When the customer taps,
+> Meta sends it back to the webhook as a `button` reply (already handled in
+> `routes/webhook.js`). No send-time change needed; the buttons are static.
+> Typing `1`/`2` or "approve"/"reject" still works as a fallback.
+
+## Template 13 — `customer_estimate_approved`
+
+- **Name:** `customer_estimate_approved` · **Category:** `Utility` · **Language:** `en`
+
+**Body:**
+```
+Estimate approved for request {{1}}.
+
+The technician has started the work.
+```
+Samples: {{1}} `OG-140725-0003`
+
+## Template 14 — `customer_work_completed`
+
+- **Name:** `customer_work_completed` · **Category:** `Utility` · **Language:** `en`
+
+**Body:**
+```
+Work completed for your request {{1}}.
+
+Amount due: {{2}}
+
+Please pay now in the technician's presence.
+```
+Samples: {{1}} `OG-140725-0003`, {{2}} `₹30`
+
+## Template 15 — `customer_visit_charge`
+
+- **Name:** `customer_visit_charge` · **Category:** `Utility` · **Language:** `en`
+
+**Body:**
+```
+Repair not approved for your request {{1}}.
+
+Visit charge payable: {{2}}
+
+Please pay the visit charge in the technician's presence.
+```
+Samples: {{1}} `OG-140725-0003`, {{2}} `₹250`
+
+## Template 16 — `customer_payment_received`
+
+- **Name:** `customer_payment_received` · **Category:** `Utility` · **Language:** `en`
+
+**Body:**
+```
+Payment received for your request {{1}}.
+
+Amount: {{2}}
+Mode: {{3}}
+
+Thank you for choosing Oasis Globe.
+```
+Samples: {{1}} `OG-140725-0003`, {{2}} `₹30`, {{3}} `UPI`
+
+---
+
 ## After approval — nothing to deploy
 
 The code already references these names. Once both show **Approved** in Meta:
@@ -248,9 +392,6 @@ empty field with `—`), so a messy address can't get a send rejected.
 
 ## Not covered here (future, if needed)
 
-- **Customer "technician assigned"** alert: usually sent soon after the customer
-  messaged (so it's inside the window). If you ever assign days later, add a
-  `customer_technician_assigned` template the same way and wire it in
-  `assignment.js`'s customer notification.
-- **OTP login** message to staff: also free-form today; if staff can't receive
-  login codes, an `auth_otp` Utility/Authentication template would be the fix.
+- **Manager alerts** for complaint / reschedule / handoff (`executor.js`) are
+  still free-form text. Managers are usually in-window, but if those start failing
+  add Utility templates the same way.
