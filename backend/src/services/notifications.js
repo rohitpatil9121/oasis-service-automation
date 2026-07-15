@@ -29,16 +29,19 @@ export async function queueNotification({ recipient, body, audience, ticketId, t
         : await sendWhatsApp(recipient, body, { contextMessageId: replyTo?.wamid });
     row.provider_sid = res.sid;
   } catch (e) {
-    // A template send can fail because the template isn't approved in Meta yet
-    // (#132001) or another template error. If we have a readable body, fall back
-    // to free-form text so in-window customers still get the message — this keeps
-    // the switch to templates safe even before every template is approved.
-    if (template && body) {
+    // Fall back to free-form text ONLY when Meta REJECTED the template — HTTP 4xx
+    // (e.g. #132001 not approved, #132000 param mismatch). Those never reach the
+    // customer, so a text fallback cannot duplicate. For a 5xx / network error the
+    // template MAY already have been delivered, so we do NOT resend — resending
+    // there is exactly what causes a repeated message. Then the row is just FAILED.
+    const templateRejected =
+      template && body && e.metaStatus >= 400 && e.metaStatus < 500;
+    if (templateRejected) {
       try {
         const res = await sendWhatsApp(recipient, body, { contextMessageId: replyTo?.wamid });
         row.provider_sid = res.sid;
-        row.last_error = `template failed, sent as text: ${e.message}`;
-        log.warn("notification template failed, sent as text:", e.message);
+        row.last_error = `template rejected (${e.metaCode ?? e.metaStatus}), sent as text`;
+        log.warn("notification template rejected, sent as text:", e.message);
       } catch (e2) {
         row = { ...row, status: "FAILED", sent_at: null, attempts: 5, last_error: e2.message };
         log.error("notification send failed (template + text):", e2.message);

@@ -115,7 +115,13 @@ async function sendTemplateViaMeta(toPhone, { name, language = "en", variables =
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(`Meta template send failed (${res.status}): ${data.error?.message || "unknown"}`);
+    // Carry Meta's HTTP status + error code so callers can tell a REJECTED
+    // template (4xx — never delivered, safe to fall back to text) apart from a
+    // 5xx/transient error (may have delivered — must NOT resend, or it duplicates).
+    const err = new Error(`Meta template send failed (${res.status}): ${data.error?.message || "unknown"}`);
+    err.metaStatus = res.status;
+    err.metaCode = data.error?.code;
+    throw err;
   }
   return { sid: data.messages?.[0]?.id };
 }
