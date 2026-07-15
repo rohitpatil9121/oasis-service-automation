@@ -70,8 +70,13 @@ router.get("/:mediaId", async (req, res, next) => {
       buffer = Buffer.from(await mediaRes.arrayBuffer());
     }
 
+    // The frontend embeds these via <img src> from a different origin. Helmet's
+    // default Cross-Origin-Resource-Policy: same-origin makes the browser block the
+    // image (curl works — CORP is browser-enforced only). Allow cross-origin
+    // embedding for media responses so the <img> actually renders.
     res.set("Content-Type", contentType);
     res.set("Cache-Control", "private, max-age=3600");
+    res.set("Cross-Origin-Resource-Policy", "cross-origin");
     res.send(buffer);
   } catch (e) {
     log.error("media proxy error:", e.message);
