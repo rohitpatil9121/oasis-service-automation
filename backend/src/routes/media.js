@@ -38,7 +38,13 @@ router.get("/:mediaId", async (req, res, next) => {
         `https://graph.facebook.com/${env.metaGraphVersion}/${mediaId}`,
         { headers: { Authorization: `Bearer ${env.metaAccessToken}` } }
       );
-      if (!metaUrlRes.ok) return res.status(404).json({ error: "Media not found" });
+      if (!metaUrlRes.ok) {
+        // Log WHY Meta rejected the id (expired token #190, bad/expired media id
+        // #100, permission, etc.) so this doesn't stay a silent broken image.
+        const detail = await metaUrlRes.text().catch(() => "");
+        log.error(`media ${mediaId}: Meta lookup failed ${metaUrlRes.status} — ${detail.slice(0, 400)}`);
+        return res.status(404).json({ error: "Media not found" });
+      }
       const { url, mime_type } = await metaUrlRes.json();
       contentType = mime_type || contentType;
 
@@ -46,7 +52,11 @@ router.get("/:mediaId", async (req, res, next) => {
       const mediaRes = await fetch(url, {
         headers: { Authorization: `Bearer ${env.metaAccessToken}` },
       });
-      if (!mediaRes.ok) return res.status(502).json({ error: "Media fetch failed" });
+      if (!mediaRes.ok) {
+        const detail = await mediaRes.text().catch(() => "");
+        log.error(`media ${mediaId}: binary download failed ${mediaRes.status} — ${detail.slice(0, 200)}`);
+        return res.status(502).json({ error: "Media fetch failed" });
+      }
       buffer = Buffer.from(await mediaRes.arrayBuffer());
     } else {
       // Twilio: mediaId is the Twilio media URL encoded as base64url.
