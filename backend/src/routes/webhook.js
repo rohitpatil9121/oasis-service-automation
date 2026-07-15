@@ -19,12 +19,14 @@ const router = Router();
 // they're still typing the rest. Each new message resets the timer, so the bot
 // only responds once the customer has actually paused — and it sees all the
 // lines together.
-const REPLY_DELAY_MS = 4500;
+// Kept short so replies feel fast; still long enough to batch a rapid follow-up.
+// Tunable via BOT_REPLY_DELAY_MS.
+const REPLY_DELAY_MS = parseInt(process.env.BOT_REPLY_DELAY_MS || "2000", 10);
 const pending = new Map(); // phone -> { parts: [], send, timer }
 
 // Human-like pause BEFORE every bot reply is actually sent (typing delay), on top
-// of the debounce above. Set BOT_SEND_DELAY_MS=0 to disable. Default 4.5s.
-const SEND_DELAY_MS = parseInt(process.env.BOT_SEND_DELAY_MS || "4500", 10);
+// of the debounce above. Set BOT_SEND_DELAY_MS=0 to disable. Default 1s.
+const SEND_DELAY_MS = parseInt(process.env.BOT_SEND_DELAY_MS || "1000", 10);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Persist the inbound message FIRST (so the inquiry is never lost even if intake
