@@ -46,29 +46,85 @@ const MAX_HISTORY = 20; // turns of clean transcript kept for context
 let client = null;
 const groq = () => (client ||= new Groq({ apiKey: env.groqApiKey }));
 
+const hasFallback = () => !!env.openrouterApiKey;
+
+// OpenRouter takes the same OpenAI-shaped body, but groq-sdk hardcodes Groq's
+// "/openai/v1/..." path so it CANNOT just be pointed at OpenRouter via baseURL
+// (that 404s). Plain fetch instead — same as the Meta/Twilio calls elsewhere.
+// Returns the OpenAI-shaped JSON, so callers read res.choices[0].message as usual.
+async function openrouterChat(params) {
+  const res = await fetch(`${env.openrouterBaseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.openrouterApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ ...params, model: env.openrouterModel }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    // Shape the error like the SDK's so statusOf()/backoffMs() work on it too.
+    const err = new Error(`OpenRouter ${res.status}: ${body.slice(0, 200)}`);
+    err.status = res.status;
+    err.headers = Object.fromEntries(res.headers.entries());
+    throw err;
+  }
+  return res.json();
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Groq (like any hosted LLM) occasionally returns a transient 429/5xx or drops
-// the connection. A single failure otherwise surfaces to the customer as the
-// "technical issue, send again" message — so retry a couple of times with a
-// short backoff before giving up. A 4xx (bad request) won't fix on retry, so we
-// fail fast on those.
-async function chatWithRetry(params, tries = 3) {
+const statusOf = (e) => e?.status ?? e?.response?.status;
+// 429 (rate limit) and 5xx are worth another go; a 4xx is a bad request that
+// won't fix itself on retry.
+const isRetryable = (s) => s === 429 || (s >= 500 && s < 600);
+
+// A 429 is a per-MINUTE window — a 500ms nap is useless, we have to let the
+// window roll over. Honour Retry-After when the provider sends one.
+function backoffMs(e, attempt) {
+  const retryAfter = Number(e?.headers?.["retry-after"]);
+  if (retryAfter) return Math.min(retryAfter * 1000, 30000);
+  return statusOf(e) === 429 ? [5000, 20000][attempt - 1] ?? 20000 : 500 * attempt;
+}
+
+async function callWithRetry(label, makeCall, tries = 3) {
   let lastErr;
   for (let attempt = 1; attempt <= tries; attempt++) {
     try {
-      return await groq().chat.completions.create(params);
+      return await makeCall();
     } catch (e) {
       lastErr = e;
-      const status = e?.status ?? e?.response?.status;
-      if (status && status >= 400 && status < 500 && status !== 429) throw e;
+      if (!isRetryable(statusOf(e))) throw e;
       if (attempt < tries) {
-        log.warn(`Groq call failed (attempt ${attempt}/${tries}): ${e.message} — retrying`);
-        await sleep(500 * attempt);
+        const wait = backoffMs(e, attempt);
+        log.warn(`${label} ${statusOf(e)} (attempt ${attempt}/${tries}): ${e.message} — retrying in ${wait}ms`);
+        await sleep(wait);
       }
     }
   }
   throw lastErr;
+}
+
+// One caller per customer message. Starts on Groq; the moment Groq rate-limits,
+// this message switches to OpenRouter for ALL its remaining tool steps — retrying
+// Groq on every step would just burn another 429 and add seconds of latency.
+function makeChatCaller() {
+  const or = hasFallback();
+  let useFallback = false;
+
+  return async function chat(params) {
+    if (!useFallback) {
+      try {
+        // With a fallback available, don't waste time retrying Groq — switch.
+        return await callWithRetry("Groq", () => groq().chat.completions.create(params), or ? 1 : 3);
+      } catch (e) {
+        if (!or || !isRetryable(statusOf(e))) throw e;
+        log.warn(`Groq ${statusOf(e)} — switching to OpenRouter (${env.openrouterModel}) for this message`);
+        useFallback = true;
+      }
+    }
+    return callWithRetry("OpenRouter", () => openrouterChat(params));
+  };
 }
 
 // ---- session state (reuses intake_sessions; data = { history, ticketId, customerId }) ----
@@ -127,9 +183,10 @@ export async function runAgent({ fromPhone, text }) {
   ];
 
   let reply = "";
+  const chat = makeChatCaller(); // Groq → OpenRouter fallback, per message
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
-      const res = await chatWithRetry({
+      const res = await chat({
         model: env.groqModel,
         messages,
         tools: TOOL_DEFS,
