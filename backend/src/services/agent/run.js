@@ -159,7 +159,13 @@ export async function runAgent({ fromPhone, text }) {
       }
     }
   } catch (e) {
-    log.error("runAgent error:", e.message);
+    // Surface WHY it failed (Groq 429 rate limit / 4xx bad request / 5xx outage),
+    // otherwise this is an unexplainable "technical issue" in the customer's chat.
+    const status = e?.status ?? e?.response?.status;
+    const code = e?.error?.code ?? e?.code;
+    log.error(
+      `runAgent error${status ? ` [HTTP ${status}]` : ""}${code ? ` (${code})` : ""} for ${phone}: ${e.message}`
+    );
     return "Sorry, there was a technical issue. Please send your message again.";
   }
 
