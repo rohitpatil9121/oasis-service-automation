@@ -11,7 +11,23 @@ import { normalizePhone } from "../../lib/phone.js";
 import { log } from "../../lib/logger.js";
 import { TOOL_DEFS } from "./tools.js";
 import { executeTool } from "./executor.js";
+import { getLatestTicketByCustomerPhone } from "../tickets.js";
 import { SYSTEM_PROMPT, OPENING } from "./prompt.js";
+
+const isOpenStatus = (s) => s && s !== "CLOSED" && s !== "CANCELLED";
+
+// True when this customer already has a FINALISED open request (e.g. one the
+// service team logged for them). Such a customer must never get the generic
+// "share your name / issue / address" opening — their details are already on file.
+async function hasLoggedRequest(phone) {
+  try {
+    const latest = await getLatestTicketByCustomerPhone(phone);
+    return !!(latest && isOpenStatus(latest.status) && latest.intake_complete);
+  } catch (e) {
+    log.error("hasLoggedRequest:", e.message);
+    return false; // on error fall back to the normal greeting path
+  }
+}
 
 // A bare greeting with no service details — "hi", "hello", "service", "namaste".
 // On a brand-new chat we answer these with the fixed OPENING verbatim so all four
@@ -90,7 +106,10 @@ export async function runAgent({ fromPhone, text }) {
 
   // Brand-new chat + a bare greeting → send the fixed opening verbatim, no LLM.
   // Guarantees the full 4-point message (the model was dropping line 4).
-  if (!history.length && isBareGreeting(userText)) {
+  // BUT skip this shortcut when the customer already has a logged request — it
+  // bypasses the LLM (so identify_customer never runs) and would ask a customer
+  // whose request the service team already filed for their name/issue/address again.
+  if (!history.length && isBareGreeting(userText) && !(await hasLoggedRequest(phone))) {
     await saveSession(session.id, {
       state: session.state,
       data: {

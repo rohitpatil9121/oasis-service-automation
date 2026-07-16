@@ -149,7 +149,12 @@ export async function createTicket({ customer, issue_description, source = "what
   const cust = customer.id ? customer : await upsertCustomer(customer);
   const { data: ticket, error } = await supabase
     .from("tickets")
-    .insert({ customer_id: cust.id, issue_description, source, lead_source, created_by, status: "NEW" })
+    // intake_complete: a manually / KENT-created request already carries name,
+    // issue and address — it is a FINALISED request, not a draft we're still
+    // collecting. Without this the agent's identify_customer / get_my_requests
+    // (which only surface intake_complete rows) can't see it, so the bot starts a
+    // duplicate intake and asks the customer for details it already has.
+    .insert({ customer_id: cust.id, issue_description, source, lead_source, created_by, status: "NEW", intake_complete: true })
     .select("*").single();
   if (error) throw new Error("createTicket: " + error.message);
 
