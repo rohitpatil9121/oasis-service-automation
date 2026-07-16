@@ -40,6 +40,16 @@ export const env = {
   groqApiKey: process.env.GROQ_API_KEY,
   groqModel: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
 
+  // Fallback LLM (OpenRouter). Groq's free tier is tight (8K tokens/minute) and a
+  // single intake message costs more than that across its tool steps, so a 429 is
+  // routine. OpenRouter speaks the same OpenAI-compatible API, so the identical
+  // messages/tools payload works — we just swap the model. Default is the same
+  // GPT-OSS family as groqModel, so tool-calling behaves the same.
+  // Leave OPENROUTER_API_KEY unset to disable the fallback.
+  openrouterApiKey: process.env.OPENROUTER_API_KEY,
+  openrouterModel: process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free",
+  openrouterBaseUrl: process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
+
   // FAQ / company-info flow (Flow 3). OFF for now — the agent deflects general
   // questions ("team will confirm") instead of quoting areas/timings/AMC/pricing
   // that aren't verified yet. Set FAQ_ENABLED=true to turn it back on.
