@@ -40,8 +40,8 @@ const isBareGreeting = (t) => GREETING_RE.test((t || "").trim());
 const looksLikeOpening = (t) =>
   /oasis globe water purifier service support/i.test(t || "") && /please share/i.test(t || "");
 
-const MAX_STEPS = 6;    // safety cap on tool round-trips per message
-const MAX_HISTORY = 20; // turns of clean transcript kept for context
+const MAX_STEPS = 5;    // safety cap on tool round-trips per message (each re-sends prompt+tools, so fewer = fewer tokens)
+const MAX_HISTORY = 12; // turns of clean transcript kept for context (trimmed to ease Groq's per-minute token limit)
 
 let client = null;
 const groq = () => (client ||= new Groq({ apiKey: env.groqApiKey }));
@@ -112,18 +112,35 @@ function makeChatCaller() {
   const or = hasFallback();
   let useFallback = false;
 
+  const groqFast = (p) => callWithRetry("Groq", () => groq().chat.completions.create(p), or ? 1 : 3);
+  const groqPatient = (p) => callWithRetry("Groq", () => groq().chat.completions.create(p), 3);
+  const openrouter = (p) => callWithRetry("OpenRouter", () => openrouterChat(p));
+
   return async function chat(params) {
-    if (!useFallback) {
-      try {
-        // With a fallback available, don't waste time retrying Groq — switch.
-        return await callWithRetry("Groq", () => groq().chat.completions.create(params), or ? 1 : 3);
-      } catch (e) {
-        if (!or || !isRetryable(statusOf(e))) throw e;
-        log.warn(`Groq ${statusOf(e)} — switching to OpenRouter (${env.openrouterModel}) for this message`);
-        useFallback = true;
+    // Already switched to OpenRouter earlier in this message.
+    if (useFallback) {
+      try { return await openrouter(params); }
+      catch (e) {
+        // OpenRouter also down (e.g. 402 out of credit) — don't surface a
+        // "technical issue"; ride out Groq's per-minute window with backoff instead.
+        log.warn(`OpenRouter ${statusOf(e)} down — last resort: retrying Groq with backoff`);
+        return await groqPatient(params);
       }
     }
-    return callWithRetry("OpenRouter", () => openrouterChat(params));
+    try {
+      // With a fallback available, don't waste time retrying Groq — switch fast.
+      return await groqFast(params);
+    } catch (e) {
+      if (!or || !isRetryable(statusOf(e))) throw e;
+      log.warn(`Groq ${statusOf(e)} — switching to OpenRouter (${env.openrouterModel}) for this message`);
+      useFallback = true;
+      try { return await openrouter(params); }
+      catch (e2) {
+        // Both providers failed at the switch — wait out Groq's rate-limit window.
+        log.warn(`OpenRouter ${statusOf(e2)} down — last resort: retrying Groq with backoff`);
+        return await groqPatient(params);
+      }
+    }
   };
 }
 
