@@ -6,9 +6,9 @@ export const TOOL_DEFS = [
     function: {
       name: "identify_customer",
       description:
-        "Look up the customer who is messaging (by their WhatsApp number) and " +
-        "return their saved name, address, and any open service request. Call " +
-        "this FIRST in a new conversation so you don't re-ask details we already have.",
+        "Look up the messaging customer (by WhatsApp number): saved name, address, " +
+        "and any open service request. Call FIRST in a new conversation so you don't " +
+        "re-ask details we already have.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -17,8 +17,7 @@ export const TOOL_DEFS = [
     function: {
       name: "save_customer_details",
       description:
-        "Save or update the customer's name and/or service address. Call this " +
-        "whenever the customer gives their name or address.",
+        "Save/update the customer's name and/or address. Call whenever they give a name or address.",
       parameters: {
         type: "object",
         properties: {
@@ -33,9 +32,8 @@ export const TOOL_DEFS = [
     function: {
       name: "create_or_get_request",
       description:
-        "Start the customer's service request (reuses their existing open request " +
-        "if there is one, otherwise creates a new draft). Call this once you begin " +
-        "taking a request, before saving the issue.",
+        "Start the customer's request (reuses their open one if any, else a new draft). " +
+        "Call once you begin taking a request, before saving the issue.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -44,11 +42,9 @@ export const TOOL_DEFS = [
     function: {
       name: "update_request",
       description:
-        "Add or update details on the customer's current request. Call this " +
-        "whenever the customer describes a symptom, the appliance, an address, or " +
-        "gives any EXTRA information (preferred visit timings, access/parking notes, " +
-        "landmarks, 'call before coming', etc.). If a field was built up over several " +
-        "messages, pass its full combined value.",
+        "Add/update details on the current request. Call whenever the customer describes a " +
+        "symptom, the appliance, an address, or EXTRA info (preferred timings, access/parking, " +
+        "landmarks, 'call before coming'). Pass a field's full combined value if built up over messages.",
       parameters: {
         type: "object",
         properties: {
@@ -58,10 +54,8 @@ export const TOOL_DEFS = [
           notes: {
             type: "string",
             description:
-              "Any extra info beyond the core issue that the manager and technician " +
-              "should see — preferred timings ('after 5pm', 'Sunday only'), access " +
-              "instructions, landmarks, 'call before coming'. Pass the full combined " +
-              "notes if given over several messages.",
+              "Extra info beyond the core issue for the manager/technician — timings ('after 5pm', " +
+              "'Sunday only'), access instructions, landmarks, 'call before coming'. Pass full combined notes.",
           },
         },
       },
@@ -72,9 +66,8 @@ export const TOOL_DEFS = [
     function: {
       name: "submit_request",
       description:
-        "Finalise the service request once name, address and issue are all known. " +
-        "Returns the ticket number on success, or the list of still-missing fields. " +
-        "Read the ticket number back to the customer.",
+        "Finalise the request once name, address and issue are all known. Returns the ticket " +
+        "number on success, or the list of still-missing fields.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -83,10 +76,8 @@ export const TOOL_DEFS = [
     function: {
       name: "get_company_info",
       description:
-        "Get Oasis Globe company facts — services, brands serviced, areas covered, " +
-        "working hours, AMC, pricing. Call this when the customer asks a general " +
-        "question about the company or services (NOT about their own ticket). " +
-        "Answer only from what it returns; never invent services, areas, or prices.",
+        "Get Oasis Globe facts — services, brands, areas covered, hours, AMC, pricing. Call for a " +
+        "general company/services question (NOT about their own ticket). Answer only from what it returns.",
       parameters: {
         type: "object",
         properties: {
@@ -100,9 +91,8 @@ export const TOOL_DEFS = [
     function: {
       name: "get_my_requests",
       description:
-        "List this customer's recent logged service requests (by their WhatsApp " +
-        "number), with status and assigned technician. Use when they ask about " +
-        "their request status without giving a ticket number.",
+        "List this customer's recent requests (by WhatsApp number), with status and technician. " +
+        "Use when they ask about their status without a ticket number.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -111,10 +101,9 @@ export const TOOL_DEFS = [
     function: {
       name: "get_request_status",
       description:
-        "Get the status, assigned technician and any scheduled visit for a specific " +
-        "ticket number. Use when the customer asks 'what's the status' / 'when will " +
-        "he come' and gives a ticket number. Report only what this returns — never " +
-        "invent an arrival date or time.",
+        "Get status, assigned technician and any scheduled visit for a specific ticket number. " +
+        "Use when they ask 'what's the status' / 'when will he come' with a ticket number. " +
+        "Report only what it returns — never invent a date or time.",
       parameters: {
         type: "object",
         properties: {
@@ -129,9 +118,8 @@ export const TOOL_DEFS = [
     function: {
       name: "log_complaint",
       description:
-        "Record a complaint about an EXISTING service request — technician didn't " +
-        "come, problem not fixed, unhappy with the service — and alert the team. " +
-        "Pass the ticket number if known. This also pauses the bot so a human follows up.",
+        "Record a complaint about an EXISTING request — technician didn't come, not fixed, unhappy — " +
+        "and alert the team. Pass the ticket number if known. Also pauses the bot for human follow-up.",
       parameters: {
         type: "object",
         properties: {
@@ -147,9 +135,8 @@ export const TOOL_DEFS = [
     function: {
       name: "request_cancellation",
       description:
-        "Cancel the customer's existing service request. Only call this AFTER the " +
-        "customer has clearly confirmed they want to cancel. Pass the ticket number " +
-        "(if known) and a short reason. The cancellation message is sent automatically.",
+        "Cancel the customer's existing request. Call ONLY after they clearly confirm cancellation. " +
+        "Pass the ticket number (if known) and a short reason.",
       parameters: {
         type: "object",
         properties: {
@@ -164,9 +151,8 @@ export const TOOL_DEFS = [
     function: {
       name: "request_reschedule",
       description:
-        "Note that the customer wants to change their visit time, and alert the team " +
-        "to confirm a new slot. Pass the ticket number (if known) and their preferred " +
-        "time in their own words. Do NOT promise a specific slot — the team confirms it.",
+        "Note that the customer wants to change their visit time and alert the team to confirm a new " +
+        "slot. Pass the ticket number (if known) and their preferred time in their own words. Do NOT promise a slot.",
       parameters: {
         type: "object",
         properties: {
@@ -181,9 +167,8 @@ export const TOOL_DEFS = [
     function: {
       name: "escalate_to_human",
       description:
-        "Hand the conversation to a human manager and pause the bot. Use when the " +
-        "customer simply asks to talk to a person, or is abusive — NOT for a service " +
-        "complaint about a specific request (use log_complaint for that).",
+        "Hand the conversation to a human manager and pause the bot. Use when the customer asks to talk " +
+        "to a person, or is abusive — NOT for a complaint about a specific request (use log_complaint).",
       parameters: {
         type: "object",
         properties: {
