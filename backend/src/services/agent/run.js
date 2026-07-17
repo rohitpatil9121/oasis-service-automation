@@ -43,8 +43,43 @@ const looksLikeOpening = (t) =>
 const MAX_STEPS = 5;    // safety cap on tool round-trips per message (each re-sends prompt+tools, so fewer = fewer tokens)
 const MAX_HISTORY = 12; // turns of clean transcript kept for context (trimmed to ease Groq's per-minute token limit)
 
-let client = null;
-const groq = () => (client ||= new Groq({ apiKey: env.groqApiKey }));
+// Groq key pool. GROQ_API_KEY can be a comma-separated list; each key is a
+// separate account with its own per-minute AND per-day token budget. When one
+// key rate-limits, we rotate to the next available one instead of waiting.
+const groqClients = env.groqApiKeys.map((apiKey) => new Groq({ apiKey }));
+const keyCooldownUntil = new Array(groqClients.length).fill(0); // ms epoch per key
+let groqIdx = 0;
+
+// Pick the next key that isn't cooling down (starting from the current one).
+function pickGroq() {
+  const now = Date.now();
+  for (let i = 0; i < groqClients.length; i++) {
+    const idx = (groqIdx + i) % groqClients.length;
+    if (keyCooldownUntil[idx] <= now) { groqIdx = idx; return idx; }
+  }
+  return -1; // every key is cooling down
+}
+
+// Try Groq across all keys, rotating on 429 (no long waits — a fresh key has a
+// fresh budget). Throws only when every key is rate-limited or on a hard error.
+async function callGroqPooled(params) {
+  let lastErr;
+  for (let tried = 0; tried < groqClients.length; tried++) {
+    const idx = pickGroq();
+    if (idx === -1) break; // all keys cooling down
+    try {
+      return await groqClients[idx].chat.completions.create(params);
+    } catch (e) {
+      lastErr = e;
+      if (statusOf(e) !== 429) throw e; // not a rate limit → a real error, surface it
+      const secs = Number(e?.headers?.["retry-after"]) || 60;
+      keyCooldownUntil[idx] = Date.now() + secs * 1000; // daily cap = hours; per-min = seconds
+      groqIdx = (idx + 1) % groqClients.length;
+      log.warn(`Groq key ${idx + 1}/${groqClients.length} 429 (cooldown ${secs}s) — rotating to next key`);
+    }
+  }
+  throw lastErr || new Error("all Groq keys are rate-limited");
+}
 
 const hasFallback = () => !!env.openrouterApiKey;
 
@@ -87,6 +122,12 @@ function backoffMs(e, attempt) {
   return statusOf(e) === 429 ? [5000, 20000][attempt - 1] ?? 20000 : 500 * attempt;
 }
 
+// A per-DAY quota 429 (Groq TPD) sends a Retry-After of hours — retrying is
+// pointless and just hangs the customer. Treat any wait longer than this as
+// "come back tomorrow": don't retry, fail fast so the fallback/caller moves on.
+const MAX_SANE_RETRY_SEC = 120;
+const isExhausted = (e) => Number(e?.headers?.["retry-after"]) > MAX_SANE_RETRY_SEC;
+
 async function callWithRetry(label, makeCall, tries = 3) {
   let lastErr;
   for (let attempt = 1; attempt <= tries; attempt++) {
@@ -95,6 +136,8 @@ async function callWithRetry(label, makeCall, tries = 3) {
     } catch (e) {
       lastErr = e;
       if (!isRetryable(statusOf(e))) throw e;
+      // Daily quota blown (reset hours away) — retrying won't help, bail now.
+      if (isExhausted(e)) { log.warn(`${label} ${statusOf(e)}: quota exhausted (reset far away) — not retrying`); throw e; }
       if (attempt < tries) {
         const wait = backoffMs(e, attempt);
         log.warn(`${label} ${statusOf(e)} (attempt ${attempt}/${tries}): ${e.message} — retrying in ${wait}ms`);
@@ -105,15 +148,13 @@ async function callWithRetry(label, makeCall, tries = 3) {
   throw lastErr;
 }
 
-// One caller per customer message. Starts on Groq; the moment Groq rate-limits,
-// this message switches to OpenRouter for ALL its remaining tool steps — retrying
-// Groq on every step would just burn another 429 and add seconds of latency.
+// One caller per customer message. Tries the Groq key pool first (rotating keys
+// on 429); if every key is rate-limited, switches to OpenRouter for the rest of
+// this message. Order: Groq pool → OpenRouter → (last resort) Groq pool again.
 function makeChatCaller() {
   const or = hasFallback();
   let useFallback = false;
 
-  const groqFast = (p) => callWithRetry("Groq", () => groq().chat.completions.create(p), or ? 1 : 3);
-  const groqPatient = (p) => callWithRetry("Groq", () => groq().chat.completions.create(p), 3);
   const openrouter = (p) => callWithRetry("OpenRouter", () => openrouterChat(p));
 
   return async function chat(params) {
@@ -121,24 +162,22 @@ function makeChatCaller() {
     if (useFallback) {
       try { return await openrouter(params); }
       catch (e) {
-        // OpenRouter also down (e.g. 402 out of credit) — don't surface a
-        // "technical issue"; ride out Groq's per-minute window with backoff instead.
-        log.warn(`OpenRouter ${statusOf(e)} down — last resort: retrying Groq with backoff`);
-        return await groqPatient(params);
+        // OpenRouter also down (e.g. 402 out of credit) — try the Groq pool once
+        // more (a key's per-minute window may have rolled over) rather than erroring.
+        log.warn(`OpenRouter ${statusOf(e)} down — last resort: Groq key pool`);
+        return await callGroqPooled(params);
       }
     }
     try {
-      // With a fallback available, don't waste time retrying Groq — switch fast.
-      return await groqFast(params);
+      return await callGroqPooled(params); // sweeps all Groq keys, rotating on 429
     } catch (e) {
-      if (!or || !isRetryable(statusOf(e))) throw e;
-      log.warn(`Groq ${statusOf(e)} — switching to OpenRouter (${env.openrouterModel}) for this message`);
+      if (!or) throw e; // no fallback configured → surface the error
+      log.warn(`All Groq keys unavailable (${statusOf(e) || "?"}) — switching to OpenRouter (${env.openrouterModel})`);
       useFallback = true;
       try { return await openrouter(params); }
       catch (e2) {
-        // Both providers failed at the switch — wait out Groq's rate-limit window.
-        log.warn(`OpenRouter ${statusOf(e2)} down — last resort: retrying Groq with backoff`);
-        return await groqPatient(params);
+        log.warn(`OpenRouter ${statusOf(e2)} down — last resort: Groq key pool`);
+        return await callGroqPooled(params);
       }
     }
   };
