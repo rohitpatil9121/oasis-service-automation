@@ -37,7 +37,10 @@ export const env = {
 
   // WhatsApp intake runs the Groq tool-calling agent (services/agent/). It needs
   // a GROQ_API_KEY to work — see checkEnv below.
-  groqApiKey: process.env.GROQ_API_KEY,
+  // GROQ_API_KEY may be a comma-separated LIST of keys; the agent rotates to the
+  // next one when a key hits its daily token cap, multiplying the free quota.
+  groqApiKeys: (process.env.GROQ_API_KEY || "").split(",").map((s) => s.trim()).filter(Boolean),
+  get groqApiKey() { return this.groqApiKeys[0]; },
   groqModel: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
 
   // Fallback LLM (OpenRouter). Groq's free tier is tight (8K tokens/minute) and a
