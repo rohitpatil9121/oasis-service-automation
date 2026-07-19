@@ -71,10 +71,22 @@ function shortArea(address = "") {
   return parts[0] || "";
 }
 
-function startOfToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
+// All day/time labelling is IST — the server runs in UTC, so plain local-time
+// maths would put jobs on the wrong day (and show times 5.5h behind).
+const IST = "Asia/Kolkata";
+const istDay = (iso) => new Date(iso).toLocaleDateString("en-CA", { timeZone: IST });
+const istTime = (iso) =>
+  new Date(iso).toLocaleTimeString("en-IN", { timeZone: IST, hour: "numeric", minute: "2-digit", hour12: true });
+
+// "Today, 4:00 pm" / "Yesterday, 4:00 pm" / "18 Jul, 4:00 pm".
+function formatWhen(iso) {
+  if (!iso) return "—";
+  const day = istDay(iso);
+  const time = istTime(iso);
+  if (day === istDay(Date.now())) return `Today, ${time}`;
+  if (day === istDay(Date.now() - 86400000)) return `Yesterday, ${time}`;
+  const date = new Date(iso).toLocaleDateString("en-IN", { timeZone: IST, day: "numeric", month: "short" });
+  return `${date}, ${time}`;
 }
 
 // Map a ticket row to the shape the technician-app screens expect.
@@ -86,7 +98,7 @@ function toJob(t) {
   if (t.status === "CLOSED") bucket = "completed";
   else {
     const when = t.scheduled_start || t.created_at;
-    bucket = new Date(when).getTime() < startOfToday() ? "pending" : "today";
+    bucket = istDay(when) < istDay(Date.now()) ? "pending" : "today";
   }
 
   let visitCharge = 250;
@@ -99,9 +111,9 @@ function toJob(t) {
     phone: t.customer?.phone || "",
     area: shortArea(t.customer?.address),
     address: t.customer?.address || "",
-    when: t.scheduled_start
-      ? new Date(t.scheduled_start).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true })
-      : "Today",
+    // Tickets raised over WhatsApp have no scheduled_start — fall back to when
+    // the request came in rather than labelling everything "Today".
+    when: formatWhen(t.scheduled_start || t.created_at),
     bucket,
     model: t.appliance || "—",
     issue: t.issue_description || "",
