@@ -20,7 +20,9 @@ const fmtSlot = (s, e) => {
   return `${start} – ${end}`;
 };
 const STATUSES = ["NEW", "CLOSED", "CANCELLED"];
-const STATUS_LABEL = { NEW: "New", ASSIGNED: "Assigned", IN_PROGRESS: "In progress", CLOSED: "Closed", CANCELLED: "Cancelled" };
+// Closed reads as "Service done" here to match the board column the ticket
+// lands in once it's closed.
+const STATUS_LABEL = { NEW: "New", ASSIGNED: "Assigned", IN_PROGRESS: "In progress", CLOSED: "Service done", CANCELLED: "Cancelled" };
 
 export default function TicketView() {
   const { id } = useParams();

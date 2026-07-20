@@ -77,7 +77,7 @@ export default function Dashboard() {
       </div>
 
       {/* Board bucket KPIs */}
-      <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-7">
         {DASHBOARD_BUCKETS.map((s) => (
           <Kpi
             key={s.key || "all"}
