@@ -251,7 +251,7 @@ export async function completeIntake(ticketId) {
   // A CLOSED ticket completing intake again means the customer re-engaged within
   // the reuse window (getReusableTicketForCustomer folded the new request back
   // onto it). Reopen it so it returns to the active board, and alert managers.
-  const reopened = ticket.status === "CLOSED";
+  const reopened = ticket.status === "CLOSED" || ticket.status === "CANCELLED";
   // Already finished AND still open → nothing to do (avoids duplicate alerts).
   // Flag it so callers don't re-send the customer confirmation either (that's
   // what produced repeated "your request is logged" messages across days).
@@ -366,13 +366,14 @@ export async function getReusableTicketForCustomer(customerId) {
     .order("created_at", { ascending: false })
     .limit(1).maybeSingle();
   if (!data) return null;
-  if (data.status === "CANCELLED") return null; // deliberate end → new request
-  if (data.status !== "CLOSED") return data;    // still open → always reuse
-  const closedAt = closedAtOf(data);
-  if (!closedAt) return data;                   // legacy rows without closed_at
+  if (data.status !== "CLOSED" && data.status !== "CANCELLED") return data; // still open → always reuse
+  // Finished (closed or cancelled): reuse while the window is open so the
+  // customer coming back lands on the SAME request, which reopens onto Pending.
+  const endedAt = data.status === "CLOSED" ? closedAtOf(data) : data.updated_at;
+  if (!endedAt) return data;                    // legacy rows without a timestamp
   const withinWindow =
-    Date.now() - new Date(closedAt).getTime() < TICKET_REUSE_DAYS * 86400000;
-  return withinWindow ? data : null;            // recent close → reuse, else new ticket
+    Date.now() - new Date(endedAt).getTime() < TICKET_REUSE_DAYS * 86400000;
+  return withinWindow ? data : null;            // recent end → reuse, else new ticket
 }
 
 // Latest ticket for a WhatsApp number - powers the customer "status" command.
@@ -454,9 +455,11 @@ export async function scheduleVisit({ ticketId, start, end, actorId }) {
   return ticket;
 }
 
+// Brings a finished request (closed OR cancelled) back onto the Pending board
+// when the customer re-engages inside the reuse window.
 export async function reopenTicket(ticketId, actorId, meta = {}) {
   const ticket = await getTicket(ticketId);
-  if (ticket.status !== "CLOSED") return ticket;
+  if (ticket.status !== "CLOSED" && ticket.status !== "CANCELLED") return ticket;
 
   const tech_work = { ...(ticket.tech_work || {}), tech_status: "NEW" };
   const ts = new Date().toISOString();
@@ -478,7 +481,7 @@ export async function reopenTicket(ticketId, actorId, meta = {}) {
   if (error) throw new Error("reopenTicket: " + error.message);
 
   await logEvent(ticketId, "status_changed", {
-    from_status: "CLOSED", to_status: "NEW", actor_id: actorId,
+    from_status: ticket.status, to_status: "NEW", actor_id: actorId,
     meta: { reopened: true, ...meta },
   });
   log.info(`Ticket ${ticket.ticket_number} reopened → Pending board`);
@@ -491,7 +494,7 @@ export async function reopenTicket(ticketId, actorId, meta = {}) {
 // manager(s) — deduped so a burst of follow-up lines doesn't spam them.
 export async function escalateFollowUp({ ticketId, customerMessage }) {
   const ticket = await getTicket(ticketId);
-  const reopened = ticket.status === "CLOSED";
+  const reopened = ticket.status === "CLOSED" || ticket.status === "CANCELLED";
 
   if (reopened) await reopenTicket(ticketId, null, { source: "customer_follow_up" });
 
