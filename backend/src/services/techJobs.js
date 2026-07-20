@@ -22,7 +22,10 @@ const ACTIONS = {
   enroute:  { status: "ON_THE_WAY",    ts: "enroute_at" },
   arrive:   { status: "ARRIVED",       ts: "arrived_at" },
   diagnose: { status: "DIAGNOSED",     ts: "diagnosed_at" },
-  estimate: { status: "ESTIMATE_SENT", ts: "estimate_sent_at" },
+  // The technician shows the estimate to the customer in person and starts work
+  // right away — no WhatsApp approve/reject round trip. The estimate still goes
+  // out, as a record of what was agreed.
+  estimate: { status: "VERIFIED", ts: "estimate_sent_at" },
   approve:  { status: "VERIFIED",      ts: "approved_at" },
   reject:   { status: "REJECTED",      ts: "approved_at" },
   workdone: { status: "WORK_DONE",     ts: "work_done_at" },
@@ -59,7 +62,7 @@ function formatEstimateBill(ticket, work = {}) {
     `${chargeLabel}: ${rupees(chargeAmt)}`];
   for (const p of parts) lines.push(`${p.name}: ${rupees(p.price)}`);
   lines.push("------------------------------", `Total: ${rupees(total)}`, "",
-    "Reply:", "1 - Approve", "2 - Reject");
+    "The technician has started the work.");
   return lines.join("\n");
 }
 
@@ -343,9 +346,8 @@ export async function runStep(techId, ticketId, action, work = {}) {
     });
   }
 
-  // Estimate → send the customer the itemised bill and ask them to reply.
-  // Approval/rejection is detected from the customer's WhatsApp reply (handled by
-  // the intake agent), never marked manually by the technician.
+  // Estimate → send the customer the itemised bill as a RECORD of what the
+  // technician showed them on site. No reply is expected: work starts immediately.
   if (action === "estimate" && cust?.phone) {
     // Collapse the itemised bill into fixed template variables (charges as one
     // comma-joined line, since a Meta template can't have a variable count of

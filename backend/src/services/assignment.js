@@ -1,7 +1,7 @@
 // Technician assignment. Phase 1 = simple manual assignment by the manager.
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
-import { technicianNewJob, serviceLine, customerTechnicianAssigned } from "./waTemplates.js";
+import { serviceLine, customerTechnicianAssigned } from "./waTemplates.js";
 import { sendPush } from "./push.js";
 import { getTicket } from "./tickets.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
@@ -120,15 +120,9 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
     meta: { technician_id: technicianId, technician_name: tech.full_name },
   });
 
-  const techTpl = technicianNewJob({
-    ticketNumber: ticket.ticket_number, customerName: ticket.customer.full_name,
-    customerPhone: ticket.customer.phone, address: ticket.customer.address,
-    appliance: ticket.appliance, issue: ticket.issue_description,
-  });
-  await queueNotification({
-    recipient: tech.phone, audience: "technician", ticketId,
-    body: techTpl.body, template: techTpl.template,
-  });
+  // Job details go to the technician APP only (push below) — no WhatsApp. Job
+  // details on WhatsApp let technicians work without ever opening the app, which
+  // leaves the workflow (arrival OTP, estimate, payment) unrecorded.
 
   // Surface a silent gap: a request being assigned with no issue recorded means
   // intake didn't capture it (or it was created manually without one). The customer
