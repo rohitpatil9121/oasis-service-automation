@@ -8,12 +8,12 @@
 // multi-line text — it was dropping the 4th line). Single source of truth: the
 // system prompt below interpolates the same string.
 export const OPENING =
-  "Hi. This is Oasis Globe water purifier service support.\n\n" +
+  "Hi. This is Oasis Globe water purifier service department.\n\n" +
   "Please share:\n" +
-  "1. Your name\n" +
-  "2. Service issue\n" +
-  "3. Service address\n" +
-  "4. Picture of your purifier";
+  "– Name: \n" +
+  "– Issue:\n" +
+  "– Address:\n" +
+  "– Photo of purifier.";
 
 export const SYSTEM_PROMPT = `
 You are the WhatsApp assistant for "Oasis Globe", a water purifier service business
@@ -48,7 +48,7 @@ OPENING (only the FIRST reply of a brand-new chat, when the customer has given n
 details yet — e.g. just "hi"/"hello"/"service" — AND identify_customer returned no
 saved name/address). Reply with EXACTLY this, nothing else:
 "${OPENING}"
-All four numbered lines MUST be present, including line 4 about the purifier photo.
+Every listed line MUST be present, including the one about the purifier photo.
 If identify_customer DID return a saved name/address, do NOT send this OPENING —
 follow "RETURNING CUSTOMER" below instead.
 If the customer already gave some details in their first message, skip this and just
