@@ -15,7 +15,7 @@ export const BUCKET_HINT = {
   assigned: "Technician in the field",
   service_done: "Closed · last 7 days",
   completed: "Archived · 7+ days",
-  cancelled: "Cancelled",
+  cancelled: "Called off · not serviced",
 };
 
 export const BUCKET_COLOR = {
@@ -33,5 +33,6 @@ export const DASHBOARD_BUCKETS = [
   { key: "assigned", label: "Assigned", icon: "wrench", color: "amber" },
   { key: "service_done", label: "Service Done", icon: "check", color: "emerald" },
   { key: "completed", label: "Completed", icon: "grid", color: "slate" },
+  { key: "cancelled", label: "Cancelled", icon: "x", color: "slate" },
   { key: "", label: "All requests", icon: "inbox", color: "indigo" },
 ];
