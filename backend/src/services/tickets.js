@@ -1,6 +1,6 @@
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
-import { customerRequestReceived, managerNewRequest, visitScheduledTechnician, visitScheduledCustomer, requestCancelledCustomer, requestCompletedCustomer, serviceLine } from "./waTemplates.js";
+import { customerRequestReceived, managerNewRequest, visitScheduledCustomer, requestCancelledCustomer, requestCompletedCustomer, serviceLine } from "./waTemplates.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
@@ -430,17 +430,8 @@ export async function scheduleVisit({ ticketId, start, end, actorId }) {
 
   const when = formatSlot(startISO, endISO);
 
-  // Technician: where + when to go (template so it delivers outside the 24h window).
-  if (ticket.technician?.phone) {
-    const tpl = visitScheduledTechnician({
-      ticketNumber: ticket.ticket_number, customerName: ticket.customer.full_name,
-      customerPhone: ticket.customer.phone, address: ticket.customer.address, when,
-    });
-    await queueNotification({
-      recipient: ticket.technician.phone, audience: "technician", ticketId,
-      body: tpl.body, template: tpl.template,
-    });
-  }
+  // The technician sees the slot in the app — deliberately no WhatsApp, so the
+  // job can only be worked through the app.
 
   // Customer: their confirmed slot.
   const ctpl = visitScheduledCustomer({
