@@ -20,20 +20,20 @@ export function serviceLine(issue) {
 // behalf (e.g. a KENT-referred lead). The customer hasn't messaged us, so we're
 // outside the 24-hour window — this approved template is how we open the chat.
 // {{2}} is the lead source ("KENT" / "our service team").
-export function customerRequestReceived({ customerName, source, ticketNumber, issue, address }) {
+// {{1}} name  {{2}} ticket  {{3}} issue  {{4}} address
+export function customerRequestReceived({ customerName, ticketNumber, issue, address }) {
   return {
     template: {
       name: "customer_request_received",
       language: WA_LANG,
-      variables: [v(customerName), v(source), v(ticketNumber), v(issue), v(address)],
+      variables: [v(customerName), v(ticketNumber), v(issue), v(address)],
     },
     body:
-      `Hello ${customerName}, we have received your water purifier service request from ${source}.\n\n` +
-      `Service request ID: ${ticketNumber}\n` +
-      `Service Issue: ${issue}\n` +
-      `Address: ${address || "N/A"}\n\n` +
-      `We will assign a technician and update you here.\n\n` +
-      `If any detail is incorrect, please reply to this message.`,
+      `Hi ${customerName}, request logged.\n` +
+      `ID: ${ticketNumber}\n` +
+      `Issue: ${issue}\n` +
+      `Address: ${address || "N/A"}\n` +
+      `We'll assign a technician and update you here.`,
   };
 }
 
@@ -105,17 +105,17 @@ export function visitScheduledCustomer({ ticketNumber, customerName, when }) {
 // the 24-hour window has lapsed — free-form text / interactive buttons would
 // silently fail there, so this approved template guarantees delivery.
 // {{1}} customer name  {{2}} ticket  {{3}} service/issue
-export function requestCompletedCustomer({ ticketNumber, customerName, issue }) {
+// {{1}} ticket
+export function requestCompletedCustomer({ ticketNumber }) {
   return {
     template: {
       name: "request_completed_customer",
       language: WA_LANG,
-      variables: [v(customerName), v(ticketNumber), v(issue)],
+      variables: [v(ticketNumber)],
     },
     body:
-      `Hi ${customerName}, your Oasis Globe service request ${ticketNumber} has been marked completed.\n\n` +
-      `Service Issue: ${issue || "—"}\n\n` +
-      `Thank you for choosing Oasis Globe. If you need anything else, just reply here.`,
+      `Your service request ${ticketNumber} is complete.\n` +
+      `How was our service? Tap below to rate us.`,
   };
 }
 
@@ -148,18 +148,17 @@ export function loginOtp({ code }) {
 // ---------------------------------------------------------------------------
 
 // {{1}} ticket  {{2}} technician name  {{3}} service/issue
-export function customerTechnicianAssigned({ ticketNumber, techName, issue }) {
+// {{1}} technician name
+export function customerTechnicianAssigned({ techName }) {
   return {
     template: {
       name: "customer_technician_assigned",
       language: WA_LANG,
-      variables: [v(ticketNumber), v(techName), v(issue)],
+      variables: [v(techName)],
     },
     body:
-      `Technician assigned for your request ${ticketNumber}.\n` +
-      `Name: ${techName}\n` +
-      `Service: ${issue || "—"}\n\n` +
-      `You will get an update when he starts.`,
+      `Technician assigned: ${techName}.\n` +
+      `You'll get an update when he starts.`,
   };
 }
 
@@ -192,7 +191,7 @@ export function customerArrivalOtp({ code }) {
       variables: [v(code)],
       otpCode: String(code),
     },
-    body: `${code} is your Oasis Globe technician arrival code.`,
+    body: `OTP: ${code}.\nShare it only when the technician reaches you.`,
   };
 }
 
@@ -232,17 +231,17 @@ export function customerEstimateApproved({ ticketNumber }) {
 }
 
 // {{1}} ticket  {{2}} amount due
-export function customerWorkCompleted({ ticketNumber, amount }) {
+// {{1}} amount due
+export function customerWorkCompleted({ amount }) {
   return {
     template: {
       name: "customer_work_completed",
       language: WA_LANG,
-      variables: [v(ticketNumber), v(amount)],
+      variables: [v(amount)],
     },
     body:
-      `Work completed for your request ${ticketNumber}.\n\n` +
-      `Amount due: ${amount}\n\n` +
-      `Please pay now in the technician's presence.`,
+      `Work completed.\n` +
+      `Please pay ${amount} to the technician now.`,
   };
 }
 
@@ -262,17 +261,17 @@ export function customerVisitCharge({ ticketNumber, amount }) {
 }
 
 // {{1}} ticket  {{2}} amount  {{3}} payment mode
+// {{1}} amount  {{2}} payment mode  {{3}} ticket
 export function customerPaymentReceived({ ticketNumber, amount, mode }) {
   return {
     template: {
       name: "customer_payment_received",
       language: WA_LANG,
-      variables: [v(ticketNumber), v(amount), v(mode)],
+      variables: [v(amount), v(mode), v(ticketNumber)],
     },
     body:
-      `Payment received for your request ${ticketNumber}.\n\n` +
-      `Amount: ${amount}\n` +
-      `Mode: ${mode}\n\n` +
+      `Payment of ${amount} received via ${mode}.\n` +
+      `ID: ${ticketNumber}\n` +
       `Thank you for choosing Oasis Globe.`,
   };
 }

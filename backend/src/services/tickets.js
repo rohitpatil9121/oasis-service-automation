@@ -1,6 +1,6 @@
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
-import { customerRequestReceived, managerNewRequest, visitScheduledCustomer, requestCancelledCustomer, requestCompletedCustomer, serviceLine } from "./waTemplates.js";
+import { customerRequestReceived, managerNewRequest, visitScheduledCustomer, requestCancelledCustomer, requestCompletedCustomer } from "./waTemplates.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
@@ -163,10 +163,9 @@ export async function createTicket({ customer, issue_description, source = "what
 
   // 1) Confirmation to the customer. Sent as an approved TEMPLATE: a manually-
   // created request means the customer hasn't messaged us, so we're outside the
-  // 24-hour window and free-form text would silently fail. The template opens
-  // the chat; {{2}} carries the lead source (KENT / our service team).
+  // 24-hour window and free-form text would silently fail.
   const custTpl = customerRequestReceived({
-    customerName: cust.full_name, source: lead_source || "our service team",
+    customerName: cust.full_name,
     ticketNumber: ticket.ticket_number, issue: issue_description, address: cust.address,
   });
   await queueNotification({
@@ -589,36 +588,14 @@ export async function updateStatus(id, toStatus, actorId, reason) {
   // ticket + score, attributed back on the webhook. Outside the window
   // interactive/free-form silently fails, so we fall back to an approved
   // template — the customer still reliably learns the job is done.
+  // Don't ask for a rating the instant the job is closed — the technician is often
+  // still on site. Stamp when it's due; sendDueRatingRequests() (polled from the
+  // server) delivers it. Stored in tech_work so no schema change is needed.
   if (toStatus === "CLOSED" && current.customer?.phone) {
-    const within24h = await customerMessagedWithin(current.customer.phone, 24 * 3600 * 1000);
-    if (within24h) {
-      const body =
-        `Your service request ${current.ticket_number} has been marked completed.\n\n` +
-        serviceLine(current.issue_description) +
-        `How was our service? Tap below to rate us.`;
-      const row = (n) => ({ id: `rate_${id}_${n}`, title: "★".repeat(n), description: RATING_LABELS[n] });
-      await queueNotification({
-        recipient: current.customer.phone, audience: "customer", ticketId: id, body,
-        interactive: {
-          type: "list",
-          body: { text: body },
-          action: {
-            button: "Rate our service",
-            sections: [{ title: "Tap your rating", rows: [row(5), row(4), row(3), row(2), row(1)] }],
-          },
-        },
-      });
-    } else {
-      const tpl = requestCompletedCustomer({
-        ticketNumber: current.ticket_number,
-        customerName: current.customer.full_name,
-        issue: current.issue_description,
-      });
-      await queueNotification({
-        recipient: current.customer.phone, audience: "customer", ticketId: id,
-        body: tpl.body, template: tpl.template,
-      });
-    }
+    await supabase.from("tickets").update({
+      tech_work: { ...(data.tech_work || current.tech_work || {}),
+        rating_due_at: new Date(Date.now() + RATING_DELAY_MS).toISOString() },
+    }).eq("id", id);
   }
 
   return data;
@@ -627,6 +604,64 @@ export async function updateStatus(id, toStatus, actorId, reason) {
 // Score → label, used both ways: when 3 buttons map to 1/3/5, and to read back
 // any stored 1–5 rating (e.g. a typed reply) in messages and on the dashboard.
 export const RATING_LABELS = { 1: "Poor", 2: "Fair", 3: "Okay", 4: "Good", 5: "Excellent" };
+
+// How long after closing a job before the customer is asked to rate it.
+export const RATING_DELAY_MS = 10 * 60 * 1000;
+
+// Sends the rating request for every job whose delay has elapsed. Polled by the
+// server, so a restart just resumes from the DB instead of losing the pending ask.
+export async function sendDueRatingRequests() {
+  const { data: due } = await supabase
+    .from("tickets")
+    .select("id, ticket_number, tech_work, customer:customers(phone)")
+    .eq("status", "CLOSED")
+    .not("tech_work->>rating_due_at", "is", null)
+    .lte("tech_work->>rating_due_at", new Date().toISOString())
+    .limit(50);
+
+  for (const t of due || []) {
+    const work = t.tech_work || {};
+    if (work.rating_sent_at) continue;
+    // Claim it FIRST: clearing rating_due_at means a second poll (or a second
+    // server instance) can't pick the same ticket up and message twice.
+    const { rating_due_at, ...rest } = work;
+    await supabase.from("tickets")
+      .update({ tech_work: { ...rest, rating_sent_at: new Date().toISOString() } })
+      .eq("id", t.id);
+
+    const phone = t.customer?.phone;
+    if (!phone) continue;
+    try {
+      const body =
+        `Your service request ${t.ticket_number} is complete.\n` +
+        `How was our service? Tap below to rate us.`;
+      const within24h = await customerMessagedWithin(phone, 24 * 3600 * 1000);
+      if (within24h) {
+        const row = (n) => ({ id: `rate_${t.id}_${n}`, title: "★".repeat(n), description: RATING_LABELS[n] });
+        await queueNotification({
+          recipient: phone, audience: "customer", ticketId: t.id, body,
+          interactive: {
+            type: "list",
+            body: { text: body },
+            action: {
+              button: "Rate our service",
+              sections: [{ title: "Tap your rating", rows: [row(5), row(4), row(3), row(2), row(1)] }],
+            },
+          },
+        });
+      } else {
+        const tpl = requestCompletedCustomer({ ticketNumber: t.ticket_number });
+        await queueNotification({
+          recipient: phone, audience: "customer", ticketId: t.id,
+          body: tpl.body, template: tpl.template,
+        });
+      }
+    } catch (e) {
+      log.error(`rating request ${t.ticket_number}:`, e.message);
+    }
+  }
+  return (due || []).length;
+}
 
 // The customer tapped a rating button after their request was closed. Store the
 // 1–5 score on the ticket and log it. Re-tapping just overwrites the score.

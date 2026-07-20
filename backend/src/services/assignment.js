@@ -130,10 +130,7 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
   if (!String(ticket.issue_description ?? "").trim())
     log.warn(`Ticket ${ticket.ticket_number} assigned with NO issue recorded`);
 
-  const assignedTpl = customerTechnicianAssigned({
-    ticketNumber: ticket.ticket_number, techName: tech.full_name,
-    issue: ticket.issue_description,
-  });
+  const assignedTpl = customerTechnicianAssigned({ techName: tech.full_name });
   await queueNotification({
     recipient: ticket.customer.phone, audience: "customer", ticketId,
     body: assignedTpl.body, template: assignedTpl.template,

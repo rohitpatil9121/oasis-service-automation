@@ -30,15 +30,16 @@ async function hasLoggedRequest(phone) {
 }
 
 // A bare greeting with no service details — "hi", "hello", "service", "namaste".
-// On a brand-new chat we answer these with the fixed OPENING verbatim so all four
-// numbered lines (incl. the purifier photo) always appear; the LLM drops them.
+// On a brand-new chat we answer these with the fixed OPENING verbatim so every
+// requested line (incl. the purifier photo) always appears; the LLM drops them.
 const GREETING_RE = /^(hi+|hey+|hello+|helo|hlo|namaste|namaskar|good\s*(morning|afternoon|evening)|start|service|enquiry|inquiry)[\s!.,]*$/i;
 const isBareGreeting = (t) => GREETING_RE.test((t || "").trim());
 
 // True when the model's reply is (a variant of) the opening greeting — used to
-// force the canonical OPENING so no numbered line is ever dropped.
+// force the canonical OPENING so no requested line is ever dropped. Matches any
+// wording of the service line so a copy tweak doesn't silently disable this.
 const looksLikeOpening = (t) =>
-  /oasis globe water purifier service support/i.test(t || "") && /please share/i.test(t || "");
+  /oasis globe water purifier service/i.test(t || "") && /please share/i.test(t || "");
 
 const MAX_STEPS = 5;    // safety cap on tool round-trips per message (each re-sends prompt+tools, so fewer = fewer tokens)
 const MAX_HISTORY = 12; // turns of clean transcript kept for context (trimmed to ease Groq's per-minute token limit)
@@ -288,7 +289,7 @@ export async function runAgent({ fromPhone, text }) {
 
   // Safety net: whenever the model produces the opening greeting it tends to drop
   // a line (e.g. the purifier-photo point). If the reply looks like the opening,
-  // replace it with the canonical OPENING so all four points are always present.
+  // replace it with the canonical OPENING so every listed point is always present.
   // Works even when the bare-greeting short-circuit above was skipped (e.g. an
   // existing session with history).
   if (looksLikeOpening(reply)) reply = OPENING;

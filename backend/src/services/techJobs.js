@@ -374,7 +374,7 @@ export async function runStep(techId, ticketId, action, work = {}) {
     const due = Number(work.total ?? tech_work.total ?? 0);
     const tpl = work.visitOnly
       ? customerVisitCharge({ ticketNumber: ticket.ticket_number, amount: rupees(due) })
-      : customerWorkCompleted({ ticketNumber: ticket.ticket_number, amount: rupees(due) });
+      : customerWorkCompleted({ amount: rupees(due) });
     await queueNotification({
       recipient: cust.phone, audience: "customer", ticketId,
       body: tpl.body, template: tpl.template,
@@ -383,7 +383,11 @@ export async function runStep(techId, ticketId, action, work = {}) {
 
   // Payment collected → confirm to the customer with amount + mode (not if pending).
   if (action === "payment" && cust?.phone && !work.pending) {
-    let mode = (Array.isArray(work.payments) && work.payments[0]?.method) || work.mode || "—";
+    // A split payment must read "Cash + UPI", not just the first method — the app
+    // already sends the combined label, so prefer it and only derive as a fallback.
+    let mode = work.mode
+      || (Array.isArray(work.payments) && work.payments.map((p) => p.method).filter(Boolean).join(" + "))
+      || "—";
     if (work.visitOnly || tech_work.visitOnly) mode = `${mode} (Visit charge)`;
     const tpl = customerPaymentReceived({
       ticketNumber: ticket.ticket_number,
