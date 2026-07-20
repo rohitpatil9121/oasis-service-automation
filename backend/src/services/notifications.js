@@ -1,6 +1,7 @@
 // Notification dispatch. We send the WhatsApp message INLINE and record the
 // outcome (SENT/FAILED) — no PENDING row for any external worker to grab.
 import { supabase } from "../config/supabase.js";
+import { env } from "../config/env.js";
 import { sendWhatsApp, sendWhatsAppTemplate, sendWhatsAppInteractive } from "./whatsapp.js";
 import { log } from "../lib/logger.js";
 
@@ -21,7 +22,17 @@ export async function queueNotification({ recipient, body, audience, ticketId, t
   if (replyTo?.body) row.reply_to_body = replyTo.body;
   if (replyTo?.wamid) row.reply_to_wamid = replyTo.wamid;
 
-  try {
+  // A record saved with our OWN WhatsApp number (mis-keyed on a manually created
+  // request) makes every message to it a guaranteed Meta rejection. Record it
+  // with a readable reason instead of retrying a send that cannot work.
+  const digits = (p) => String(p || "").replace(/\D/g, "");
+  const toSelf = env.metaOwnNumber && digits(recipient) === digits(env.metaOwnNumber);
+
+  if (toSelf) {
+    row = { ...row, status: "FAILED", sent_at: null, attempts: 1,
+      last_error: "recipient is our own WhatsApp number — check the customer's phone" };
+    log.warn(`notification skipped: recipient ${recipient} is our own number`);
+  } else try {
     const res = interactive
       ? await sendWhatsAppInteractive(recipient, interactive, body)
       : template

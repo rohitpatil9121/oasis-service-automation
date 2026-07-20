@@ -28,6 +28,9 @@ export const env = {
 
   // Meta WhatsApp Cloud API (developers.facebook.com > your app > WhatsApp)
   metaPhoneNumberId: process.env.META_PHONE_NUMBER_ID,
+  // Our own WhatsApp number. Meta rejects a send addressed to the sender itself,
+  // so we skip those instead of burning retries on a guaranteed failure.
+  metaOwnNumber: process.env.META_OWN_NUMBER,
   metaAccessToken: process.env.META_ACCESS_TOKEN,
   metaVerifyToken: process.env.META_VERIFY_TOKEN || "oasis_verify_token",
   metaGraphVersion: process.env.META_GRAPH_VERSION || "v21.0",
