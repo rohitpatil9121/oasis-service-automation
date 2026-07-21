@@ -163,17 +163,17 @@ export function customerTechnicianAssigned({ techName }) {
 }
 
 // {{1}} ticket  {{2}} technician name  {{3}} ETA in minutes
-export function customerTechnicianEnroute({ ticketNumber, techName, etaMinutes = "30" }) {
+// {{1}} technician name  {{2}} ETA in minutes
+export function customerTechnicianEnroute({ techName, etaMinutes = "30" }) {
   return {
     template: {
       name: "customer_technician_enroute",
       language: WA_LANG,
-      variables: [v(ticketNumber), v(techName), v(etaMinutes)],
+      variables: [v(techName), v(etaMinutes)],
     },
     body:
-      `Technician is on the way for your request ${ticketNumber}.\n` +
-      `Name: ${techName}\n` +
-      `ETA: Around ${etaMinutes} minutes.`,
+      `technician ${techName} is on the way — ETA about ${etaMinutes} minutes.\n` +
+      `Please keep someone available at the location.`,
   };
 }
 
@@ -212,7 +212,7 @@ export function customerEstimate({ ticketNumber, problem, charges, total, body }
       `Problem: ${problem || "—"}\n` +
       `Charges: ${charges}\n` +
       `Total: ${total}\n\n` +
-      `Reply 1 to Approve or 2 to Reject.`,
+      `The technician has started the work.`,
   };
 }
 
