@@ -12,9 +12,11 @@ import {
   customerPaymentReceived,
 } from "./waTemplates.js";
 import { log } from "../lib/logger.js";
+import { mergeTechWork } from "../lib/techWork.js";
 
 const SELECT =
   "*, customer:customers(*), technician:users!tickets_assigned_technician_id_fkey(id,full_name,phone)";
+
 
 // action → the tech_status it lands on, the timestamp it stamps.
 const ACTIONS = {
@@ -216,12 +218,13 @@ export async function handleEstimateReply(phone, text) {
   if (!approve && !reject) return false;
   const verified = approve && !reject;
 
-  const tech_work = {
-    ...(t.tech_work || {}),
+  // This runs from the customer's WhatsApp reply, which can land at the same
+  // moment the technician is writing from the app — the most likely collision
+  // in the whole flow, so it must be a merge and not a whole-object write.
+  await mergeTechWork(t.id, {
     tech_status: verified ? "VERIFIED" : "REJECTED",
     [verified ? "approved_at" : "rejected_at"]: new Date().toISOString(),
-  };
-  await supabase.from("tickets").update({ tech_work }).eq("id", t.id);
+  });
   // Approve → confirm + work starts. Reject → no message (the technician will
   // send a revised estimate or collect the visit charge only, each with its own).
   if (verified) {
@@ -258,13 +261,12 @@ const hasLiveArrivalOtp = (tw) =>
 
 async function issueArrivalOtp(ticket, ticketId) {
   const code = String(Math.floor(1000 + Math.random() * 9000));
-  const tech_work = {
-    ...(ticket.tech_work || {}),
+  // Store the code BEFORE WhatsApping it. If the write fails the customer must
+  // not end up holding a code the server has no record of.
+  await mergeTechWork(ticketId, {
     arrival_otp: await bcrypt.hash(code, 10),
     arrival_otp_expires: new Date(Date.now() + ARRIVAL_OTP_TTL_MS).toISOString(),
-  };
-  const { error } = await supabase.from("tickets").update({ tech_work }).eq("id", ticketId);
-  if (error) throw new Error("issueArrivalOtp: " + error.message);
+  });
   if (ticket.customer?.phone) {
     const tpl = customerArrivalOtp({ code });
     await queueNotification({
@@ -294,13 +296,11 @@ export async function verifyArrivalOtp(techId, ticketId, code, clientId) {
 
   const flagUnverified = async (reason) => {
     if (!clientId) return;   // live attempt — the technician sees the error and retries
-    await supabase.from("tickets").update({
-      tech_work: {
-        ...tw, tech_status: "ARRIVED", arrived_at: tw.arrived_at || new Date().toISOString(),
-        arrival_unverified: reason, arrival_unverified_at: new Date().toISOString(),
-        applied_client_ids: rememberClientId(tw, clientId),
-      },
-    }).eq("id", ticketId);
+    await mergeTechWork(ticketId, {
+      tech_status: "ARRIVED", arrived_at: tw.arrived_at || new Date().toISOString(),
+      arrival_unverified: reason, arrival_unverified_at: new Date().toISOString(),
+      applied_client_ids: rememberClientId(tw, clientId),
+    });
     log.warn(`Ticket ${ticket.ticket_number}: offline arrival code ${reason}`);
   };
 
@@ -316,13 +316,13 @@ export async function verifyArrivalOtp(techId, ticketId, code, clientId) {
     await flagUnverified("wrong code");
     return { ok: false, error: "Invalid code" };
   }
-  const tech_work = {
-    ...tw, tech_status: "ARRIVED", arrived_at: new Date().toISOString(),
+  // null (not undefined) so the merge actually overwrites the stored hash —
+  // `||` drops keys whose value is undefined, which would leave the code live.
+  await mergeTechWork(ticketId, {
+    tech_status: "ARRIVED", arrived_at: new Date().toISOString(),
     arrival_otp: null, arrival_otp_expires: null,
     ...(clientId ? { applied_client_ids: rememberClientId(tw, clientId) } : {}),
-  };
-  const { error } = await supabase.from("tickets").update({ tech_work }).eq("id", ticketId);
-  if (error) throw new Error("verifyArrivalOtp: " + error.message);
+  });
   return { ok: true, job: toJob(await loadOwned(techId, ticketId)) };
 }
 
@@ -366,17 +366,14 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
     }
   }
 
-  const tech_work = {
-    ...(ticket.tech_work || {}),
+  // Only the keys this step changes — a full spread of the tech_work we read
+  // above would overwrite anything written since (e.g. the arrival OTP).
+  await mergeTechWork(ticketId, {
     ...work,
     tech_status: spec.status,
     [spec.ts]: new Date().toISOString(),
     ...(clientId ? { applied_client_ids: rememberClientId(ticket.tech_work, clientId) } : {}),
-  };
-
-  const { error } = await supabase
-    .from("tickets").update({ tech_work }).eq("id", ticketId);
-  if (error) throw new Error("runStep update: " + error.message);
+  });
 
   // Coarse status + dashboard side effects. The flow starts at "Start Travel"
   // (enroute) — no separate accept step — so that marks the job in progress.
@@ -501,12 +498,15 @@ export async function saveJobPhoto(techId, ticketId, dataUrl, clientId) {
 
   const url = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
   const ticket = await loadOwned(techId, ticketId);
-  const tech_work = {
-    ...(ticket.tech_work || {}),
+  // The photos array is still built from the copy we just read, so two photos
+  // uploading at the exact same instant can drop one. Merging at least stops a
+  // photo upload from wiping unrelated fields (a step, or the arrival OTP),
+  // which is the collision that actually happens — the camera restore replays
+  // an upload while the technician is tapping through the form.
+  await mergeTechWork(ticketId, {
     tech_photos: [...(ticket.tech_work?.tech_photos || []), url],
     ...(clientId ? { applied_client_ids: rememberClientId(ticket.tech_work, clientId) } : {}),
-  };
-  await supabase.from("tickets").update({ tech_work }).eq("id", ticketId);
+  });
   return { ok: true, job: toJob(await loadOwned(techId, ticketId)) };
 }
 
