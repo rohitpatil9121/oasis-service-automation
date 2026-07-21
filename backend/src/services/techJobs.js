@@ -7,7 +7,7 @@ import { queueNotification } from "./notifications.js";
 import { sendPush } from "./push.js";
 import { updateStatus, getTicket, RATING_LABELS } from "./tickets.js";
 import {
-  customerTechnicianEnroute, customerArrivalOtp, customerEstimate,
+  customerArrivalOtp, customerEstimate,
   customerEstimateApproved, customerWorkCompleted, customerVisitCharge,
   customerPaymentReceived,
 } from "./waTemplates.js";
@@ -34,6 +34,16 @@ const ACTIONS = {
 };
 
 const CHARGE_FREE = new Set(["warranty", "repeat"]);
+
+// Writes made offline are replayed from the phone's outbox and can arrive twice
+// (the first attempt may have reached us before the connection dropped). Each
+// carries a client_id; we keep the recent ones so a repeat is ignored rather
+// than, say, recording the same payment again. Capped so tech_work stays small.
+const MAX_CLIENT_IDS = 40;
+const rememberClientId = (tech_work, clientId) =>
+  [...(tech_work?.applied_client_ids || []), clientId].slice(-MAX_CLIENT_IDS);
+const alreadyApplied = (tech_work, clientId) =>
+  !!clientId && (tech_work?.applied_client_ids || []).includes(clientId);
 
 // Charge id → customer-facing label for the estimate bill. Matches the technician
 // app's charge options (Service/Visit ₹250, Warranty/Repeat ₹0).
@@ -237,43 +247,79 @@ export async function handleEstimateReply(phone, text) {
 
 // "Reached": send the customer a 4-digit OTP on WhatsApp. The customer reads it
 // out to the on-site technician, who enters it to prove arrival. No GPS check.
-export async function sendArrivalOtp(techId, ticketId) {
-  const ticket = await loadOwned(techId, ticketId);
-  const cust = ticket.customer;
+// The code is sent when the technician STARTS TRAVEL, not on arrival: customers
+// often have no signal at home, and a WhatsApp message already delivered can be
+// read offline. Valid long enough to cover the trip.
+const ARRIVAL_OTP_TTL_MS = 6 * 60 * 60 * 1000;
+
+const hasLiveArrivalOtp = (tw) =>
+  !!tw?.arrival_otp && !!tw?.arrival_otp_expires &&
+  new Date(tw.arrival_otp_expires).getTime() > Date.now();
+
+async function issueArrivalOtp(ticket, ticketId) {
   const code = String(Math.floor(1000 + Math.random() * 9000));
   const tech_work = {
     ...(ticket.tech_work || {}),
     arrival_otp: await bcrypt.hash(code, 10),
-    arrival_otp_expires: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    arrival_otp_expires: new Date(Date.now() + ARRIVAL_OTP_TTL_MS).toISOString(),
   };
   const { error } = await supabase.from("tickets").update({ tech_work }).eq("id", ticketId);
-  if (error) throw new Error("sendArrivalOtp: " + error.message);
-  if (cust?.phone) {
+  if (error) throw new Error("issueArrivalOtp: " + error.message);
+  if (ticket.customer?.phone) {
     const tpl = customerArrivalOtp({ code });
     await queueNotification({
-      recipient: cust.phone, audience: "customer", ticketId,
+      recipient: ticket.customer.phone, audience: "customer", ticketId,
       body: tpl.body, template: tpl.template,
     });
   }
+}
+
+export async function sendArrivalOtp(techId, ticketId) {
+  const ticket = await loadOwned(techId, ticketId);
+  // Already sent at Start Travel and still valid — don't resend. The customer may
+  // be offline by now but still has the earlier message to read from.
+  if (hasLiveArrivalOtp(ticket.tech_work)) return { ok: true, reused: true };
+  await issueArrivalOtp(ticket, ticketId);
   return { ok: true };
 }
 
 // Verify the arrival OTP the customer shared. On success → status ARRIVED.
-export async function verifyArrivalOtp(techId, ticketId, code) {
+// `clientId` means this arrived from the phone's offline outbox: the technician
+// already moved on, so a bad code can't be rejected in their face. Record the
+// failure on the job instead so the office can see the arrival wasn't proven.
+export async function verifyArrivalOtp(techId, ticketId, code, clientId) {
   const ticket = await loadOwned(techId, ticketId);
   const tw = ticket.tech_work || {};
+  if (alreadyApplied(tw, clientId)) return { ok: true, job: toJob(ticket) };
+
+  const flagUnverified = async (reason) => {
+    if (!clientId) return;   // live attempt — the technician sees the error and retries
+    await supabase.from("tickets").update({
+      tech_work: {
+        ...tw, tech_status: "ARRIVED", arrived_at: tw.arrived_at || new Date().toISOString(),
+        arrival_unverified: reason, arrival_unverified_at: new Date().toISOString(),
+        applied_client_ids: rememberClientId(tw, clientId),
+      },
+    }).eq("id", ticketId);
+    log.warn(`Ticket ${ticket.ticket_number}: offline arrival code ${reason}`);
+  };
+
   if (!tw.arrival_otp || !tw.arrival_otp_expires) {
+    await flagUnverified("no code was issued");
     return { ok: false, error: "Tap Reached to send the code first." };
   }
   if (new Date(tw.arrival_otp_expires).getTime() < Date.now()) {
+    await flagUnverified("code had expired");
     return { ok: false, error: "Code expired — tap Reached to resend." };
   }
   if (!(await bcrypt.compare(String(code || ""), tw.arrival_otp))) {
+    await flagUnverified("wrong code");
     return { ok: false, error: "Invalid code" };
   }
   const tech_work = {
     ...tw, tech_status: "ARRIVED", arrived_at: new Date().toISOString(),
     arrival_otp: null, arrival_otp_expires: null,
+    ...(clientId ? { applied_client_ids: rememberClientId(tw, clientId) } : {}),
   };
   const { error } = await supabase.from("tickets").update({ tech_work }).eq("id", ticketId);
   if (error) throw new Error("verifyArrivalOtp: " + error.message);
@@ -283,11 +329,14 @@ export async function verifyArrivalOtp(techId, ticketId, code) {
 // Advance one workflow step. `work` is the technician's per-step data (stored
 // verbatim into tech_work); the server stamps tech_status + timestamp and fires
 // any customer-facing WhatsApp message.
-export async function runStep(techId, ticketId, action, work = {}) {
+export async function runStep(techId, ticketId, action, work = {}, clientId) {
   const spec = ACTIONS[action];
   if (!spec) { const e = new Error("Unknown step: " + action); e.status = 400; throw e; }
 
   const ticket = await loadOwned(techId, ticketId);
+  // Replayed from the offline outbox and already applied — return the job as-is
+  // so we don't re-run the step or re-send its customer WhatsApp.
+  if (alreadyApplied(ticket.tech_work, clientId)) return toJob(ticket);
   const techName = ticket.technician?.full_name || "our technician";
 
   // Estimate guard: a part's price must stay between its minimum price
@@ -322,6 +371,7 @@ export async function runStep(techId, ticketId, action, work = {}) {
     ...work,
     tech_status: spec.status,
     [spec.ts]: new Date().toISOString(),
+    ...(clientId ? { applied_client_ids: rememberClientId(ticket.tech_work, clientId) } : {}),
   };
 
   const { error } = await supabase
@@ -335,16 +385,11 @@ export async function runStep(techId, ticketId, action, work = {}) {
   }
 
   // ---- Minimal customer WhatsApp messages (one per key milestone only) ----
+  // "On the way" is deliberately NOT sent: the technician app has no separate
+  // Start Travel step any more, so enroute is just the internal move that marks
+  // the job in progress on the dashboard. The arrival code goes out when the
+  // technician taps Reached (sendArrivalOtp).
   const cust = ticket.customer;
-  if (action === "enroute" && cust?.phone) {
-    const tpl = customerTechnicianEnroute({
-      ticketNumber: ticket.ticket_number, techName, etaMinutes: "30",
-    });
-    await queueNotification({
-      recipient: cust.phone, audience: "customer", ticketId,
-      body: tpl.body, template: tpl.template,
-    });
-  }
 
   // Estimate → send the customer the itemised bill as a RECORD of what the
   // technician showed them on site. No reply is expected: work starts immediately.
@@ -435,8 +480,12 @@ export async function listParts() {
 // Save a technician-captured job photo (base64 data URL) to Supabase Storage and
 // attach its public URL to the ticket's tech_work.tech_photos.
 const PHOTO_BUCKET = "tech-photos";
-export async function saveJobPhoto(techId, ticketId, dataUrl) {
-  await loadOwned(techId, ticketId); // ownership + existence check
+export async function saveJobPhoto(techId, ticketId, dataUrl, clientId) {
+  const owned = await loadOwned(techId, ticketId); // ownership + existence check
+  // Replayed from the offline outbox and already stored — don't add it twice.
+  if (clientId && (owned.tech_work?.applied_client_ids || []).includes(clientId)) {
+    return { ok: true, job: toJob(owned), duplicate: true };
+  }
   const m = /^data:(image\/\w+);base64,(.+)$/.exec(dataUrl || "");
   if (!m) { const e = new Error("Invalid image"); e.status = 400; throw e; }
   const contentType = m[1];
@@ -455,6 +504,7 @@ export async function saveJobPhoto(techId, ticketId, dataUrl) {
   const tech_work = {
     ...(ticket.tech_work || {}),
     tech_photos: [...(ticket.tech_work?.tech_photos || []), url],
+    ...(clientId ? { applied_client_ids: rememberClientId(ticket.tech_work, clientId) } : {}),
   };
   await supabase.from("tickets").update({ tech_work }).eq("id", ticketId);
   return { ok: true, job: toJob(await loadOwned(techId, ticketId)) };

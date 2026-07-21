@@ -22,15 +22,15 @@ router.get("/jobs/:id", async (req, res, next) => {
 // Advance one workflow step: { action, work }.
 router.post("/jobs/:id/step", async (req, res, next) => {
   try {
-    const { action, work } = req.body || {};
+    const { action, work, client_id } = req.body || {};
     if (!action) return res.status(400).json({ error: "action required" });
-    res.json({ job: await tech.runStep(req.user.id, req.params.id, action, work || {}) });
+    res.json({ job: await tech.runStep(req.user.id, req.params.id, action, work || {}, client_id) });
   } catch (e) { next(e); }
 });
 
 // Technician captures a job photo (base64 data URL in body.image).
 router.post("/jobs/:id/photo", async (req, res, next) => {
-  try { res.json(await tech.saveJobPhoto(req.user.id, req.params.id, req.body?.image)); }
+  try { res.json(await tech.saveJobPhoto(req.user.id, req.params.id, req.body?.image, req.body?.client_id)); }
   catch (e) { next(e); }
 });
 
@@ -42,7 +42,7 @@ router.post("/jobs/:id/arrival-otp", async (req, res, next) => {
 
 // Verify the arrival OTP the customer shared → status ARRIVED.
 router.post("/jobs/:id/verify-arrival", async (req, res, next) => {
-  try { res.json(await tech.verifyArrivalOtp(req.user.id, req.params.id, req.body?.code)); }
+  try { res.json(await tech.verifyArrivalOtp(req.user.id, req.params.id, req.body?.code, req.body?.client_id)); }
   catch (e) { next(e); }
 });
 
