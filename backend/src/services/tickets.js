@@ -5,6 +5,7 @@ import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
 import { attachBoardBucket, TICKET_REUSE_DAYS, closedAtOf } from "../lib/boardBucket.js";
+import { mergeTechWork } from "../lib/techWork.js";
 
 export { TICKET_REUSE_DAYS };
 
@@ -592,10 +593,9 @@ export async function updateStatus(id, toStatus, actorId, reason) {
   // still on site. Stamp when it's due; sendDueRatingRequests() (polled from the
   // server) delivers it. Stored in tech_work so no schema change is needed.
   if (toStatus === "CLOSED" && current.customer?.phone) {
-    await supabase.from("tickets").update({
-      tech_work: { ...(data.tech_work || current.tech_work || {}),
-        rating_due_at: new Date(Date.now() + RATING_DELAY_MS).toISOString() },
-    }).eq("id", id);
+    await mergeTechWork(id, {
+      rating_due_at: new Date(Date.now() + RATING_DELAY_MS).toISOString(),
+    });
   }
 
   return data;
@@ -624,10 +624,13 @@ export async function sendDueRatingRequests() {
     if (work.rating_sent_at) continue;
     // Claim it FIRST: clearing rating_due_at means a second poll (or a second
     // server instance) can't pick the same ticket up and message twice.
-    const { rating_due_at, ...rest } = work;
-    await supabase.from("tickets")
-      .update({ tech_work: { ...rest, rating_sent_at: new Date().toISOString() } })
-      .eq("id", t.id);
+    // rating_due_at must be an explicit null — the old code cleared it by
+    // omitting it from a whole-object write, but a merge leaves omitted keys
+    // untouched, which would leave the ticket claimable and double-message it.
+    await mergeTechWork(t.id, {
+      rating_due_at: null,
+      rating_sent_at: new Date().toISOString(),
+    });
 
     const phone = t.customer?.phone;
     if (!phone) continue;
