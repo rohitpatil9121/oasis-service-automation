@@ -4,6 +4,7 @@
 // id we set to `rate_<ticketId>_<n>`. This module decodes that id, stores the
 // score, and returns the thank-you reply.
 import { recordRating } from "./tickets.js";
+import { supabase } from "../config/supabase.js";
 import { log } from "../lib/logger.js";
 
 const RATE_RE = /^rate_(.+)_([1-5])$/;
@@ -34,4 +35,39 @@ export async function handleRatingReply(replyId) {
     return "Thanks for your feedback!";
   }
   return thanksFor(parsed.rating);
+}
+
+// A typed "1"–"5" (or "5 star") reply also counts as a rating. Customers outside
+// WhatsApp's 24-hour service window get the plain approved template — Meta
+// rejects the tap-to-rate list there — so typing the number back is their only
+// way to rate. Attributed to their most recent closed ticket that was ASKED for
+// a rating and hasn't got one; returns the thank-you reply, or null if this
+// message isn't a rating (caller falls through to normal intake).
+const TYPED_RATING_RE = /^\s*([1-5])\s*(?:star|stars)?\s*$/i;
+const TYPED_RATING_WINDOW_MS = 7 * 24 * 3600 * 1000;
+
+export async function handleTypedRating(phone, text) {
+  const m = TYPED_RATING_RE.exec(String(text || ""));
+  if (!m) return null;
+  const { data: cust } = await supabase
+    .from("customers").select("id").eq("phone", phone).maybeSingle();
+  if (!cust) return null;
+  const { data: t } = await supabase
+    .from("tickets").select("id, rating, tech_work")
+    .eq("customer_id", cust.id).eq("status", "CLOSED")
+    .is("rating", null)
+    .not("tech_work->>rating_sent_at", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1).maybeSingle();
+  if (!t) return null;
+  const askedAt = new Date(t.tech_work?.rating_sent_at || 0).getTime();
+  if (Date.now() - askedAt > TYPED_RATING_WINDOW_MS) return null; // stale ask — treat as chat
+  const rating = Number(m[1]);
+  try {
+    await recordRating(t.id, rating);
+  } catch (e) {
+    log.error("handleTypedRating:", e.message);
+    return "Thanks for your feedback!";
+  }
+  return thanksFor(rating);
 }

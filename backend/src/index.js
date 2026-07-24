@@ -14,6 +14,18 @@ setInterval(() => {
   sendDueRatingRequests().catch((e) => log.error("rating poll:", e.message));
 }, RATING_POLL_MS).unref?.();
 
+// Render's free tier spins the instance down after ~15 min without inbound
+// HTTP; the next WhatsApp message then waits out a multi-minute cold start
+// ("bot replies 2-3 minutes late"). Hitting our own PUBLIC url goes through
+// Render's load balancer, counts as traffic, and keeps the instance warm.
+// Only in production (https base URL); disable with KEEPALIVE_MS=0.
+const KEEPALIVE_MS = parseInt(process.env.KEEPALIVE_MS || String(10 * 60 * 1000), 10);
+if (KEEPALIVE_MS > 0 && /^https:/i.test(env.publicBaseUrl)) {
+  setInterval(() => {
+    fetch(`${env.publicBaseUrl.replace(/\/+$/, "")}/health`).catch(() => {});
+  }, KEEPALIVE_MS).unref?.();
+}
+
 app.listen(env.port, () => {
   log.info(`Oasis Globe backend on :${env.port} (provider: ${env.whatsappProvider}, mock: ${env.whatsappMock})`);
   log.info(`Webhook URL: ${env.publicBaseUrl}/webhook/whatsapp`);
