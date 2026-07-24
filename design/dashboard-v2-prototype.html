@@ -1,0 +1,1631 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Oasis Globe · Service Desk — Dashboard v2 (design prototype)</title>
+<meta name="description" content="Redesign prototype of the Oasis Globe service-desk dashboard. Zero dependencies." />
+<style>
+/* ==========================================================================
+   OASIS GLOBE — SERVICE DESK DASHBOARD v2
+   Design prototype · zero dependencies · works offline
+
+   TOKEN LAYER
+   Modelled on Material 3's role-based colour system, seeded from the existing
+   Oasis brand teal (#0f766e) so this drops onto the current Tailwind theme.
+   Roles (not raw colours) are referenced everywhere, which is what makes the
+   dark theme a ~40-line override instead of a rewrite.
+   ========================================================================== */
+
+:root {
+  /* --- motion tokens (Material 3) ------------------------------------- */
+  --ease-emphasized:            cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --ease-standard:              cubic-bezier(0.2, 0, 0, 1);
+  --ease-standard-decelerate:   cubic-bezier(0, 0, 0, 1);
+  --ease-spring:                cubic-bezier(0.34, 1.56, 0.64, 1); /* hand-tuned overshoot */
+
+  --dur-short-2:  100ms;
+  --dur-short-4:  200ms;
+  --dur-medium-1: 250ms;
+  --dur-medium-2: 300ms;
+  --dur-medium-4: 400ms;
+  --dur-long-2:   500ms;
+  --dur-long-4:   600ms;
+
+  /* --- shape scale ----------------------------------------------------- */
+  --shape-xs: 6px;  --shape-sm: 10px; --shape-md: 14px;
+  --shape-lg: 20px; --shape-xl: 28px; --shape-full: 999px;
+
+  /* --- spacing (4dp baseline grid) ------------------------------------- */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 20px; --s6: 24px; --s8: 32px; --s10: 40px;
+
+  --rail-w: 248px;
+  --bar-h: 64px;
+  --content-max: 1480px;
+}
+
+/* --- LIGHT THEME ------------------------------------------------------- */
+:root[data-theme="light"] {
+  --primary:            #0f766e;
+  --primary-hover:      #115e59;
+  --on-primary:         #ffffff;
+  --primary-container:  #c7f2ea;
+  --on-primary-container:#00201c;
+
+  --surface:            #f6f9f8;
+  --surface-1:          #ffffff;
+  --surface-2:          #f1f6f5;
+  --surface-3:          #e9f0ee;
+  --surface-inverse:    #12201e;
+  --on-surface-inverse: #eef4f2;
+
+  --on-surface:         #0e1c1a;
+  --on-surface-variant: #4b615d;
+  --on-surface-faint:   #7e938e;
+
+  --outline:            #d3e0dd;
+  --outline-strong:     #b3c5c1;
+
+  --critical:  #b3261e; --critical-container: #fde8e6; --on-critical-container: #4d0d09;
+  --warning:   #9a5b00; --warning-container:  #ffe9c9; --on-warning-container:  #4a2800;
+  --success:   #146c43; --success-container:  #cdf0dc; --on-success-container:  #04321c;
+  --info:      #1a5fb4; --info-container:     #dbe8fd; --on-info-container:     #052a5e;
+  --neutral-container: #eceff0; --on-neutral-container: #3d4746;
+
+  --scrim: rgba(12, 26, 24, .42);
+  --elev-1: 0 1px 2px rgba(13,32,29,.05), 0 1px 3px rgba(13,32,29,.06);
+  --elev-2: 0 2px 6px rgba(13,32,29,.07), 0 6px 16px -6px rgba(13,32,29,.14);
+  --elev-3: 0 8px 28px -8px rgba(13,32,29,.28);
+  --track: #e3ebe9;
+}
+
+/* --- DARK THEME -------------------------------------------------------- */
+:root[data-theme="dark"] {
+  --primary:            #5fd9c6;
+  --primary-hover:      #7fe6d6;
+  --on-primary:         #00382f;
+  --primary-container:  #0d4f47;
+  --on-primary-container:#b8f2e6;
+
+  --surface:            #0b1211;
+  --surface-1:          #121a19;
+  --surface-2:          #182120;
+  --surface-3:          #1e2827;
+  --surface-inverse:    #e6edec;
+  --on-surface-inverse: #12201e;
+
+  --on-surface:         #e3eae8;
+  --on-surface-variant: #a9bdb8;
+  --on-surface-faint:   #7b8f8a;
+
+  --outline:            #2a3735;
+  --outline-strong:     #3b4a47;
+
+  --critical:  #ffb4ab; --critical-container: #3d0906; --on-critical-container: #ffdad5;
+  --warning:   #ffcf8a; --warning-container:  #3a2200; --on-warning-container:  #ffe3bb;
+  --success:   #7ee2a8; --success-container:  #0a3d22; --on-success-container:  #b6f2cd;
+  --info:      #a9c8ff; --info-container:     #0a2f60; --on-info-container:     #d6e3ff;
+  --neutral-container: #222c2b; --on-neutral-container: #c3cecc;
+
+  --scrim: rgba(0,0,0,.6);
+  --elev-1: 0 1px 2px rgba(0,0,0,.4);
+  --elev-2: 0 2px 8px rgba(0,0,0,.45), 0 8px 22px -8px rgba(0,0,0,.6);
+  --elev-3: 0 10px 34px -10px rgba(0,0,0,.75);
+  --track: #263130;
+}
+
+/* ==========================================================================
+   BASE
+   ========================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--on-surface);
+  font-family: "Google Sans Text", "Google Sans", Inter, -apple-system,
+               "Segoe UI Variable Text", "Segoe UI", Roboto, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+  transition: background var(--dur-medium-2) var(--ease-standard),
+              color var(--dur-medium-2) var(--ease-standard);
+}
+button, input { font: inherit; color: inherit; }
+button { background: none; border: 0; cursor: pointer; }
+a { color: inherit; text-decoration: none; }
+svg { display: block; }
+::selection { background: var(--primary-container); color: var(--on-primary-container); }
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--shape-xs);
+}
+
+/* type scale */
+.t-display  { font-size: 40px; line-height: 1.06; font-weight: 700; letter-spacing: -.022em; }
+.t-headline { font-size: 26px; line-height: 1.18; font-weight: 660; letter-spacing: -.018em; }
+.t-title    { font-size: 16px; line-height: 1.35; font-weight: 620; letter-spacing: -.006em; }
+.t-body     { font-size: 13.5px; line-height: 1.5; }
+.t-label    { font-size: 12px; line-height: 1.35; font-weight: 560; }
+.t-over     { font-size: 10.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+.muted      { color: var(--on-surface-variant); }
+.faint      { color: var(--on-surface-faint); }
+
+/* ==========================================================================
+   APP SHELL
+   ========================================================================== */
+.app { display: flex; min-height: 100%; }
+
+/* ---- navigation rail ---- */
+.rail {
+  position: fixed; inset: 0 auto 0 0; width: var(--rail-w);
+  display: flex; flex-direction: column;
+  background: var(--surface-1);
+  border-right: 1px solid var(--outline);
+  z-index: 30;
+}
+.rail__brand {
+  display: flex; align-items: center; gap: var(--s3);
+  height: var(--bar-h); padding: 0 var(--s5);
+  border-bottom: 1px solid var(--outline);
+}
+.mark {
+  width: 32px; height: 32px; border-radius: var(--shape-sm);
+  background: linear-gradient(140deg, var(--primary), var(--primary-hover));
+  color: var(--on-primary);
+  display: grid; place-items: center;
+  font-weight: 800; font-size: 13px; letter-spacing: -.03em;
+  box-shadow: var(--elev-1);
+}
+.rail__nav { flex: 1; overflow-y: auto; padding: var(--s5) var(--s3); }
+.navgroup + .navgroup { margin-top: var(--s6); }
+.navgroup__label { padding: 0 var(--s3) var(--s2); color: var(--on-surface-faint); }
+.navitem {
+  position: relative;
+  display: flex; align-items: center; gap: var(--s3);
+  padding: 9px var(--s3); border-radius: var(--shape-full);
+  color: var(--on-surface-variant); font-weight: 520; font-size: 13.5px;
+  transition: background var(--dur-short-2) var(--ease-standard),
+              color var(--dur-short-2) var(--ease-standard);
+}
+.navitem:hover { background: var(--surface-2); color: var(--on-surface); }
+.navitem[aria-current="page"] {
+  background: var(--primary-container); color: var(--on-primary-container); font-weight: 640;
+}
+.navitem__count {
+  margin-left: auto; font-size: 11px; font-weight: 700;
+  padding: 1px 7px; border-radius: var(--shape-full);
+  background: var(--surface-3); color: var(--on-surface-variant);
+}
+.navitem[aria-current="page"] .navitem__count { background: rgba(0,0,0,.10); color: inherit; }
+.navitem__count--hot { background: var(--critical); color: #fff; }
+:root[data-theme="dark"] .navitem__count--hot { color: #3d0906; }
+
+.rail__foot { padding: var(--s3); border-top: 1px solid var(--outline); }
+.userchip {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s2); border-radius: var(--shape-md); width: 100%;
+  transition: background var(--dur-short-2) var(--ease-standard);
+}
+.userchip:hover { background: var(--surface-2); }
+.avatar {
+  width: 32px; height: 32px; border-radius: var(--shape-full);
+  display: grid; place-items: center; font-size: 11.5px; font-weight: 700; flex: none;
+  background: var(--primary-container); color: var(--on-primary-container);
+}
+
+/* ---- top bar ---- */
+.main { flex: 1; margin-left: var(--rail-w); min-width: 0; display: flex; flex-direction: column; }
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  height: var(--bar-h); display: flex; align-items: center; gap: var(--s3);
+  padding: 0 var(--s6);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: saturate(1.4) blur(12px);
+  border-bottom: 1px solid var(--outline);
+}
+.searchbtn {
+  display: flex; align-items: center; gap: var(--s3);
+  width: min(460px, 46vw); padding: 8px var(--s3) 8px var(--s4);
+  border-radius: var(--shape-full);
+  background: var(--surface-1); border: 1px solid var(--outline);
+  color: var(--on-surface-faint); text-align: left;
+  transition: border-color var(--dur-short-2) var(--ease-standard),
+              box-shadow var(--dur-short-2) var(--ease-standard);
+}
+.searchbtn:hover { border-color: var(--outline-strong); box-shadow: var(--elev-1); }
+.kbd {
+  margin-left: auto; display: inline-flex; gap: 2px;
+  font-size: 10.5px; font-weight: 700; color: var(--on-surface-faint);
+}
+.kbd span {
+  min-width: 18px; padding: 1px 5px; text-align: center;
+  border: 1px solid var(--outline); border-bottom-width: 2px;
+  border-radius: var(--shape-xs); background: var(--surface-2);
+}
+.topbar__right { margin-left: auto; display: flex; align-items: center; gap: var(--s2); }
+.iconbtn {
+  position: relative;
+  width: 38px; height: 38px; border-radius: var(--shape-full);
+  display: grid; place-items: center; color: var(--on-surface-variant);
+  transition: background var(--dur-short-2) var(--ease-standard),
+              color var(--dur-short-2) var(--ease-standard);
+}
+.iconbtn:hover { background: var(--surface-2); color: var(--on-surface); }
+.iconbtn__dot {
+  position: absolute; top: 8px; right: 9px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--critical); box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* live pill */
+.live {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 11px 4px 9px; border-radius: var(--shape-full);
+  background: var(--success-container); color: var(--on-success-container);
+  font-size: 11.5px; font-weight: 620;
+}
+.live__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); position: relative; }
+.live__dot::after {
+  content: ""; position: absolute; inset: -3px; border-radius: 50%;
+  border: 1.5px solid var(--success); animation: ping 2.4s var(--ease-standard-decelerate) infinite;
+}
+@keyframes ping { 0% { transform: scale(.6); opacity: .9; } 70%,100% { transform: scale(1.9); opacity: 0; } }
+
+/* ==========================================================================
+   CONTENT
+   ========================================================================== */
+.content { width: 100%; max-width: var(--content-max); margin: 0 auto; padding: var(--s6) var(--s6) var(--s10); }
+
+.pagehead { display: flex; align-items: flex-end; gap: var(--s4); flex-wrap: wrap; margin-bottom: var(--s6); }
+.pagehead__meta { display: flex; align-items: center; gap: var(--s3); margin-top: 6px; }
+.pagehead__actions { margin-left: auto; display: flex; gap: var(--s2); }
+
+.btn {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  height: 38px; padding: 0 var(--s4); border-radius: var(--shape-full);
+  font-size: 13.5px; font-weight: 600; white-space: nowrap;
+  transition: transform var(--dur-short-2) var(--ease-spring),
+              background var(--dur-short-2) var(--ease-standard),
+              box-shadow var(--dur-short-2) var(--ease-standard);
+}
+.btn:active { transform: scale(.96); }
+.btn--filled { background: var(--primary); color: var(--on-primary); box-shadow: var(--elev-1); }
+.btn--filled:hover { background: var(--primary-hover); box-shadow: var(--elev-2); }
+.btn--tonal { background: var(--surface-1); color: var(--on-surface); border: 1px solid var(--outline); }
+.btn--tonal:hover { background: var(--surface-2); border-color: var(--outline-strong); }
+.btn--ghost { color: var(--on-surface-variant); }
+.btn--ghost:hover { background: var(--surface-2); color: var(--on-surface); }
+.btn--sm { height: 30px; padding: 0 var(--s3); font-size: 12.5px; }
+
+/* card primitive */
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--outline);
+  border-radius: var(--shape-lg);
+  box-shadow: var(--elev-1);
+}
+.card__head {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s4) var(--s5) var(--s3);
+}
+.card__head .t-title { margin: 0; }
+.card__head .spacer { margin-left: auto; }
+
+/* ---- SECTION 1: attention lane ------------------------------------------ */
+.section { margin-bottom: var(--s6); }
+.section__head { display: flex; align-items: baseline; gap: var(--s3); margin-bottom: var(--s3); }
+
+.attn { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s3); }
+.attncard {
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; gap: var(--s2);
+  padding: var(--s4) var(--s4) var(--s3) var(--s5);
+  background: var(--surface-1);
+  border: 1px solid var(--outline);
+  border-radius: var(--shape-md);
+  text-align: left;
+  transition: transform var(--dur-short-4) var(--ease-emphasized-decelerate),
+              box-shadow var(--dur-short-4) var(--ease-emphasized-decelerate),
+              border-color var(--dur-short-4) var(--ease-standard);
+}
+.attncard::before {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 3px;
+  background: var(--accent, var(--outline-strong));
+}
+.attncard:hover { transform: translateY(-2px); box-shadow: var(--elev-2); border-color: var(--outline-strong); }
+.attncard__top { display: flex; align-items: center; gap: var(--s2); }
+.attncard__ico {
+  width: 26px; height: 26px; border-radius: var(--shape-xs);
+  display: grid; place-items: center; flex: none;
+  background: var(--accent-bg); color: var(--accent);
+}
+.attncard__n { font-size: 27px; font-weight: 720; letter-spacing: -.03em; line-height: 1; }
+.attncard__cta {
+  display: inline-flex; align-items: center; gap: 4px;
+  color: var(--primary); font-weight: 640; font-size: 12.5px; margin-top: auto;
+}
+.attncard__cta svg { transition: transform var(--dur-short-4) var(--ease-emphasized); }
+.attncard:hover .attncard__cta svg { transform: translateX(3px); }
+.attncard[data-sev="critical"] { --accent: var(--critical); --accent-bg: var(--critical-container); }
+.attncard[data-sev="warning"]  { --accent: var(--warning);  --accent-bg: var(--warning-container); }
+.attncard[data-sev="info"]     { --accent: var(--info);     --accent-bg: var(--info-container); }
+.attncard[data-sev="neutral"]  { --accent: var(--on-surface-faint); --accent-bg: var(--neutral-container); }
+
+/* ---- SECTION 2: pulse + pipeline ---------------------------------------- */
+.grid-hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.55fr); gap: var(--s4); }
+
+.pulse { padding: var(--s5); display: flex; flex-direction: column; }
+.pulse__value { display: flex; align-items: baseline; gap: var(--s3); margin: var(--s2) 0 2px; }
+.delta {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 8px; border-radius: var(--shape-full);
+  font-size: 11.5px; font-weight: 680;
+  background: var(--success-container); color: var(--on-success-container);
+}
+.delta--down { background: var(--critical-container); color: var(--on-critical-container); }
+.spark { margin: var(--s4) calc(var(--s1) * -1) var(--s3); }
+.spark path.line { fill: none; stroke: var(--primary); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.spark path.area { fill: url(#sparkfill); stroke: none; opacity: 0; }
+.spark circle.head { fill: var(--primary); stroke: var(--surface-1); stroke-width: 2.5; opacity: 0; }
+
+.substats { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); margin-top: auto; padding-top: var(--s4); border-top: 1px solid var(--outline); }
+.substat__v { font-size: 17px; font-weight: 690; letter-spacing: -.02em; }
+.substat__l { margin-top: 1px; }
+
+/* pipeline / flow */
+.flow { padding: var(--s5); }
+.flowbars { display: flex; flex-direction: column; gap: 9px; margin-top: var(--s4); }
+.flowrow {
+  display: grid; grid-template-columns: 106px 1fr 46px; align-items: center; gap: var(--s3);
+  width: 100%; padding: 5px var(--s2); border-radius: var(--shape-sm); text-align: left;
+  transition: background var(--dur-short-2) var(--ease-standard);
+}
+.flowrow:hover { background: var(--surface-2); }
+.flowrow[aria-pressed="true"] { background: var(--surface-2); }
+.flowrow[aria-pressed="true"] .flowrow__label { color: var(--on-surface); font-weight: 660; }
+.flowrow__label { display: flex; align-items: center; gap: 7px; color: var(--on-surface-variant); font-size: 12.5px; font-weight: 560; }
+.flowrow__swatch { width: 8px; height: 8px; border-radius: 2.5px; background: var(--c); flex: none; }
+.flowrow__track { height: 22px; border-radius: var(--shape-xs); background: var(--track); overflow: hidden; position: relative; }
+.flowrow__fill {
+  height: 100%; width: 0; border-radius: var(--shape-xs); background: var(--c);
+  transition: width var(--dur-long-4) var(--ease-emphasized-decelerate);
+}
+.flowrow__fill::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.28), transparent);
+  transform: translateX(-100%);
+}
+.flowrow__n { text-align: right; font-size: 14px; font-weight: 690; letter-spacing: -.02em; }
+.flowfoot {
+  display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap;
+  margin-top: var(--s4); padding-top: var(--s4); border-top: 1px solid var(--outline);
+}
+.metric-inline { display: flex; align-items: baseline; gap: 6px; }
+.metric-inline b { font-size: 15px; font-weight: 700; letter-spacing: -.02em; }
+.flowchip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 11px; border-radius: var(--shape-full);
+  border: 1px solid var(--outline); background: var(--surface-1);
+  font-size: 12px; font-weight: 560; color: var(--on-surface-variant);
+  transition: background var(--dur-short-2) var(--ease-standard), border-color var(--dur-short-2) var(--ease-standard);
+}
+.flowchip b { font-weight: 700; color: var(--on-surface); }
+.flowchip:hover { background: var(--surface-2); border-color: var(--outline-strong); }
+.flowchip[aria-pressed="true"] { background: var(--surface-3); border-color: var(--outline-strong); color: var(--on-surface); }
+
+/* ---- SECTION 3: queue + side rail --------------------------------------- */
+.grid-body { display: grid; grid-template-columns: minmax(0, 1fr) 312px; gap: var(--s4); align-items: start; }
+
+.segments { display: flex; gap: 3px; padding: 3px; background: var(--surface-2); border-radius: var(--shape-full); }
+.segment {
+  padding: 5px 13px; border-radius: var(--shape-full);
+  font-size: 12.5px; font-weight: 600; color: var(--on-surface-variant);
+  transition: color var(--dur-short-2) var(--ease-standard);
+}
+.segment[aria-selected="true"] { background: var(--surface-1); color: var(--on-surface); box-shadow: var(--elev-1); }
+
+/* Completed can be 41 rows — scroll inside the card instead of stretching the page. */
+.tablewrap { max-height: 552px; overflow-y: auto; overflow-x: hidden; border-radius: 0 0 var(--shape-lg) var(--shape-lg); }
+/* fixed layout: column widths are declared, never negotiated by content —
+   without it the ticket number wraps and rows grow to 3 lines. */
+table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+thead th {
+  position: sticky; top: 0; z-index: 5;    /* sticks to .tablewrap, not the page */
+  padding: 7px var(--s4); text-align: left;
+  background: var(--surface-2); color: var(--on-surface-faint);
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  border-block: 1px solid var(--outline);
+}
+tbody tr {
+  border-bottom: 1px solid var(--outline);
+  transition: background var(--dur-short-2) var(--ease-standard);
+  cursor: pointer;
+}
+tbody tr:last-child { border-bottom: 0; }
+tbody tr:hover { background: var(--surface-2); }
+tbody td { padding: 11px var(--s4); vertical-align: middle; }
+
+.tno { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; font-size: 11.5px; font-weight: 640; color: var(--primary); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.unread-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); animation: breathe 2.2s var(--ease-standard) infinite; }
+@keyframes breathe { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.8); } }
+
+.cust { display: flex; align-items: center; gap: var(--s3); }
+.cust__av { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; flex: none; }
+.cust__n { font-weight: 580; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue { color: var(--on-surface); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issuemeta { display: flex; align-items: center; gap: 6px; margin-top: 2px; overflow: hidden; white-space: nowrap; }
+.issuemeta .unassigned { color: var(--critical); font-weight: 660; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: var(--shape-full);
+  font-size: 11.5px; font-weight: 620; white-space: nowrap;
+}
+.chip--new       { background: var(--info-container);     color: var(--on-info-container); }
+.chip--pending   { background: var(--warning-container);  color: var(--on-warning-container); }
+.chip--assigned  { background: var(--primary-container);  color: var(--on-primary-container); }
+.chip--done      { background: var(--success-container);  color: var(--on-success-container); }
+.chip--completed { background: var(--neutral-container);  color: var(--on-neutral-container); }
+.chip--cancelled { background: transparent; color: var(--on-surface-faint); box-shadow: inset 0 0 0 1px var(--outline); }
+
+/* age: encodes urgency, not just time */
+.age { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 580; }
+.age__bar { width: 3px; height: 15px; border-radius: 2px; background: var(--outline-strong); }
+.age[data-risk="breach"] { color: var(--critical); }
+.age[data-risk="breach"] .age__bar { background: var(--critical); }
+.age[data-risk="risk"] { color: var(--warning); }
+.age[data-risk="risk"] .age__bar { background: var(--warning); }
+
+.rowactions { display: flex; gap: 4px; justify-content: flex-end; opacity: 0; transform: translateX(6px); transition: opacity var(--dur-short-4) var(--ease-emphasized), transform var(--dur-short-4) var(--ease-emphasized); }
+tbody tr:hover .rowactions, tbody tr:focus-within .rowactions { opacity: 1; transform: none; }
+.rowbtn {
+  width: 28px; height: 28px; border-radius: var(--shape-xs);
+  display: grid; place-items: center; color: var(--on-surface-variant);
+  background: var(--surface-1); border: 1px solid var(--outline);
+  transition: background var(--dur-short-2) var(--ease-standard), color var(--dur-short-2) var(--ease-standard);
+}
+.rowbtn:hover { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+
+/* ---- field team ---- */
+.tech { display: flex; align-items: center; gap: var(--s3); padding: 9px var(--s5); transition: background var(--dur-short-2) var(--ease-standard); }
+.tech:hover { background: var(--surface-2); }
+.tech__av { position: relative; }
+.tech__status {
+  position: absolute; right: -1px; bottom: -1px;
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid var(--surface-1); background: var(--on-surface-faint);
+}
+.tech[data-state="onsite"]    .tech__status { background: var(--success); }
+.tech[data-state="travelling"] .tech__status { background: var(--warning); }
+.tech[data-state="idle"]      .tech__status { background: var(--on-surface-faint); }
+.tech__body { flex: 1; min-width: 0; }
+.tech__row { display: flex; align-items: baseline; gap: var(--s2); }
+.tech__load { height: 4px; border-radius: 2px; background: var(--track); margin-top: 6px; overflow: hidden; }
+.tech__load i { display: block; height: 100%; width: 0; border-radius: 2px; background: var(--primary); transition: width var(--dur-long-2) var(--ease-emphasized-decelerate); }
+.tech[data-full="true"] .tech__load i { background: var(--warning); }
+
+/* ---- activity feed ---- */
+.feed { padding: var(--s2) var(--s5) var(--s4); }
+.feeditem { display: grid; grid-template-columns: 22px 1fr; gap: var(--s3); padding: 9px 0; position: relative; }
+.feeditem::before {
+  content: ""; position: absolute; left: 10.5px; top: 30px; bottom: -9px;
+  width: 1px; background: var(--outline);
+}
+.feeditem:last-child::before { display: none; }
+.feeditem__ico {
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface-2); color: var(--on-surface-variant); z-index: 1;
+}
+.feeditem[data-kind="pay"]    .feeditem__ico { background: var(--success-container); color: var(--success); }
+.feeditem[data-kind="new"]    .feeditem__ico { background: var(--info-container); color: var(--info); }
+.feeditem[data-kind="assign"] .feeditem__ico { background: var(--primary-container); color: var(--primary); }
+.feeditem[data-kind="alert"]  .feeditem__ico { background: var(--critical-container); color: var(--critical); }
+.feeditem__t { font-size: 13px; }
+.feeditem__t b { font-weight: 640; }
+
+/* ---- skeleton ---- */
+.skel { position: relative; overflow: hidden; background: var(--surface-2); border-radius: var(--shape-xs); }
+.skel::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--on-surface) 7%, transparent), transparent);
+  animation: shimmer 1.25s linear infinite;
+}
+@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+/* ---- entrance choreography ---- */
+[data-rise] { opacity: 0; transform: translateY(14px); }
+[data-rise].in {
+  opacity: 1; transform: none;
+  transition: opacity var(--dur-long-2) var(--ease-emphasized-decelerate),
+              transform var(--dur-long-2) var(--ease-emphasized-decelerate);
+}
+
+/* ---- command palette (container transform) ---- */
+.scrim {
+  position: fixed; inset: 0; z-index: 60; background: var(--scrim);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--dur-medium-1) var(--ease-standard);
+  backdrop-filter: blur(2px);
+}
+.scrim.open { opacity: 1; pointer-events: auto; }
+.palette {
+  position: fixed; z-index: 61; left: 50%; top: 14vh; transform: translate(-50%, -8px) scale(.97);
+  width: min(620px, 92vw); opacity: 0; pointer-events: none;
+  background: var(--surface-1); border: 1px solid var(--outline);
+  border-radius: var(--shape-lg); box-shadow: var(--elev-3); overflow: hidden;
+  transition: opacity var(--dur-medium-1) var(--ease-emphasized-decelerate),
+              transform var(--dur-medium-2) var(--ease-emphasized-decelerate);
+}
+.palette.open { opacity: 1; transform: translate(-50%, 0) scale(1); pointer-events: auto; }
+.palette__input { width: 100%; padding: var(--s4) var(--s5); border: 0; outline: 0; background: none; font-size: 15px; border-bottom: 1px solid var(--outline); }
+.palette__list { max-height: 320px; overflow-y: auto; padding: var(--s2); }
+.palette__item { display: flex; align-items: center; gap: var(--s3); width: 100%; padding: 9px var(--s3); border-radius: var(--shape-sm); text-align: left; }
+.palette__item[aria-selected="true"] { background: var(--surface-2); }
+.palette__item .k { margin-left: auto; font-size: 11px; color: var(--on-surface-faint); }
+
+/* ---- rationale drawer ---- */
+.drawer {
+  position: fixed; z-index: 61; inset: 0 0 0 auto; width: min(480px, 94vw);
+  background: var(--surface-1); border-left: 1px solid var(--outline);
+  box-shadow: var(--elev-3); overflow-y: auto;
+  transform: translateX(100%);
+  transition: transform var(--dur-long-2) var(--ease-emphasized);
+}
+.drawer.open { transform: none; }
+.drawer__head { position: sticky; top: 0; background: var(--surface-1); border-bottom: 1px solid var(--outline); padding: var(--s5); display: flex; align-items: center; gap: var(--s3); z-index: 1; }
+.drawer__body { padding: var(--s5); }
+.rat { margin-bottom: var(--s6); }
+.rat h4 { margin: 0 0 var(--s2); font-size: 13px; font-weight: 700; }
+.rat p { margin: 0 0 var(--s2); font-size: 13px; color: var(--on-surface-variant); line-height: 1.55; }
+.rat ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--on-surface-variant); line-height: 1.65; }
+.rat li + li { margin-top: 4px; }
+.rat table { font-size: 12.5px; }
+.rat table th { position: static; text-transform: none; letter-spacing: 0; font-size: 11px; padding: 6px 8px; }
+.rat table td { padding: 6px 8px; border-bottom: 1px solid var(--outline); vertical-align: top; color: var(--on-surface-variant); }
+.rat code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--on-surface); }
+.pill-b { display: inline-block; padding: 2px 8px; border-radius: var(--shape-full); background: var(--critical-container); color: var(--on-critical-container); font-size: 11px; font-weight: 640; }
+.pill-a { display: inline-block; padding: 2px 8px; border-radius: var(--shape-full); background: var(--success-container); color: var(--on-success-container); font-size: 11px; font-weight: 640; }
+
+/* ---- toast ---- */
+.toasts { position: fixed; left: 50%; bottom: 28px; z-index: 70; transform: translateX(-50%); display: flex; flex-direction: column; gap: var(--s2); align-items: center; pointer-events: none; }
+.toast {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: 11px var(--s5); border-radius: var(--shape-full);
+  background: var(--surface-inverse); color: var(--on-surface-inverse);
+  font-size: 13px; font-weight: 540; box-shadow: var(--elev-3);
+  animation: toastin var(--dur-medium-2) var(--ease-emphasized-decelerate);
+}
+@keyframes toastin { from { opacity: 0; transform: translateY(14px) scale(.96); } }
+.toast.out { animation: toastout var(--dur-short-4) var(--ease-emphasized-accelerate) forwards; }
+@keyframes toastout { to { opacity: 0; transform: translateY(8px) scale(.97); } }
+
+/* ---- footer stamp ---- */
+.stamp { margin-top: var(--s8); padding-top: var(--s4); border-top: 1px solid var(--outline); display: flex; gap: var(--s3); flex-wrap: wrap; align-items: center; }
+
+/* ---- responsive ---- */
+@media (max-width: 1280px) {
+  .grid-body { grid-template-columns: 1fr; }
+  .attn { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 1020px) {
+  .grid-hero { grid-template-columns: 1fr; }
+  /* Keep the rail at its real width and slide it fully off-screen. Zeroing
+     --rail-w instead collapses the rail to 0 while its children keep their
+     intrinsic size, and they paint on top of the content. */
+  .rail { transform: translateX(-100%); }
+  .main { margin-left: 0; }
+  .searchbtn { width: 100%; }
+}
+@media (max-width: 640px) {
+  .attn { grid-template-columns: 1fr; }
+  .content { padding: var(--s4) var(--s4) var(--s8); }
+  .col-hide { display: none; }
+}
+
+/* ---- reduced motion: honour the OS setting, keep the layout ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important; scroll-behavior: auto !important;
+  }
+  [data-rise] { opacity: 1; transform: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- =====================================================================
+       NAVIGATION RAIL
+       ===================================================================== -->
+  <aside class="rail">
+    <div class="rail__brand">
+      <div class="mark" aria-hidden="true">OG</div>
+      <div>
+        <div class="t-title" style="line-height:1.1">Oasis Globe</div>
+        <div class="t-label faint">Service Desk</div>
+      </div>
+    </div>
+
+    <nav class="rail__nav" aria-label="Main">
+      <div class="navgroup">
+        <div class="navgroup__label t-over">Service</div>
+        <a class="navitem" href="#" aria-current="page">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+          Overview
+        </a>
+        <a class="navitem" href="#">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+          Service Requests <span class="navitem__count navitem__count--hot">6</span>
+        </a>
+        <a class="navitem" href="#">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          All Chats <span class="navitem__count">5</span>
+        </a>
+        <a class="navitem" href="#">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Clients
+        </a>
+        <a class="navitem" href="#">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Technicians
+        </a>
+      </div>
+
+      <div class="navgroup">
+        <div class="navgroup__label t-over">Operations</div>
+        <a class="navitem" href="#">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-9 5-9-5V8l9-5 9 5z"/><path d="M3.3 7 12 12l8.7-5M12 22V12"/></svg>
+          Inventory &amp; Parts <span class="navitem__count">3</span>
+        </a>
+        <a class="navitem" href="#">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>
+          Incentives
+        </a>
+      </div>
+    </nav>
+
+    <div class="rail__foot">
+      <button class="userchip">
+        <span class="avatar">RP</span>
+        <span style="flex:1;min-width:0;text-align:left">
+          <span class="t-body" style="display:block;font-weight:580">Rohit Patil</span>
+          <span class="t-label faint" style="display:block">Admin</span>
+        </span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="faint"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- =====================================================================
+       MAIN COLUMN
+       ===================================================================== -->
+  <div class="main">
+
+    <header class="topbar">
+      <button class="searchbtn" id="openPalette" aria-label="Search or run a command">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span class="t-body">Search tickets, customers, technicians…</span>
+        <span class="kbd"><span>Ctrl</span><span>K</span></span>
+      </button>
+
+      <div class="topbar__right">
+        <span class="live" title="Auto-refreshing every 8 seconds"><span class="live__dot"></span> Live</span>
+        <button class="iconbtn" id="themeBtn" aria-label="Toggle dark mode">
+          <svg id="themeIcon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <button class="iconbtn" aria-label="Notifications, 5 unread">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+          <span class="iconbtn__dot"></span>
+        </button>
+        <button class="btn btn--tonal btn--sm" id="whyBtn" style="height:38px;padding:0 14px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.4 9a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.6-2.6 2.6M12 17h.01"/></svg>
+          Why this design
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- ---------- page head ---------- -->
+      <div class="pagehead" data-rise>
+        <div>
+          <p class="t-over" style="color:var(--primary);margin:0 0 6px">Saturday · 25 July 2026</p>
+          <h1 class="t-headline" style="margin:0">Good afternoon, Rohit</h1>
+          <div class="pagehead__meta">
+            <span class="t-body muted"><b id="openJobs" style="font-weight:660;color:var(--on-surface)">—</b> jobs open · <b id="inField" style="font-weight:660;color:var(--on-surface)">—</b> technicians in the field · next SLA breach in <b id="slaCountdown" style="font-weight:660;color:var(--warning)">38m</b></span>
+          </div>
+        </div>
+        <div class="pagehead__actions">
+          <button class="btn btn--tonal" data-toast="Refreshed · 3 new events">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+            Refresh
+          </button>
+          <button class="btn btn--filled" data-toast="New request form would open here">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            New request
+          </button>
+        </div>
+      </div>
+
+      <!-- ---------- 1. NEEDS ACTION ---------- -->
+      <section class="section" aria-labelledby="h-attn" data-rise>
+        <div class="section__head">
+          <h2 class="t-title" id="h-attn" style="margin:0">Needs action</h2>
+          <span class="t-label faint">Sorted by cost of delay · updates live</span>
+        </div>
+        <div class="attn">
+          <button class="attncard" data-sev="critical" data-toast="Filtered to 3 unassigned jobs older than 2h">
+            <div class="attncard__top">
+              <span class="attncard__ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 8v5M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
+              <span class="t-label muted">Unassigned &gt; 2h</span>
+            </div>
+            <div class="attncard__n" data-count="3">0</div>
+            <div class="t-label faint" style="font-weight:500">Oldest waiting 4h 12m · Andheri W</div>
+            <span class="attncard__cta">Assign now <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></span>
+          </button>
+
+          <button class="attncard" data-sev="warning" data-toast="Showing 2 jobs at risk of breaching today's SLA">
+            <div class="attncard__top">
+              <span class="attncard__ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+              <span class="t-label muted">SLA at risk today</span>
+            </div>
+            <div class="attncard__n" data-count="2">0</div>
+            <div class="t-label faint" style="font-weight:500">Both promised before 6:00 PM</div>
+            <span class="attncard__cta">Review <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></span>
+          </button>
+
+          <button class="attncard" data-sev="info" data-toast="Opening 5 unread WhatsApp threads">
+            <div class="attncard__top">
+              <span class="attncard__ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+              <span class="t-label muted">Unread customer replies</span>
+            </div>
+            <div class="attncard__n" data-count="5">0</div>
+            <div class="t-label faint" style="font-weight:500">2 waiting since this morning</div>
+            <span class="attncard__cta">Open inbox <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></span>
+          </button>
+
+          <button class="attncard" data-sev="neutral" data-toast="Opening stock reconciliation">
+            <div class="attncard__top">
+              <span class="attncard__ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-9 5-9-5V8l9-5 9 5z"/><path d="M3.3 7 12 12l8.7-5M12 22V12"/></svg></span>
+              <span class="t-label muted">Parts unreconciled</span>
+            </div>
+            <div class="attncard__n" data-count="18400" data-prefix="₹" data-format="inr">0</div>
+            <div class="t-label faint" style="font-weight:500">Across 3 technicians · 6 days old</div>
+            <span class="attncard__cta">Reconcile <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ---------- 2. PULSE + PIPELINE ---------- -->
+      <section class="section grid-hero" aria-label="Today's performance">
+
+        <!-- today's pulse -->
+        <div class="card pulse" data-rise>
+          <div style="display:flex;align-items:center;gap:var(--s2)">
+            <span class="t-over faint">Booked today</span>
+            <span class="spacer" style="margin-left:auto"></span>
+            <span class="t-label faint">vs 7-day avg</span>
+          </div>
+          <div class="pulse__value">
+            <span class="t-display" data-count="142800" data-prefix="₹" data-format="inr">₹0</span>
+            <span class="delta">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>
+              18%
+            </span>
+          </div>
+          <div class="t-label faint" style="font-weight:500">₹1,20,900 average · best day this month was ₹1,58,300</div>
+
+          <svg class="spark" viewBox="0 0 320 78" preserveAspectRatio="none" height="78" aria-hidden="true">
+            <defs>
+              <linearGradient id="sparkfill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"  stop-color="var(--primary)" stop-opacity=".22"/>
+                <stop offset="100%" stop-color="var(--primary)" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path class="area" d=""/>
+            <path class="line" d=""/>
+            <circle class="head" r="3.5" cx="0" cy="0"/>
+          </svg>
+
+          <div class="substats">
+            <div>
+              <div class="substat__v" data-count="12">0</div>
+              <div class="substat__l t-label faint" style="font-weight:500">Jobs closed</div>
+            </div>
+            <div>
+              <div class="substat__v"><span data-count="46" data-divide="10">0</span> <span style="font-size:12px;color:var(--warning)">★</span></div>
+              <div class="substat__l t-label faint" style="font-weight:500">CSAT (9 rated)</div>
+            </div>
+            <div>
+              <div class="substat__v"><span data-count="86">0</span>%</div>
+              <div class="substat__l t-label faint" style="font-weight:500">First-visit fix</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- pipeline flow -->
+        <div class="card flow" data-rise>
+          <div style="display:flex;align-items:center;gap:var(--s3)">
+            <h2 class="t-title" style="margin:0">Pipeline</h2>
+            <span class="t-label faint">New → Pending → Assigned → Service done → Completed</span>
+            <span style="margin-left:auto" class="t-label faint">Click a stage to filter the queue</span>
+          </div>
+
+          <div class="flowbars" role="group" aria-label="Filter queue by pipeline stage">
+            <button class="flowrow" data-stage="new" data-n="6" style="--c: var(--info)" aria-pressed="true">
+              <span class="flowrow__label"><i class="flowrow__swatch"></i> New</span>
+              <span class="flowrow__track"><i class="flowrow__fill"></i></span>
+              <span class="flowrow__n">6</span>
+            </button>
+            <button class="flowrow" data-stage="pending" data-n="4" style="--c: var(--warning)" aria-pressed="false">
+              <span class="flowrow__label"><i class="flowrow__swatch"></i> Pending</span>
+              <span class="flowrow__track"><i class="flowrow__fill"></i></span>
+              <span class="flowrow__n">4</span>
+            </button>
+            <button class="flowrow" data-stage="assigned" data-n="9" style="--c: var(--primary)" aria-pressed="false">
+              <span class="flowrow__label"><i class="flowrow__swatch"></i> Assigned</span>
+              <span class="flowrow__track"><i class="flowrow__fill"></i></span>
+              <span class="flowrow__n">9</span>
+            </button>
+            <button class="flowrow" data-stage="service_done" data-n="12" style="--c: var(--success)" aria-pressed="false">
+              <span class="flowrow__label"><i class="flowrow__swatch"></i> Service done</span>
+              <span class="flowrow__track"><i class="flowrow__fill"></i></span>
+              <span class="flowrow__n">12</span>
+            </button>
+          </div>
+
+          <!-- Archive stages are deliberately NOT bars. Completed (41) is 3.4x the
+               largest open stage; putting it on the same scale flattens every stage
+               that still needs a decision. It stays reachable as a filter chip. -->
+          <div class="flowfoot">
+            <span class="metric-inline"><b data-count="41" data-divide="10">0</b><span class="t-label faint">h median new → assigned</span></span>
+            <span class="metric-inline"><b data-count="19" data-divide="10">0</b><span class="t-label faint">d median assigned → closed</span></span>
+            <span class="metric-inline"><b style="color:var(--warning)" data-count="3">0</b><span class="t-label faint">reopened this week</span></span>
+            <span style="margin-left:auto;display:flex;gap:6px">
+              <button class="flowchip" data-stage="completed" aria-pressed="false">Completed <b>41</b></button>
+              <button class="flowchip" data-stage="cancelled" aria-pressed="false">Cancelled <b>2</b></button>
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- 3. QUEUE + SIDE RAIL ---------- -->
+      <section class="grid-body" aria-label="Work queue">
+
+        <!-- queue -->
+        <div class="card" data-rise>
+          <div class="card__head">
+            <h2 class="t-title">Queue</h2>
+            <span class="t-label faint" id="queueCount">6 requests</span>
+            <span class="spacer"></span>
+            <div class="segments" role="tablist" aria-label="Queue sort">
+              <button class="segment" role="tab" aria-selected="true"  data-sort="urgency">Urgency</button>
+              <button class="segment" role="tab" aria-selected="false" data-sort="recent">Recent</button>
+              <button class="segment" role="tab" aria-selected="false" data-sort="value">Value</button>
+            </div>
+          </div>
+
+          <div class="tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:138px">Ticket</th>
+                  <th style="width:172px">Customer</th>
+                  <th>Issue &amp; assignee</th>
+                  <th style="width:104px">Stage</th>
+                  <th style="width:88px">Waiting</th>
+                  <th style="width:72px"></th>
+                </tr>
+              </thead>
+              <tbody id="queueBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- side rail -->
+        <div style="display:flex;flex-direction:column;gap:var(--s4)">
+
+          <div class="card" data-rise>
+            <div class="card__head">
+              <h2 class="t-title">Field team</h2>
+              <span class="spacer"></span>
+              <span class="t-label faint" id="techSummary">—</span>
+            </div>
+            <div id="techList" style="padding-bottom:var(--s3)"></div>
+          </div>
+
+          <div class="card" data-rise>
+            <div class="card__head">
+              <h2 class="t-title">Activity</h2>
+              <span class="spacer"></span>
+              <span class="live" style="font-size:10.5px;padding:3px 9px 3px 7px"><span class="live__dot"></span> Live</span>
+            </div>
+            <div class="feed" id="feed" aria-live="polite" aria-relevant="additions"></div>
+          </div>
+
+        </div>
+      </section>
+
+      <footer class="stamp">
+        <span class="t-label faint">Oasis Globe Service Desk · dashboard prototype <b style="color:var(--on-surface-variant)">v2.0.0-design.1</b></span>
+        <span class="t-label faint">· 25 Jul 2026</span>
+        <span class="t-label faint" style="margin-left:auto">Mock data. Zero dependencies. Ctrl/⌘K for the command palette.</span>
+      </footer>
+
+    </main>
+  </div>
+</div>
+
+<!-- =====================================================================
+     COMMAND PALETTE
+     ===================================================================== -->
+<div class="scrim" id="scrim"></div>
+<div class="palette" id="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+  <input class="palette__input" id="paletteInput" placeholder="Search a ticket, customer, technician — or type a command…" autocomplete="off" />
+  <div class="palette__list" id="paletteList" role="listbox"></div>
+</div>
+
+<!-- =====================================================================
+     DESIGN RATIONALE DRAWER
+     ===================================================================== -->
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Design rationale">
+  <div class="drawer__head">
+    <h2 class="t-title" style="margin:0">Why this design</h2>
+    <span class="spacer" style="margin-left:auto"></span>
+    <button class="iconbtn" id="drawerClose" aria-label="Close">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="drawer__body">
+
+    <div class="rat">
+      <h4>1 · The problem with the current dashboard</h4>
+      <p>Seven KPI cards rendered at identical weight — <em>New, Pending, Assigned, Service Done, Completed, Cancelled, All</em>. Everything is equally loud, so nothing is. <b>Completed (41)</b> and <b>Cancelled</b> are archives that need no decision, yet they occupy the same real estate as <b>New</b>, which is the only tile that represents money at risk.</p>
+      <p>The counts are also filters, not insight. They answer "how many are in state X", never "what is going wrong and what does it cost me".</p>
+    </div>
+
+    <div class="rat">
+      <h4>2 · Goal → Signal → Metric</h4>
+      <p>Google's GSM framework: never put a number on screen until you can name the goal it serves and the decision it drives.</p>
+      <table>
+        <thead><tr><th>Goal</th><th>Signal</th><th>Metric on screen</th></tr></thead>
+        <tbody>
+          <tr><td>No lead is left waiting</td><td>Unassigned age climbing</td><td>Unassigned &gt; 2h + oldest wait</td></tr>
+          <tr><td>Promises are kept</td><td>Scheduled slot approaching</td><td>SLA at risk today + countdown</td></tr>
+          <tr><td>Customer feels heard</td><td>Inbound WhatsApp unanswered</td><td>Unread replies + age</td></tr>
+          <tr><td>Cash isn't leaking</td><td>Issued parts never reconciled</td><td>₹ unreconciled + technician count</td></tr>
+          <tr><td>Field capacity is used well</td><td>Load skew across technicians</td><td>Per-tech load bar + live state</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="rat">
+      <h4>3 · HEART, mapped to this business</h4>
+      <ul>
+        <li><b>Happiness</b> → CSAT 4.6 from 9 rated jobs, surfaced on the hero card instead of buried in a table column.</li>
+        <li><b>Engagement</b> → activity feed; the desk should feel alive without the operator refreshing.</li>
+        <li><b>Adoption</b> → % of tickets that complete WhatsApp intake without a human touch (next iteration).</li>
+        <li><b>Retention</b> → reopened-this-week counter in the pipeline footer — a reopen is a failed job.</li>
+        <li><b>Task success</b> → first-visit fix rate 86%, plus the two median cycle times under the pipeline.</li>
+      </ul>
+    </div>
+
+    <div class="rat">
+      <h4>4 · Information hierarchy</h4>
+      <p>Three altitudes, read top to bottom in about eight seconds:</p>
+      <ul>
+        <li><b>Act</b> — "Needs action": four decisions ordered by cost of delay. Each is a verb, not a noun.</li>
+        <li><b>Assess</b> — Booked today (with 14-day trend) and the pipeline as a <em>proportional</em> flow, so a bulge is visible as shape rather than read as digits.</li>
+        <li><b>Investigate</b> — the queue, sorted by urgency by default, with waiting-time encoded as colour so triage is pre-attentive.</li>
+      </ul>
+      <p>Stage counts remain clickable filters, so nothing you can do today is taken away — it is re-ranked.</p>
+    </div>
+
+    <div class="rat">
+      <h4>5 · Before → after</h4>
+      <table>
+        <tbody>
+          <tr><td><span class="pill-b">before</span> 7 equal KPI tiles</td><td><span class="pill-a">after</span> 4 action cards + 1 proportional pipeline</td></tr>
+          <tr><td><span class="pill-b">before</span> "Created 3h ago"</td><td><span class="pill-a">after</span> waiting time coloured by SLA risk</td></tr>
+          <tr><td><span class="pill-b">before</span> rating hidden in a column</td><td><span class="pill-a">after</span> CSAT promoted to today's pulse</td></tr>
+          <tr><td><span class="pill-b">before</span> no technician view</td><td><span class="pill-a">after</span> live load + capacity rail</td></tr>
+          <tr><td><span class="pill-b">before</span> no money on the dashboard</td><td><span class="pill-a">after</span> booked today, trend, unreconciled ₹</td></tr>
+          <tr><td><span class="pill-b">before</span> 8s poll, silent</td><td><span class="pill-a">after</span> live feed makes the poll legible</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="rat">
+      <h4>6 · Motion specification</h4>
+      <p>Motion is used to explain change, never to decorate. Every value below is a Material 3 motion token; only <code>transform</code> and <code>opacity</code> are animated, so it stays on the compositor at 60fps.</p>
+      <table>
+        <thead><tr><th>Where</th><th>Token</th><th>Duration</th></tr></thead>
+        <tbody>
+          <tr><td>Section entrance (staggered 60ms)</td><td><code>emphasized-decelerate</code><br><code>cubic-bezier(.05,.7,.1,1)</code></td><td>500ms</td></tr>
+          <tr><td>Pipeline bar growth</td><td><code>emphasized-decelerate</code></td><td>600ms</td></tr>
+          <tr><td>Number count-up</td><td>ease-out cubic, rAF</td><td>900ms</td></tr>
+          <tr><td>Sparkline draw</td><td><code>standard-decelerate</code></td><td>900ms</td></tr>
+          <tr><td>Card hover lift</td><td><code>emphasized-decelerate</code></td><td>200ms</td></tr>
+          <tr><td>Button press</td><td>spring <code>cubic-bezier(.34,1.56,.64,1)</code></td><td>100ms</td></tr>
+          <tr><td>Palette open (container transform)</td><td><code>emphasized-decelerate</code></td><td>250–300ms</td></tr>
+          <tr><td>Queue re-sort</td><td>shared-axis Y, FLIP</td><td>400ms</td></tr>
+          <tr><td>Feed insert</td><td><code>emphasized-decelerate</code></td><td>400ms</td></tr>
+          <tr><td>Drawer</td><td><code>emphasized</code></td><td>500ms</td></tr>
+        </tbody>
+      </table>
+      <p><code>prefers-reduced-motion</code> collapses every one of these to 1ms while keeping the layout intact — no animation is load-bearing for comprehension.</p>
+    </div>
+
+    <div class="rat">
+      <h4>7 · Accessibility floor</h4>
+      <ul>
+        <li>Body text ≥ 4.5:1 in both themes; urgency is never colour-alone (bar + text + label).</li>
+        <li>Every interactive element is a real <code>&lt;button&gt;</code> or <code>&lt;a&gt;</code> with a visible focus ring.</li>
+        <li>Filters expose <code>aria-pressed</code>; sort exposes <code>role="tablist"</code>; the feed is an <code>aria-live</code> region.</li>
+        <li>Ctrl/⌘K palette, Esc to dismiss, arrow keys to navigate — a keyboard operator never has to reach for the mouse.</li>
+      </ul>
+    </div>
+
+    <div class="rat">
+      <h4>8 · What this costs to build</h4>
+      <ul>
+        <li>Reuses the existing token seed (<code>brand #0f766e</code>), Tailwind config and card/badge primitives.</li>
+        <li>Needs four new backend aggregates: unassigned-age, SLA risk, unreconciled ₹, and daily booked/CSAT rollups.</li>
+        <li>Technician load and live state come from data you already collect (assignments + location).</li>
+        <li>No animation library. All motion above is CSS + the Web Animations API — same constraint the technician app runs under.</li>
+      </ul>
+    </div>
+
+  </div>
+</aside>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* ==========================================================================
+   PROTOTYPE BEHAVIOUR
+   All data below is mock, shaped to match the real API payloads
+   (ticket_number OG-YYMMDD-NNNN, board_bucket, customer{}, technician, rating).
+   ========================================================================== */
+(function () {
+  "use strict";
+
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------------------------------------------------------------- data */
+  var TICKETS = [
+    { no:"OG-260725-0148", name:"Priya Menon",    area:"Andheri W",  issue:"RO not dispensing water — tank empty since morning", stage:"new",      tech:null,             mins:252, value:2400, unread:true  },
+    { no:"OG-260725-0147", name:"Rakesh Sharma",  area:"Powai",      issue:"Kent Grand+ leaking from the bottom housing",        stage:"new",      tech:null,             mins:168, value:1800, unread:false },
+    { no:"OG-260725-0146", name:"Fatima Qureshi", area:"Bandra E",   issue:"Service due — AMC visit, filter change requested",   stage:"new",      tech:null,             mins:131, value:3200, unread:true  },
+    { no:"OG-260724-0143", name:"Sunil Deshpande",area:"Vile Parle", issue:"Water tastes salty after last service",              stage:"pending",  tech:"Imran Shaikh",   mins:96,  value:1200, unread:true  },
+    { no:"OG-260725-0145", name:"Anita Gowda",    area:"Goregaon",   issue:"Aquaguard beeping continuously, no flow",            stage:"assigned", tech:"Sandeep Rawat",  mins:74,  value:2600, unread:false },
+    { no:"OG-260725-0144", name:"Mahesh Iyer",    area:"Jogeshwari", issue:"New installation — 2 BHK, kitchen counter mount",    stage:"assigned", tech:"Ramesh Yadav",   mins:41,  value:6800, unread:false },
+    { no:"OG-260725-0142", name:"Deepa Kulkarni", area:"Malad W",    issue:"Membrane replacement quoted, awaiting approval",     stage:"pending",  tech:"Vikas Pawar",    mins:33,  value:4100, unread:false },
+    { no:"OG-260724-0139", name:"Arjun Nair",     area:"Santacruz",  issue:"Low flow after monsoon — pre-filter choked",         stage:"service_done", tech:"Sandeep Rawat", mins:18, value:1500, unread:false },
+    { no:"OG-260724-0137", name:"Shweta Rane",    area:"Kandivali",  issue:"Annual service completed — 5★ rated",                stage:"completed", tech:"Imran Shaikh",  mins:1180, value:2900, unread:false },
+    { no:"OG-260723-0131", name:"Vinod Salunkhe", area:"Borivali",   issue:"UV lamp replaced under warranty",                    stage:"completed", tech:"Ramesh Yadav",  mins:2410, value:3600, unread:false },
+    { no:"OG-260724-0136", name:"Kavita Joshi",   area:"Dahisar",    issue:"Customer bought a new unit elsewhere",               stage:"cancelled", tech:null,            mins:1620, value:0,    unread:false }
+  ];
+
+  /* The eight rows above are hand-written so the demo reads well. The pipeline
+     is then topped up to realistic volumes from these pools, and every count on
+     the page is derived from the resulting array — no number is typed twice. */
+  var TARGETS   = { new: 6, pending: 4, assigned: 9, service_done: 12, completed: 41, cancelled: 2 };
+  var POOL_NAME = ["Nikhil Bhat","Shalini Rao","Amit Kulkarni","Rehana Shaikh","Gopal Krishnan",
+                   "Meera Pandit","Sanjay Thorat","Divya Raghavan","Farhan Ansari","Neha Bhosale",
+                   "Ravi Chandran","Asmita Kadam","Joseph Dsouza","Pooja Wagh","Karan Malhotra"];
+  var POOL_AREA = ["Kandivali","Borivali","Dahisar","Malad E","Chembur","Ghatkopar","Mulund","Thane W","Kurla","Sion"];
+  var POOL_TECH = ["Sandeep Rawat","Ramesh Yadav","Imran Shaikh","Vikas Pawar"];
+  var POOL_ISSUE = [
+    "Filter change due — AMC visit scheduled",
+    "Water flow reduced after monsoon",
+    "TDS higher than expected, customer complained",
+    "Unit making noise during purification cycle",
+    "Storage tank not filling completely",
+    "New installation — 3 BHK, wall mount",
+    "Auto-shutoff not triggering, overflow risk",
+    "Candle replacement quoted last visit",
+    "Display panel blank, no power indication",
+    "Leak at the inlet connector"
+  ];
+
+  (function padPipeline() {
+    // Deterministic LCG — same demo data on every reload, so screenshots match.
+    var seed = 7;
+    function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+    function pick(a) { return a[Math.floor(rnd() * a.length)]; }
+
+    var seq = 136;
+    Object.keys(TARGETS).forEach(function (stage) {
+      var have = TICKETS.filter(function (t) { return t.stage === stage; }).length;
+      for (var i = have; i < TARGETS[stage]; i++) {
+        var assigned = stage !== "new" && stage !== "cancelled";
+        TICKETS.push({
+          no: "OG-2607" + (20 + Math.floor(rnd() * 4)) + "-0" + (seq--),
+          name: pick(POOL_NAME),
+          area: pick(POOL_AREA),
+          issue: pick(POOL_ISSUE),
+          stage: stage,
+          tech: assigned ? pick(POOL_TECH) : null,
+          // Fresh leads for the generated New rows — if almost everything is red,
+          // red stops meaning anything. Only the curated backlog breaches.
+          mins: stage === "new"       ? Math.round(10 + rnd() * 95)
+              : stage === "completed" ? Math.round(600 + rnd() * 2400)
+              :                         Math.round(20 + rnd() * 380),
+          value: Math.round((8 + rnd() * 60)) * 100,
+          unread: rnd() > 0.85
+        });
+      }
+    });
+  })();
+
+  var TECHS = [
+    { name:"Sandeep Rawat", state:"onsite",     load:4, cap:6, where:"On site · Goregaon",   since:"22m" },
+    { name:"Ramesh Yadav",  state:"onsite",     load:5, cap:6, where:"On site · Jogeshwari", since:"1h 05m" },
+    { name:"Imran Shaikh",  state:"travelling", load:3, cap:6, where:"En route · Vile Parle", since:"8m" },
+    { name:"Vikas Pawar",   state:"idle",       load:2, cap:6, where:"Free · Malad depot",   since:"35m" }
+  ];
+
+  var FEED_SEED = [
+    { kind:"pay",    html:"<b>₹3,400</b> received · OG-260725-0141",      t:"2m ago" },
+    { kind:"new",    html:"<b>Priya Menon</b> completed WhatsApp intake",  t:"6m ago" },
+    { kind:"assign", html:"OG-260725-0144 assigned to <b>Ramesh Yadav</b>",t:"14m ago" },
+    { kind:"alert",  html:"OG-260724-0143 crossed <b>90m</b> unassigned",  t:"22m ago" },
+    { kind:"pay",    html:"<b>₹1,200</b> received · OG-260724-0138",       t:"41m ago" }
+  ];
+
+  var FEED_STREAM = [
+    { kind:"new",    html:"<b>Nikhil Bhat</b> started a WhatsApp request" },
+    { kind:"pay",    html:"<b>₹2,600</b> received · OG-260725-0145" },
+    { kind:"assign", html:"OG-260725-0146 assigned to <b>Vikas Pawar</b>" },
+    { kind:"alert",  html:"<b>Kent sediment filter</b> stock below reorder point" },
+    { kind:"new",    html:"<b>Shweta Rane</b> rated her visit <b>5★</b>" }
+  ];
+
+  var SPARK = [88,102,96,119,108,127,113,105,131,122,116,140,121,143];
+
+  var STAGE_META = {
+    new:          { label:"New",          cls:"chip--new" },
+    pending:      { label:"Pending",      cls:"chip--pending" },
+    assigned:     { label:"Assigned",     cls:"chip--assigned" },
+    service_done: { label:"Service done", cls:"chip--done" },
+    completed:    { label:"Completed",    cls:"chip--completed" },
+    cancelled:    { label:"Cancelled",    cls:"chip--cancelled" }
+  };
+
+  /* ------------------------------------------------------------- helpers */
+  var $  = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+
+  function inr(n) { return "₹" + Number(n).toLocaleString("en-IN"); }
+
+  function initials(name) {
+    return name.split(" ").map(function (w) { return w[0]; }).slice(0, 2).join("").toUpperCase();
+  }
+
+  // Deterministic avatar tint — same name always gets the same colour, so rows
+  // stay recognisable across refreshes.
+  var TINTS = [
+    ["#dbe8fd","#1a5fb4"], ["#e6e0fb","#5535b8"], ["#fde8e6","#b3261e"],
+    ["#ffe9c9","#9a5b00"], ["#cdf0dc","#146c43"], ["#fce0f0","#a3157a"],
+    ["#dcf0f5","#0b6272"], ["#eae5da","#6b5a3e"]
+  ];
+  function tint(name) {
+    var h = 0;
+    for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    return TINTS[h % TINTS.length];
+  }
+
+  function humanMins(m) {
+    if (m < 60) return m + "m";
+    var h = Math.floor(m / 60), r = m % 60;
+    return h >= 10 ? h + "h" : h + "h " + (r < 10 ? "0" : "") + r + "m";
+  }
+
+  // Waiting time is only meaningful relative to the stage it's waiting in.
+  function risk(t) {
+    if (t.stage === "new" && t.mins > 120) return "breach";
+    if (t.stage === "new" && t.mins > 60)  return "risk";
+    if (t.stage === "pending" && t.mins > 90) return "risk";
+    return "ok";
+  }
+
+  /* --------------------------------------------------- entrance stagger */
+  var rises = $$("[data-rise]");
+  rises.forEach(function (el, i) {
+    setTimeout(function () { el.classList.add("in"); }, reduced ? 0 : 70 + i * 60);
+  });
+
+  /* ------------------------------------------------------ number count-up */
+  /* ------------------------------------------ derive the attention headline */
+  // The "unassigned > 2h" card must agree with the red rows in the queue below
+  // it, so it is counted from the same array rather than typed into the markup.
+  (function attention() {
+    var stale = TICKETS
+      .filter(function (t) { return t.stage === "new" && t.mins > 120; })
+      .sort(function (a, b) { return b.mins - a.mins; });
+
+    var card = $('.attncard[data-sev="critical"]');
+    $(".attncard__n", card).setAttribute("data-count", stale.length);
+    if (stale.length) {
+      $(".t-label.faint", card).textContent =
+        "Oldest waiting " + humanMins(stale[0].mins) + " · " + stale[0].area;
+    }
+  })();
+
+  function renderCount(el, v) {
+    var divide = parseFloat(el.getAttribute("data-divide") || "1");
+    var prefix = el.getAttribute("data-prefix") || "";
+    var isInr  = el.getAttribute("data-format") === "inr";
+    var out;
+    if (isInr) out = inr(Math.round(v));
+    else if (divide > 1) out = (v / divide).toFixed(1);
+    else out = String(Math.round(v));
+    el.textContent = (isInr ? "" : prefix) + out;
+  }
+
+  // Snap straight to the final value — no animation, no rAF.
+  function settle(el) {
+    if (el.dataset.done) return;
+    el.dataset.done = "1";
+    renderCount(el, parseFloat(el.getAttribute("data-count")));
+  }
+
+  function countUp(el) {
+    // rAF is frozen while the document is hidden, so an animated counter loaded
+    // in a background tab would sit at "0" until the tab is focused. The number
+    // matters more than the animation.
+    if (reduced || document.hidden) { settle(el); return; }
+
+    el.dataset.done = "1";
+    var target = parseFloat(el.getAttribute("data-count"));
+    var start  = performance.now();
+
+    (function frame(now) {
+      var p = Math.min(1, (now - start) / 900);
+      renderCount(el, target * (1 - Math.pow(1 - p, 3)));   // ease-out cubic
+      if (p < 1) requestAnimationFrame(frame);
+    })(start);
+  }
+
+  var counterObserver = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (!en.isIntersecting) return;
+      countUp(en.target);
+      counterObserver.unobserve(en.target);
+    });
+  }, { threshold: 0.4 });
+  $$("[data-count]").forEach(function (el) { counterObserver.observe(el); });
+
+  // Safety net: whatever happened to rAF or the observer, every number on screen
+  // is correct within 2.5s of load.
+  setTimeout(function () { $$("[data-count]").forEach(settle); }, 2500);
+
+  /* ------------------------------------------------------------ sparkline */
+  (function sparkline() {
+    var svg = $(".spark"); if (!svg) return;
+    var W = 320, H = 78, PAD = 6;
+    var min = Math.min.apply(null, SPARK), max = Math.max.apply(null, SPARK);
+    var pts = SPARK.map(function (v, i) {
+      return [
+        (i / (SPARK.length - 1)) * W,
+        H - PAD - ((v - min) / (max - min)) * (H - PAD * 2)
+      ];
+    });
+
+    // Catmull-Rom → cubic bezier, for a curve that reads as a trend not a graph.
+    var d = "M" + pts[0][0] + "," + pts[0][1];
+    for (var i = 0; i < pts.length - 1; i++) {
+      var p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+      d += " C" + (p1[0] + (p2[0] - p0[0]) / 6) + "," + (p1[1] + (p2[1] - p0[1]) / 6) +
+           " " + (p2[0] - (p3[0] - p1[0]) / 6) + "," + (p2[1] - (p3[1] - p1[1]) / 6) +
+           " " + p2[0] + "," + p2[1];
+    }
+
+    var line = $("path.line", svg), area = $("path.area", svg), head = $("circle.head", svg);
+    line.setAttribute("d", d);
+    area.setAttribute("d", d + " L" + W + "," + H + " L0," + H + " Z");
+    head.setAttribute("cx", pts[pts.length - 1][0] - 2);
+    head.setAttribute("cy", pts[pts.length - 1][1]);
+
+    if (reduced) { area.style.opacity = 1; head.style.opacity = 1; return; }
+
+    var len = line.getTotalLength();
+    line.style.strokeDasharray  = len;
+    line.style.strokeDashoffset = len;
+    line.animate([{ strokeDashoffset: len }, { strokeDashoffset: 0 }],
+      { duration: 900, easing: "cubic-bezier(0,0,0,1)", fill: "forwards", delay: 320 });
+    area.animate([{ opacity: 0 }, { opacity: 1 }],
+      { duration: 500, easing: "cubic-bezier(.05,.7,.1,1)", fill: "forwards", delay: 780 });
+    head.animate([{ opacity: 0, transform: "scale(.4)" }, { opacity: 1, transform: "scale(1)" }],
+      { duration: 300, easing: "cubic-bezier(.34,1.56,.64,1)", fill: "forwards", delay: 1120 });
+  })();
+
+  /* --------------------------------------------------------- pipeline bars */
+  function stageCount(s) { return TICKETS.filter(function (t) { return t.stage === s; }).length; }
+
+  (function pipeline() {
+    var rows    = $$(".flowrow");
+    var chips   = $$(".flowchip");
+    var filters = rows.concat(chips);             // bars + archive chips = one filter group
+
+    // Every count comes from TICKETS, so the bars can never drift from the queue.
+    rows.forEach(function (r) { r.setAttribute("data-n", stageCount(r.getAttribute("data-stage"))); });
+    chips.forEach(function (c) { $("b", c).textContent = stageCount(c.getAttribute("data-stage")); });
+
+    // Scale bars to the largest OPEN stage only.
+    var max = Math.max.apply(null, rows.map(function (r) { return +r.getAttribute("data-n"); }));
+    rows.forEach(function (row, i) {
+      var n = +row.getAttribute("data-n");
+      $(".flowrow__n", row).textContent = n;
+      setTimeout(function () { $(".flowrow__fill", row).style.width = (n / max) * 100 + "%"; }, reduced ? 0 : 420 + i * 70);
+    });
+
+    filters.forEach(function (el) {
+      el.addEventListener("click", function () {
+        filters.forEach(function (f) { f.setAttribute("aria-pressed", String(f === el)); });
+        renderQueue(el.getAttribute("data-stage"));
+      });
+    });
+  })();
+
+  /* ------------------------------------------------------------ the queue */
+  var currentStage = "new";
+  var currentSort  = "urgency";
+
+  function sortFn(a, b) {
+    if (currentSort === "recent") return a.mins - b.mins;
+    if (currentSort === "value")  return b.value - a.value;
+    var rank = { breach: 0, risk: 1, ok: 2 };
+    var d = rank[risk(a)] - rank[risk(b)];
+    return d !== 0 ? d : b.mins - a.mins;
+  }
+
+  function rowHTML(t) {
+    var c = tint(t.name), r = risk(t), meta = STAGE_META[t.stage];
+    return '' +
+      '<td><span class="tno">' + (t.unread ? '<i class="unread-dot" title="Unread customer message"></i>' : '') + t.no + '</span></td>' +
+      '<td><div class="cust"><span class="cust__av" style="background:' + c[0] + ';color:' + c[1] + '">' + initials(t.name) + '</span>' +
+        '<span style="min-width:0"><span class="cust__n" style="display:block">' + t.name + '</span>' +
+        '<span class="t-label faint" style="font-weight:500">' + t.area + '</span></span></div></td>' +
+      // Assignee lives with the issue: it is the same decision — "what is wrong,
+      // and who is on it" — and it buys the issue text ~130px of width back.
+      '<td><div class="issue" title="' + t.issue + '">' + t.issue + '</div>' +
+        '<div class="issuemeta t-label faint" style="font-weight:500">' +
+          (t.tech ? '<span>' + t.tech + '</span>' : '<span class="unassigned">Unassigned</span>') +
+          '<span>·</span><span>' + inr(t.value) + '</span></div></td>' +
+      '<td><span class="chip ' + meta.cls + '">' + meta.label + '</span></td>' +
+      '<td><span class="age" data-risk="' + r + '"><i class="age__bar"></i>' + humanMins(t.mins) + '</span></td>' +
+      '<td><div class="rowactions">' +
+        '<button class="rowbtn" aria-label="Assign technician" data-toast="Assign sheet would open for ' + t.no + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></button>' +
+        '<button class="rowbtn" aria-label="Open chat" data-toast="WhatsApp thread for ' + t.name + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>' +
+      '</div></td>';
+  }
+
+  function renderQueue(stage) {
+    if (stage !== undefined) currentStage = stage;
+    var body = $("#queueBody");
+
+    // FLIP: capture geometry before the DOM changes, then animate the delta.
+    var before = {};
+    $$("tr", body).forEach(function (tr) { before[tr.dataset.no] = tr.getBoundingClientRect().top; });
+
+    var rows = TICKETS.filter(function (t) { return t.stage === currentStage; }).sort(sortFn);
+    $("#queueCount").textContent = rows.length + (rows.length === 1 ? " request" : " requests");
+
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="6" style="padding:56px 16px;text-align:center">' +
+        '<div class="t-title" style="margin-bottom:4px">Nothing here</div>' +
+        '<div class="t-body faint">New WhatsApp requests appear automatically.</div></td></tr>';
+      return;
+    }
+
+    body.innerHTML = rows.map(function (t) {
+      return '<tr data-no="' + t.no + '" tabindex="0">' + rowHTML(t) + '</tr>';
+    }).join("");
+
+    if (reduced) return;
+    $$("tr", body).forEach(function (tr, i) {
+      var prev = before[tr.dataset.no];
+      if (prev != null) {
+        var delta = prev - tr.getBoundingClientRect().top;
+        if (delta) tr.animate([{ transform: "translateY(" + delta + "px)" }, { transform: "none" }],
+          { duration: 400, easing: "cubic-bezier(.2,0,0,1)" });
+      } else {
+        tr.animate([{ opacity: 0, transform: "translateY(10px)" }, { opacity: 1, transform: "none" }],
+          { duration: 400, easing: "cubic-bezier(.05,.7,.1,1)", delay: i * 35, fill: "backwards" });
+      }
+    });
+  }
+
+  $$(".segment").forEach(function (seg) {
+    seg.addEventListener("click", function () {
+      $$(".segment").forEach(function (s) { s.setAttribute("aria-selected", String(s === seg)); });
+      currentSort = seg.getAttribute("data-sort");
+      renderQueue();
+    });
+  });
+
+  renderQueue("new");
+
+  /* ---------------------------------------------------------- field team */
+  (function techs() {
+    var inField = TECHS.filter(function (t) { return t.state !== "idle"; }).length;
+    $("#openJobs").textContent    = stageCount("new") + stageCount("pending") + stageCount("assigned");
+    $("#inField").textContent     = inField;
+    $("#techSummary").textContent = inField + " of " + TECHS.length + " in the field";
+
+    $("#techList").innerHTML = TECHS.map(function (t) {
+      var c = tint(t.name);
+      return '<div class="tech" data-state="' + t.state + '" data-full="' + (t.load >= t.cap - 1) + '">' +
+        '<span class="tech__av"><span class="avatar" style="background:' + c[0] + ';color:' + c[1] + '">' + initials(t.name) + '</span><i class="tech__status"></i></span>' +
+        '<span class="tech__body">' +
+          '<span class="tech__row"><b class="t-body" style="font-weight:600">' + t.name + '</b>' +
+          '<span class="t-label faint" style="margin-left:auto;font-weight:500">' + t.load + '/' + t.cap + '</span></span>' +
+          '<span class="t-label faint" style="font-weight:500;display:block">' + t.where + ' · ' + t.since + '</span>' +
+          '<span class="tech__load"><i data-pct="' + Math.round(t.load / t.cap * 100) + '"></i></span>' +
+        '</span></div>';
+    }).join("");
+
+    $$(".tech__load i").forEach(function (bar, i) {
+      setTimeout(function () { bar.style.width = bar.getAttribute("data-pct") + "%"; }, reduced ? 0 : 600 + i * 80);
+    });
+  })();
+
+  /* ------------------------------------------------------------- activity */
+  function feedHTML(item) {
+    var icons = {
+      pay:    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+      new:    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+      assign: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+      alert:  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 8v5M12 17h.01"/></svg>'
+    };
+    return '<div class="feeditem" data-kind="' + item.kind + '">' +
+      '<span class="feeditem__ico">' + icons[item.kind] + '</span>' +
+      '<span><span class="feeditem__t">' + item.html + '</span>' +
+      '<span class="t-label faint" style="display:block;font-weight:500">' + item.t + '</span></span></div>';
+  }
+
+  var feedEl = $("#feed");
+  feedEl.innerHTML = FEED_SEED.map(feedHTML).join("");
+
+  // Simulate the 8-second poll actually surfacing something.
+  var streamIdx = 0;
+  setInterval(function () {
+    if (document.hidden) return;
+    var next = FEED_STREAM[streamIdx % FEED_STREAM.length];
+    streamIdx++;
+    var wrap = document.createElement("div");
+    wrap.innerHTML = feedHTML({ kind: next.kind, html: next.html, t: "just now" });
+    var node = wrap.firstChild;
+    feedEl.insertBefore(node, feedEl.firstChild);
+    while (feedEl.children.length > 6) feedEl.removeChild(feedEl.lastChild);
+    if (!reduced) {
+      node.animate([{ opacity: 0, transform: "translateY(-8px)" }, { opacity: 1, transform: "none" }],
+        { duration: 400, easing: "cubic-bezier(.05,.7,.1,1)" });
+    }
+  }, 8000);
+
+  /* ------------------------------------------------------ SLA countdown */
+  (function countdown() {
+    var el = $("#slaCountdown");
+    var left = 38 * 60;
+    setInterval(function () {
+      left -= 1; if (left < 0) left = 38 * 60;
+      var m = Math.floor(left / 60), s = left % 60;
+      el.textContent = m + "m " + (s < 10 ? "0" : "") + s + "s";
+    }, 1000);
+  })();
+
+  /* --------------------------------------------------------------- theme */
+  var root = document.documentElement;
+  $("#themeBtn").addEventListener("click", function () {
+    var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    $("#themeIcon").innerHTML = next === "dark"
+      ? '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'
+      : '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+    toast(next === "dark" ? "Dark theme" : "Light theme");
+  });
+
+  /* ------------------------------------------------------------- palette */
+  var COMMANDS = [
+    { icon:"⌕", label:"OG-260725-0148 · Priya Menon",  hint:"Ticket" },
+    { icon:"⌕", label:"OG-260725-0146 · Fatima Qureshi",hint:"Ticket" },
+    { icon:"◎", label:"Assign next unassigned job",     hint:"A" },
+    { icon:"◎", label:"Open all unread chats",          hint:"U" },
+    { icon:"◎", label:"Reconcile technician stock",     hint:"R" },
+    { icon:"◎", label:"Export today's payout report",   hint:"E" },
+    { icon:"◐", label:"Toggle dark theme",              hint:"D" }
+  ];
+
+  var palette = $("#palette"), scrim = $("#scrim"), pInput = $("#paletteInput"), pList = $("#paletteList");
+  var pIndex = 0, pOpen = false;
+
+  function paintPalette(q) {
+    var items = COMMANDS.filter(function (c) {
+      return !q || c.label.toLowerCase().indexOf(q.toLowerCase()) > -1;
+    });
+    if (pIndex >= items.length) pIndex = 0;
+    pList.innerHTML = items.length
+      ? items.map(function (c, i) {
+          return '<button class="palette__item" role="option" aria-selected="' + (i === pIndex) + '">' +
+            '<span style="width:18px;text-align:center;color:var(--on-surface-faint)">' + c.icon + '</span>' +
+            '<span class="t-body">' + c.label + '</span><span class="k">' + c.hint + '</span></button>';
+        }).join("")
+      : '<div style="padding:26px;text-align:center" class="t-body faint">No matches</div>';
+    $$(".palette__item", pList).forEach(function (b, i) {
+      b.addEventListener("click", function () { closePalette(); toast(items[i].label); });
+    });
+  }
+
+  function openPalette() {
+    pOpen = true; pIndex = 0;
+    scrim.classList.add("open"); palette.classList.add("open");
+    pInput.value = ""; paintPalette(""); pInput.focus();
+  }
+  function closePalette() {
+    pOpen = false;
+    scrim.classList.remove("open"); palette.classList.remove("open");
+  }
+
+  $("#openPalette").addEventListener("click", openPalette);
+  pInput.addEventListener("input", function () { pIndex = 0; paintPalette(pInput.value); });
+
+  /* -------------------------------------------------------------- drawer */
+  var drawer = $("#drawer");
+  function openDrawer()  { drawer.classList.add("open");    scrim.classList.add("open"); }
+  function closeDrawer() { drawer.classList.remove("open"); scrim.classList.remove("open"); }
+  $("#whyBtn").addEventListener("click", openDrawer);
+  $("#drawerClose").addEventListener("click", closeDrawer);
+  scrim.addEventListener("click", function () { closePalette(); closeDrawer(); });
+
+  /* --------------------------------------------------------- keyboard */
+  document.addEventListener("keydown", function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); pOpen ? closePalette() : openPalette(); return; }
+    if (e.key === "Escape") { closePalette(); closeDrawer(); return; }
+    if (!pOpen) return;
+    var items = $$(".palette__item", pList);
+    if (!items.length) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); pIndex = (pIndex + 1) % items.length; paintPalette(pInput.value); }
+    if (e.key === "ArrowUp")   { e.preventDefault(); pIndex = (pIndex - 1 + items.length) % items.length; paintPalette(pInput.value); }
+    if (e.key === "Enter")     { e.preventDefault(); var sel = items[pIndex]; closePalette(); toast(sel ? sel.textContent.trim() : "Run"); }
+  });
+
+  /* --------------------------------------------------------------- toast */
+  function toast(msg) {
+    var el = document.createElement("div");
+    el.className = "toast";
+    el.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' + msg;
+    $("#toasts").appendChild(el);
+    setTimeout(function () {
+      el.classList.add("out");
+      setTimeout(function () { el.remove(); }, 220);
+    }, 2400);
+  }
+
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-toast]");
+    if (t) { e.stopPropagation(); toast(t.getAttribute("data-toast")); }
+  });
+
+  // Row click → would navigate to the ticket detail page.
+  $("#queueBody").addEventListener("click", function (e) {
+    if (e.target.closest("[data-toast]")) return;
+    var tr = e.target.closest("tr");
+    if (tr && tr.dataset.no) toast("Open " + tr.dataset.no);
+  });
+
+})();
+</script>
+</body>
+</html>
