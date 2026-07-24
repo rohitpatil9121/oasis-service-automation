@@ -5,7 +5,7 @@ import { runAgent } from "../services/agent/run.js";
 import { handleEstimateReply } from "../services/techJobs.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
 import { isAgentHandling, storeBotMessage } from "../services/conversation.js";
-import { handleRatingReply } from "../services/rating.js";
+import { handleRatingReply, handleTypedRating } from "../services/rating.js";
 import { supabase } from "../config/supabase.js";
 import { normalizePhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
@@ -85,6 +85,18 @@ async function logInbound(from, text, { mediaId, mediaType, waMessageId, replyTo
   // a customer in a manager-handoff window taps Approve and the job never advances.
   try { if (await handleEstimateReply(phone, text)) return false; }
   catch (e) { log.error("handleEstimateReply:", e.message); }
+
+  // A typed "1"–"5" after a rating request is a rating, not a chat message —
+  // the only way to rate for customers outside the 24-hour window (they get the
+  // plain template with no tap buttons). Ack directly, never route to intake.
+  try {
+    const ack = await handleTypedRating(phone, text);
+    if (ack) {
+      await sendWhatsApp(phone, ack);
+      await storeBotMessage(phone, ack);
+      return false;
+    }
+  } catch (e) { log.error("handleTypedRating:", e.message); }
 
   // Human handoff: if a manager messaged this customer in the last 12h, stay
   // silent and let them handle it. The inbound is still logged above, so the
