@@ -5,7 +5,8 @@ import bcrypt from "bcryptjs";
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
 import { sendPush } from "./push.js";
-import { updateStatus, getTicket, RATING_LABELS } from "./tickets.js";
+import { updateStatus, getTicket, RATING_LABELS, upsertCustomer } from "./tickets.js";
+import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import {
   customerArrivalOtp, customerEstimate,
   customerEstimateApproved, customerWorkCompleted, customerVisitCharge,
@@ -177,6 +178,59 @@ export async function listMyJobs(techId) {
   return attachCustomerPhotos((data || []).map(toJob));
 }
 
+/* "New Call": the technician adds a walk-in / direct customer from the field.
+   Creates the customer + a ticket already assigned to this technician, flags it
+   in tech_work so the app can show "Added by you", and notifies the office.
+   The customer gets no WhatsApp — they are standing next to the technician. */
+export async function createMyCall(techId, { name, phone, area, problem }) {
+  const full_name = String(name || "").trim() || "New Customer";
+  const rawPhone = String(phone || "").trim();
+  const issue = String(problem || "").trim();
+  if (!issue) { const e = new Error("problem required"); e.status = 400; throw e; }
+
+  // Validate + normalise here — upsertCustomer stores the phone exactly as
+  // given, and the phone is the WhatsApp identity for the whole platform.
+  let custId;
+  if (rawPhone) {
+    if (!isValidPhone(rawPhone)) { const e = new Error("Enter a valid mobile number"); e.status = 400; throw e; }
+    const customer = await upsertCustomer({ full_name, phone: normalizePhone(rawPhone), address: area || null });
+    custId = customer.id;
+  } else {
+    // No phone: still record the person so the ticket has a customer row.
+    const { data, error } = await supabase.from("customers")
+      .insert({ full_name, phone: null, address: area || null })
+      .select("id").single();
+    if (error) throw new Error("createMyCall customer: " + error.message);
+    custId = data.id;
+  }
+
+  const { data: ticket, error } = await supabase.from("tickets")
+    .insert({
+      customer_id: custId,
+      issue_description: issue,
+      source: "technician",
+      status: "NEW",
+      intake_complete: true,
+      assigned_technician_id: techId,
+      tech_work: { added_by_tech: true },
+    })
+    .select(SELECT).single();
+  if (error) throw new Error("createMyCall: " + error.message);
+
+  // Office visibility — same manager fan-out the dashboard uses.
+  const { data: mgrs } = await supabase.from("users")
+    .select("phone").eq("role", "manager").eq("is_active", true);
+  const tech = ticket.technician?.full_name || "A technician";
+  for (const m of mgrs || []) {
+    if (!m.phone) continue;
+    await queueNotification({
+      recipient: m.phone, audience: "manager", ticketId: ticket.id,
+      body: `${tech} added a direct call: ${full_name} (${area || "no area"}) — ${issue}. Ticket ${ticket.ticket_number}.`,
+    });
+  }
+  return toJob(ticket);
+}
+
 async function loadOwned(techId, ticketId) {
   const { data, error } = await supabase
     .from("tickets").select(SELECT).eq("id", ticketId).single();
@@ -337,6 +391,9 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
   // Replayed from the offline outbox and already applied — return the job as-is
   // so we don't re-run the step or re-send its customer WhatsApp.
   if (alreadyApplied(ticket.tech_work, clientId)) return toJob(ticket);
+  // Stored (pre-step) work: the message blocks below fall back to it when the
+  // incoming payload doesn't carry a field (e.g. payment sent without a total).
+  const tech_work = ticket.tech_work || {};
   const techName = ticket.technician?.full_name || "our technician";
 
   // Estimate guard: a part's price must stay between its minimum price
@@ -395,7 +452,11 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
     // comma-joined line, since a Meta template can't have a variable count of
     // parts). The full readable bill stays as the fallback body.
     const eParts = Array.isArray(work.parts) ? work.parts : [];
-    const eChargeAmt = CHARGE_FREE.has(work.charge) ? 0 : 250;
+    // The app now sends a freeform service_charge (M3 redesign); the old fixed
+    // 250 stays as the fallback for jobs written by older app builds.
+    const eChargeAmt = work.service_charge != null
+      ? Number(work.service_charge) || 0
+      : (CHARGE_FREE.has(work.charge) ? 0 : 250);
     const eTotal = Number(work.total ?? eChargeAmt + eParts.reduce((s, p) => s + Number(p.price || 0), 0));
     const eProblem = (Array.isArray(work.problems) && work.problems.join(", "))
       || ticket.issue_description || "—";

@@ -46,6 +46,15 @@ router.post("/jobs/:id/verify-arrival", async (req, res, next) => {
   catch (e) { next(e); }
 });
 
+// "New Call" — technician adds a walk-in / direct customer from the field.
+// Creates the ticket already assigned to them and notifies the office.
+router.post("/calls", async (req, res, next) => {
+  try {
+    const { name, phone, area, problem } = req.body || {};
+    res.json({ job: await tech.createMyCall(req.user.id, { name, phone, area, problem }) });
+  } catch (e) { next(e); }
+});
+
 router.get("/parts", async (req, res, next) => {
   try { res.json({ parts: await tech.listParts() }); }
   catch (e) { next(e); }
