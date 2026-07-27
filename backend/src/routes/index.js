@@ -8,6 +8,7 @@ import customerRoutes from "./customers.js";
 import conversationRoutes from "./conversations.js";
 import mediaRoutes from "./media.js";
 import incentiveRoutes from "./incentives.js";
+import invoiceRoutes from "./invoices.js";
 
 const router = Router();
 router.use("/auth", authRoutes);
@@ -19,4 +20,5 @@ router.use("/customers", customerRoutes);
 router.use("/conversations", conversationRoutes);
 router.use("/media", mediaRoutes);
 router.use("/incentives", incentiveRoutes);
+router.use("/invoices", invoiceRoutes);
 export default router;

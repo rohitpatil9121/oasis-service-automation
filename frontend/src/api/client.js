@@ -43,6 +43,13 @@ export const api = {
     request(`/tickets/${id}/status`, { method: "PATCH", body: { status, reason } }),
   // conversations (all-chats inbox)
   listConversations: () => request("/conversations"),
+  // Phone-keyed thread — for chats that have no ticket yet (intake still in
+  // progress, or a sender who never raised a request).
+  getPhoneConversation: (phone) => request(`/conversations/thread?phone=${encodeURIComponent(phone)}`),
+  sendPhoneMessage: (phone, body, replyTo) =>
+    request("/conversations/thread/message", { method: "POST", body: { phone, body, replyTo } }),
+  setPhoneBot: (phone, on) =>
+    request("/conversations/thread/bot", { method: "POST", body: { phone, on } }),
   // customers
   listCustomers: () => request("/customers"),
   getCustomer: (id) => request(`/customers/${id}`),
@@ -70,5 +77,32 @@ export const api = {
     if (to) qs.set("to", to);
     const s = qs.toString();
     return request(`/incentives${s ? `?${s}` : ""}`);
+  },
+  // GST invoices
+  listInvoices: () => request("/invoices"),
+  getCompanyProfile: () => request("/invoices/company"),
+  updateCompanyProfile: (payload) => request("/invoices/company", { method: "PATCH", body: payload }),
+  getTicketInvoice: (ticketId) => request(`/invoices/ticket/${ticketId}`),
+  resendInvoice: (id, phone) => request(`/invoices/${id}/resend`, { method: "POST", body: { phone } }),
+  // The PDF is binary and the route is authenticated, so it can't just be a link
+  // href — fetch it with the bearer token and hand back an object URL.
+  invoicePdfBlobUrl: async (id) => {
+    const res = await fetch(`${BASE}/api/invoices/${id}/pdf`, {
+      headers: { ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
+    });
+    if (!res.ok) throw new Error(`Could not load invoice (${res.status})`);
+    return URL.createObjectURL(await res.blob());
+  },
+  // Tally import file for a date range (defaults to the current month).
+  tallyXmlBlobUrl: async ({ from, to } = {}) => {
+    const qs = new URLSearchParams();
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    const s = qs.toString();
+    const res = await fetch(`${BASE}/api/invoices/tally.xml${s ? `?${s}` : ""}`, {
+      headers: { ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
+    });
+    if (!res.ok) throw new Error(`Could not build Tally export (${res.status})`);
+    return URL.createObjectURL(await res.blob());
   },
 };

@@ -276,6 +276,29 @@ export function customerPaymentReceived({ ticketNumber, amount, mode }) {
   };
 }
 
+// The GST tax invoice, delivered as a PDF. The template's HEADER is a DOCUMENT
+// — that is the only way to put a file in front of a customer who is outside the
+// 24-hour service window. `pdfUrl` must be publicly fetchable: Meta downloads it
+// server-side, it is not proxied through us.
+// {{1}} customer name  {{2}} invoice no  {{3}} amount  {{4}} payment mode
+export function customerInvoice({ customerName, invoiceNo, amount, mode, pdfUrl, filename }) {
+  return {
+    template: {
+      name: "customer_invoice",
+      language: WA_LANG,
+      variables: [v(customerName), v(invoiceNo), v(amount), v(mode)],
+      headerDocument: { link: pdfUrl, filename: filename || `${invoiceNo}.pdf` },
+    },
+    document: { link: pdfUrl, filename: filename || `${invoiceNo}.pdf` },
+    body:
+      `Hi ${customerName}, here is your tax invoice.\n` +
+      `Invoice No: ${invoiceNo}\n` +
+      `Amount: ${amount}\n` +
+      `Paid via: ${mode}\n\n` +
+      `Thank you for choosing Oasis Globe.`,
+  };
+}
+
 // {{1}} customer name  {{2}} ticket  {{3}} reason
 export function requestCancelledCustomer({ ticketNumber, customerName, reason }) {
   return {

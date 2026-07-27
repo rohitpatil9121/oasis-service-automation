@@ -10,8 +10,9 @@ import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import {
   customerArrivalOtp, customerEstimate,
   customerEstimateApproved, customerWorkCompleted, customerVisitCharge,
-  customerPaymentReceived, customerRequestReceived,
+  customerPaymentReceived, customerRequestReceived, customerInvoice,
 } from "./waTemplates.js";
+import { issueInvoiceForTicket } from "./invoice.js";
 import { log } from "../lib/logger.js";
 import { mergeTechWork } from "../lib/techWork.js";
 
@@ -518,6 +519,33 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
       recipient: cust.phone, audience: "customer", ticketId,
       body: tpl.body, template: tpl.template,
     });
+
+    // …then the GST tax invoice as a PDF. Payment is collected, so the amounts
+    // are final and this doubles as the receipt. Never let an invoicing problem
+    // fail the payment step — the money is already taken and the confirmation
+    // above has gone out; log it and let the office re-send from the dashboard.
+    try {
+      const { invoice, skipped } = await issueInvoiceForTicket({
+        ticket, work: { ...tech_work, ...work }, paymentMode: mode,
+      });
+      if (skipped) {
+        log.warn(`Invoice not issued for ${ticket.ticket_number}: ${skipped}`);
+      } else if (invoice?.pdf_url) {
+        const invTpl = customerInvoice({
+          customerName: cust.full_name || "Customer",
+          invoiceNo: invoice.invoice_no,
+          amount: rupees(invoice.total),
+          mode,
+          pdfUrl: invoice.pdf_url,
+        });
+        await queueNotification({
+          recipient: cust.phone, audience: "customer", ticketId,
+          body: invTpl.body, template: invTpl.template, document: invTpl.document,
+        });
+      }
+    } catch (e) {
+      log.error(`Invoice generation failed for ${ticket.ticket_number}:`, e.message);
+    }
   }
 
   if (action === "close") {

@@ -152,6 +152,8 @@ function ItemModal({ item, onClose, onSaved }) {
     brand: item?.brand || "",
     base_cost: editing && item.base_cost ? String(item.base_cost) : "",
     purchase_price: editing && item.purchase_price ? String(item.purchase_price) : "",
+    hsn_code: item?.hsn_code || "",
+    gst_rate: editing && item.gst_rate != null ? String(item.gst_rate) : "18",
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -185,6 +187,22 @@ function ItemModal({ item, onClose, onSaved }) {
           <Field label="MRP ₹"><Input type="number" min="0" value={form.unit_price} onChange={set("unit_price")} placeholder="0" /></Field>
           <Field label="Minimum price ₹" hint="Lowest price a technician can charge">
             <Input type="number" min="0" value={form.base_cost} onChange={set("base_cost")} placeholder="0" />
+          </Field>
+        </div>
+        {/* Printed on the customer's GST tax invoice — every billed line needs an
+            HSN code and its rate. 8421 covers most RO spares. */}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="HSN code" hint="For the tax invoice">
+            <Input value={form.hsn_code} onChange={set("hsn_code")} placeholder="8421" />
+          </Field>
+          <Field label="GST rate %">
+            <Select value={form.gst_rate} onChange={set("gst_rate")}>
+              <option value="0">0% (exempt)</option>
+              <option value="5">5%</option>
+              <option value="12">12%</option>
+              <option value="18">18%</option>
+              <option value="28">28%</option>
+            </Select>
           </Field>
         </div>
         {/* Brand drives the technician incentive: Kent/Aquaguard earn 6–10% of the
