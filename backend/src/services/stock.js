@@ -28,7 +28,7 @@ function cleanBrand(brand) {
   return b;
 }
 
-export async function createStockItem({ name, sku, unit, qty_on_hand, reorder_level, unit_price, brand, base_cost }, actorId) {
+export async function createStockItem({ name, sku, unit, qty_on_hand, reorder_level, unit_price, brand, base_cost, purchase_price }, actorId) {
   const cleanName = (name || "").trim();
   if (!cleanName) { const e = new Error("Item name is required"); e.status = 400; throw e; }
 
@@ -44,6 +44,7 @@ export async function createStockItem({ name, sku, unit, qty_on_hand, reorder_le
       unit_price: Number(unit_price) || 0,
       brand: cleanBrand(brand),
       base_cost: Number(base_cost) || 0,
+      purchase_price: Number(purchase_price) || 0,
     })
     .select("*").single();
   if (error) {
@@ -63,7 +64,7 @@ export async function createStockItem({ name, sku, unit, qty_on_hand, reorder_le
 }
 
 // Edit an inventory item. A qty change is logged as an ADJUST movement for audit.
-export async function updateStockItem(id, { name, sku, unit, qty_on_hand, reorder_level, unit_price, brand, base_cost }, actorId) {
+export async function updateStockItem(id, { name, sku, unit, qty_on_hand, reorder_level, unit_price, brand, base_cost, purchase_price }, actorId) {
   const { data: item, error: e0 } = await supabase.from("stock_items").select("*").eq("id", id).maybeSingle();
   if (e0) throw new Error("updateStockItem load: " + e0.message);
   if (!item) { const e = new Error("Item not found"); e.status = 404; throw e; }
@@ -80,6 +81,7 @@ export async function updateStockItem(id, { name, sku, unit, qty_on_hand, reorde
   if (unit_price !== undefined && unit_price !== "") patch.unit_price = Number(unit_price) || 0;
   if (brand !== undefined) patch.brand = cleanBrand(brand);
   if (base_cost !== undefined && base_cost !== "") patch.base_cost = Number(base_cost) || 0;
+  if (purchase_price !== undefined && purchase_price !== "") patch.purchase_price = Number(purchase_price) || 0;
 
   let newQty = Number(item.qty_on_hand);
   if (qty_on_hand !== undefined && qty_on_hand !== null && qty_on_hand !== "") {

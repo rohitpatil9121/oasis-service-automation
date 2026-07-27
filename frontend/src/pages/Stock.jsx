@@ -81,6 +81,7 @@ export default function Stock() {
                   <th className="px-4 py-3 font-semibold">Item</th>
                   <th className="px-4 py-3 font-semibold">Brand</th>
                   <th className="px-4 py-3 font-semibold">In stock</th>
+                  <th className="px-4 py-3 font-semibold">Purchase price</th>
                   <th className="px-4 py-3 font-semibold">MRP</th>
                   <th className="px-4 py-3 font-semibold">Min price</th>
                   <th className="px-4 py-3" />
@@ -105,6 +106,7 @@ export default function Stock() {
                           {low && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-600 ring-1 ring-inset ring-amber-600/20">Low</span>}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-slate-600">₹{it.purchase_price || 0}</td>
                       <td className="px-4 py-3 text-slate-600">₹{it.unit_price}</td>
                       <td className="px-4 py-3 text-slate-600">₹{it.base_cost || 0}</td>
                       <td className="px-4 py-3">
@@ -149,6 +151,7 @@ function ItemModal({ item, onClose, onSaved }) {
     unit_price: editing ? String(item.unit_price) : "",
     brand: item?.brand || "",
     base_cost: editing && item.base_cost ? String(item.base_cost) : "",
+    purchase_price: editing && item.purchase_price ? String(item.purchase_price) : "",
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -175,6 +178,9 @@ function ItemModal({ item, onClose, onSaved }) {
           <Field label="Reorder at"><Input type="number" min="0" value={form.reorder_level} onChange={set("reorder_level")} placeholder="0" /></Field>
           <Field label="Unit"><Input value={form.unit} onChange={set("unit")} placeholder="pcs" /></Field>
         </div>
+        <Field label="Purchase price ₹" hint="What we paid the supplier per unit">
+          <Input type="number" min="0" value={form.purchase_price} onChange={set("purchase_price")} placeholder="0" />
+        </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="MRP ₹"><Input type="number" min="0" value={form.unit_price} onChange={set("unit_price")} placeholder="0" /></Field>
           <Field label="Minimum price ₹" hint="Lowest price a technician can charge">
