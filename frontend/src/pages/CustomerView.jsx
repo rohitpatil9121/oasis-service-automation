@@ -26,6 +26,16 @@ export default function CustomerView() {
 
   useEffect(() => { load(); }, [load]);
 
+  // The PDF route is authenticated, so it can't be a plain link — fetch it with
+  // the token and open the object URL.
+  async function openInvoice(invoiceId) {
+    try {
+      const url = await api.invoicePdfBlobUrl(invoiceId);
+      window.open(url, "_blank", "noopener");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) { setErr(e.message); }
+  }
+
   if (!loaded) return <div className="flex justify-center py-20"><Spinner className="h-7 w-7" /></div>;
   if (err && !customer) return <div><BackLink /><div className="mt-3"><Alert>{err}</Alert></div></div>;
   if (!customer) return <div><BackLink /><div className="mt-3"><Alert>Client not found.</Alert></div></div>;
@@ -89,6 +99,7 @@ export default function CustomerView() {
                   <th className="px-4 py-3 font-semibold">Technician</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
                   <th className="px-4 py-3 font-semibold">Rating</th>
+                  <th className="px-4 py-3 font-semibold">Invoice</th>
                   <th className="px-4 py-3 font-semibold text-right">Created</th>
                 </tr>
               </thead>
@@ -102,6 +113,17 @@ export default function CustomerView() {
                     <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
                     <td className="whitespace-nowrap px-4 py-3">
                       {t.rating != null ? <RatingStars value={t.rating} /> : <span className="text-slate-300">—</span>}
+                    </td>
+                    {/* stopPropagation: the row navigates to the ticket, but this
+                        cell opens the PDF instead. */}
+                    <td className="whitespace-nowrap px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      {t.invoice ? (
+                        <button type="button" onClick={() => openInvoice(t.invoice.id)}
+                          className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-brand hover:underline">
+                          <Icon name="file" className="h-3.5 w-3.5" />
+                          {t.invoice.invoice_no}
+                        </button>
+                      ) : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right text-xs text-slate-400">{fmt(t.created_at)}</td>
                   </tr>

@@ -300,7 +300,23 @@ export async function getCustomerWithHistory(id) {
     .eq("customer_id", id)
     .order("created_at", { ascending: false });
 
-  return { customer, tickets: tickets || [] };
+  // Attach each request's tax invoice, if one was raised. Done as ONE query over
+  // all the ticket ids rather than a lookup per row, so a client with a long
+  // history doesn't fan out into dozens of round trips.
+  const rows = tickets || [];
+  if (rows.length) {
+    const { data: invoices, error: invErr } = await supabase
+      .from("invoices").select("id, ticket_id, invoice_no, total, issued_at, pdf_url")
+      .in("ticket_id", rows.map((t) => t.id));
+    // Graceful until phase9_gst_invoice.sql is applied — no invoices table just
+    // means no invoices to show, not a broken client page.
+    if (!invErr) {
+      const byTicket = new Map((invoices || []).map((i) => [i.ticket_id, i]));
+      for (const t of rows) t.invoice = byTicket.get(t.id) || null;
+    }
+  }
+
+  return { customer, tickets: rows };
 }
 
 export async function listTickets({ status, bucket } = {}) {
