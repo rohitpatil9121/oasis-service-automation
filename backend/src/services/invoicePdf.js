@@ -174,7 +174,10 @@ export function buildInvoiceDoc(inv) {
             labelValueRows([
               ["Invoice No.", inv.invoice_no],
               ["Dated", istDate(inv.issued_at)],
-              ["Reference", inv.ticket_number],
+              // The invoice number IS the request id now, so only show a separate
+              // reference line on older invoices where the two actually differ.
+              inv.ticket_number && inv.ticket_number !== inv.invoice_no
+                ? ["Reference", inv.ticket_number] : null,
               ["Place of Supply", inv.place_of_supply],
               ["Payment Mode", inv.payment_mode],
             ]),
