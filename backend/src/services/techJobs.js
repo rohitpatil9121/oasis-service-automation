@@ -10,7 +10,7 @@ import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import {
   customerArrivalOtp, customerEstimate,
   customerEstimateApproved, customerWorkCompleted, customerVisitCharge,
-  customerPaymentReceived,
+  customerPaymentReceived, customerRequestReceived,
 } from "./waTemplates.js";
 import { log } from "../lib/logger.js";
 import { mergeTechWork } from "../lib/techWork.js";
@@ -181,7 +181,9 @@ export async function listMyJobs(techId) {
 /* "New Call": the technician adds a walk-in / direct customer from the field.
    Creates the customer + a ticket already assigned to this technician, flags it
    in tech_work so the app can show "Added by you", and notifies the office.
-   The customer gets no WhatsApp — they are standing next to the technician. */
+   The customer also gets the same "request logged" confirmation the dashboard
+   sends, so every request — however it was raised — leaves a written record with
+   the ticket number on the customer's phone. Skipped when no phone was captured. */
 export async function createMyCall(techId, { name, phone, area, problem }) {
   const full_name = String(name || "").trim() || "New Customer";
   const rawPhone = String(phone || "").trim();
@@ -216,6 +218,22 @@ export async function createMyCall(techId, { name, phone, area, problem }) {
     })
     .select(SELECT).single();
   if (error) throw new Error("createMyCall: " + error.message);
+
+  // Confirmation to the customer. Sent as the approved TEMPLATE: a technician-
+  // raised call means the customer hasn't messaged us, so we're outside the
+  // 24-hour window and free-form text would silently fail.
+  if (ticket.customer?.phone) {
+    const custTpl = customerRequestReceived({
+      customerName: ticket.customer.full_name,
+      ticketNumber: ticket.ticket_number,
+      issue,
+      address: ticket.customer.address,
+    });
+    await queueNotification({
+      recipient: ticket.customer.phone, audience: "customer", ticketId: ticket.id,
+      body: custTpl.body, template: custTpl.template,
+    });
+  }
 
   // Office visibility — same manager fan-out the dashboard uses.
   const { data: mgrs } = await supabase.from("users")
