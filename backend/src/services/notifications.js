@@ -57,10 +57,31 @@ export async function queueNotification({ recipient, body, audience, ticketId, t
         // 24-hour window, which they normally are right after paying.
         const doc = document || (template?.headerDocument?.link ? template.headerDocument : null);
         if (doc?.link) {
-          const res = await sendWhatsAppDocument(recipient, doc, body);
-          row.provider_sid = res.sid;
-          row.last_error = `template rejected (${e.metaCode ?? e.metaStatus}), sent as document`;
-          log.warn("notification template rejected, sent as document:", e.message);
+          let sent = null;
+          try {
+            sent = await sendWhatsAppDocument(recipient, doc, body);
+            row.last_error = `template rejected (${e.metaCode ?? e.metaStatus}), sent as document`;
+            log.warn("notification template rejected, sent as document:", e.message);
+          } catch (docErr) {
+            // Outside the 24-hour window nothing free-form is deliverable — only a
+            // template is. #132012 means the approved template's header shape does
+            // not match what we sent (e.g. it was approved with a TEXT header
+            // instead of DOCUMENT), so the BODY is still valid: re-send the same
+            // template without the header. The customer then at least gets the
+            // invoice number and amount instead of silence, and the PDF follows
+            // once the template is re-approved with a document header.
+            if (e.metaCode === 132012 && template) {
+              const { headerDocument, ...noHeader } = template;
+              sent = await sendWhatsAppTemplate(recipient, noHeader, body);
+              row.last_error =
+                `template header mismatch (132012) and document undeliverable ` +
+                `(${docErr.message.slice(0, 60)}); sent template text only — PDF NOT delivered`;
+              log.warn("invoice PDF not delivered; sent template text only:", docErr.message);
+            } else {
+              throw docErr;
+            }
+          }
+          row.provider_sid = sent.sid;
         } else {
           const res = await sendWhatsApp(recipient, body, { contextMessageId: replyTo?.wamid });
           row.provider_sid = res.sid;
