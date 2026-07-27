@@ -9,6 +9,7 @@ import ChatPanel from "../components/ChatPanel.jsx";
 import EditCustomerModal from "../components/EditCustomerModal.jsx";
 import CancelModal from "../components/CancelModal.jsx";
 import RatingStars from "../components/RatingStars.jsx";
+import InvoiceCard from "../components/InvoiceCard.jsx";
 import { Card, Button, Icon, Select, Spinner, Alert, Textarea } from "../components/ui.jsx";
 
 const fmt = (d) => (d ? new Date(d).toLocaleString() : "—");
@@ -181,6 +182,10 @@ export default function TicketView() {
           <p className="mt-1 whitespace-pre-wrap text-slate-700">{ticket.notes}</p>
         </Card>
       )}
+
+      {/* GST tax invoice — renders itself only once one has been issued, which
+          happens when the technician records payment. */}
+      <InvoiceCard ticketId={ticket.id} />
 
       {/* Technician photos captured on site */}
       {ticket.tech_work?.tech_photos?.length > 0 && (

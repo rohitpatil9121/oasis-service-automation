@@ -43,6 +43,7 @@ const PATHS = {
   drop: "M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z",
   award: "M12 15a7 7 0 1 0 0-14 7 7 0 0 0 0 14z M8.21 13.89 7 23l5-3 5 3-1.21-9.12",
   clock: "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M12 6v6l4 2",
+  file: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8",
 };
 export function Icon({ name, className = "h-4 w-4", stroke = 2 }) {
   return (
