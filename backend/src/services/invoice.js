@@ -96,16 +96,31 @@ async function buildLines(work, company) {
   return lines;
 }
 
-// Allocate the next gapless serial for the financial year. The counter lives in
-// Postgres (next_invoice_seq) so two technicians closing jobs at the same moment
-// cannot get the same number.
-async function allocateNumber(company, issuedAt) {
+/* The invoice number IS the request id (owner's decision) — one reference ties
+   the bill, the job and the customer's WhatsApp thread together, so nobody has
+   to cross-map two numbering systems.
+
+   Caveat worth knowing: a request that is never billed (cancelled, or a warranty
+   / repeat call with no charge) leaves a gap in the invoice series. GST expects a
+   consecutive series per financial year, so those gaps have to be explainable at
+   audit time — the ticket itself is the explanation, which is why the internal
+   `seq` below is still allocated: it gives a true unbroken count of invoices
+   actually issued, independent of the printed number.
+
+   Ticket numbers look like OG-270726-0014 — 14 chars, hyphens only, so they stay
+   inside Rule 46(b)'s 16-character limit and its allowed character set. */
+async function allocateNumber(company, issuedAt, ticket) {
   const fy = financialYear(issuedAt);
   const { data, error } = await supabase.rpc("next_invoice_seq", { p_fy: fy });
   if (error) throw new Error("allocateNumber: " + error.message);
   const seq = Number(data);
+
+  // Fall back to the classic serial if a ticket somehow has no number, so an
+  // invoice is never issued without an identifier.
   const prefix = company.invoice_prefix || "OG";
-  return { fy, seq, invoice_no: `${prefix}/${fy}/${String(seq).padStart(4, "0")}` };
+  const invoice_no = ticket?.ticket_number
+    || `${prefix}/${fy}/${String(seq).padStart(4, "0")}`;
+  return { fy, seq, invoice_no };
 }
 
 async function uploadPdf(buffer, invoiceNo) {
@@ -164,7 +179,7 @@ export async function issueInvoiceForTicket({ ticket, work, paymentMode }) {
   });
 
   const issuedAt = new Date().toISOString();
-  const { fy, seq, invoice_no } = await allocateNumber(company, issuedAt);
+  const { fy, seq, invoice_no } = await allocateNumber(company, issuedAt, ticket);
 
   const seller = {
     legal_name: company.legal_name, trade_name: company.trade_name, gstin: company.gstin,
