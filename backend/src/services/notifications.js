@@ -2,11 +2,11 @@
 // outcome (SENT/FAILED) — no PENDING row for any external worker to grab.
 import { supabase } from "../config/supabase.js";
 import { env } from "../config/env.js";
-import { sendWhatsApp, sendWhatsAppTemplate, sendWhatsAppInteractive } from "./whatsapp.js";
+import { sendWhatsApp, sendWhatsAppTemplate, sendWhatsAppInteractive, sendWhatsAppDocument } from "./whatsapp.js";
 import { log } from "../lib/logger.js";
 
 
-export async function queueNotification({ recipient, body, audience, ticketId, template, replyTo, interactive }) {
+export async function queueNotification({ recipient, body, audience, ticketId, template, replyTo, interactive, document }) {
   let row = {
     channel: "whatsapp",
     recipient,
@@ -37,7 +37,9 @@ export async function queueNotification({ recipient, body, audience, ticketId, t
       ? await sendWhatsAppInteractive(recipient, interactive, body)
       : template
         ? await sendWhatsAppTemplate(recipient, template, body)
-        : await sendWhatsApp(recipient, body, { contextMessageId: replyTo?.wamid });
+        : document
+          ? await sendWhatsAppDocument(recipient, document, body)
+          : await sendWhatsApp(recipient, body, { contextMessageId: replyTo?.wamid });
     row.provider_sid = res.sid;
   } catch (e) {
     // Fall back to free-form text ONLY when Meta REJECTED the template — HTTP 4xx
@@ -49,10 +51,22 @@ export async function queueNotification({ recipient, body, audience, ticketId, t
       template && body && e.metaStatus >= 400 && e.metaStatus < 500;
     if (templateRejected) {
       try {
-        const res = await sendWhatsApp(recipient, body, { contextMessageId: replyTo?.wamid });
-        row.provider_sid = res.sid;
-        row.last_error = `template rejected (${e.metaCode ?? e.metaStatus}), sent as text`;
-        log.warn("notification template rejected, sent as text:", e.message);
+        // A rejected template that was carrying a PDF (the GST invoice) must not
+        // silently degrade to text — the document IS the message. Try it as a
+        // plain document first; that works whenever the customer is inside the
+        // 24-hour window, which they normally are right after paying.
+        const doc = document || (template?.headerDocument?.link ? template.headerDocument : null);
+        if (doc?.link) {
+          const res = await sendWhatsAppDocument(recipient, doc, body);
+          row.provider_sid = res.sid;
+          row.last_error = `template rejected (${e.metaCode ?? e.metaStatus}), sent as document`;
+          log.warn("notification template rejected, sent as document:", e.message);
+        } else {
+          const res = await sendWhatsApp(recipient, body, { contextMessageId: replyTo?.wamid });
+          row.provider_sid = res.sid;
+          row.last_error = `template rejected (${e.metaCode ?? e.metaStatus}), sent as text`;
+          log.warn("notification template rejected, sent as text:", e.message);
+        }
       } catch (e2) {
         row = { ...row, status: "FAILED", sent_at: null, attempts: 5, last_error: e2.message };
         log.error("notification send failed (template + text):", e2.message);

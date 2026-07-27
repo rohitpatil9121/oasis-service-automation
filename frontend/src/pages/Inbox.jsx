@@ -54,7 +54,9 @@ export default function Inbox() {
       (c.lastMessage || "").toLowerCase().includes(s));
   }, [convos, q]);
 
-  const active = convos.find((c) => c.customer.id === activeId) || null;
+  // Keyed on phone, not customer id: a conversation can exist before the
+  // customer row does (WhatsApp intake still collecting details).
+  const active = convos.find((c) => (c.phone || c.customer.id) === activeId) || null;
   const select = (id) => setParams(id ? { c: id } : {}, { replace: true });
 
   return (
@@ -90,10 +92,11 @@ export default function Inbox() {
             </p>
           ) : (
             filtered.map((c) => {
-              const unread = isUnread({ id: c.ticketId, last_inbound_at: c.lastInboundAt });
-              const on = c.customer.id === activeId;
+              const unread = isUnread({ id: c.ticketId || c.phone, last_inbound_at: c.lastInboundAt });
+              const key = c.phone || c.customer.id;
+              const on = key === activeId;
               return (
-                <button key={c.customer.id} onClick={() => select(c.customer.id)}
+                <button key={key} onClick={() => select(key)}
                   className={`flex w-full items-center gap-3 border-b border-slate-50 px-3 py-2.5 text-left transition ${
                     on ? "bg-emerald-50" : "hover:bg-slate-50"
                   }`}>
@@ -134,7 +137,7 @@ export default function Inbox() {
             </button>
             <div className="flex-1 overflow-hidden p-3 sm:p-4">
               <ChatPanel
-                key={active.customer.id}
+                key={active.phone || active.customer.id}
                 ticket={{ id: active.ticketId, customer: active.customer }}
                 heightClass="h-[calc(100vh-19rem)]"
               />

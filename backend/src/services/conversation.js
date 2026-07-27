@@ -93,8 +93,17 @@ function buildThread(inboundRows = [], outboundRows = []) {
 // two tables getConversation merges, but we only keep the LATEST message per
 // phone (for the preview line + sort) rather than the whole thread. The latest
 // ticket id rides along as the entry point ChatPanel needs to open the thread.
+/* The chat inbox is driven by MESSAGES, not by tickets.
+   It used to be keyed on the customer's latest ticket and silently dropped
+   anyone who didn't have one — but during WhatsApp intake the customer row is
+   created (name/address saved) BEFORE the agent creates the request, so a live
+   conversation was invisible to the office until the customer happened to state
+   their issue. If they never did, nobody ever saw that someone had written in.
+   A conversation exists as soon as a message is exchanged, so that is what this
+   now lists. `ticketId` is still returned when there is one, so opening a chat
+   from a ticket keeps working. */
 export async function listConversations() {
-  const [custRes, ticketRes, inboundRes, outboundRes] = await Promise.all([
+  const [custRes, ticketRes, inboundRes, outboundRes, staffRes] = await Promise.all([
     supabase.from("customers").select("id, full_name, phone, ai_paused_until"),
     supabase.from("tickets").select("id, customer_id, created_at")
       .order("created_at", { ascending: false }),
@@ -103,7 +112,13 @@ export async function listConversations() {
     supabase.from("notifications").select("recipient, body, audience, sent_at, created_at")
       .in("audience", ["customer", "agent", "bot"])
       .order("created_at", { ascending: false }).limit(3000),
+    // Staff share the same inbox tables — keep managers/technicians out of the
+    // CUSTOMER chat list (they have their own thread view).
+    supabase.from("users").select("phone"),
   ]);
+
+  const digits = (p) => String(p || "").replace(/\D/g, "");
+  const staffPhones = new Set((staffRes.data || []).map((u) => digits(u.phone)).filter(Boolean));
 
   // Latest ticket id per customer (rows come newest-first, so first wins).
   const latestTicket = new Map();
@@ -122,12 +137,26 @@ export async function listConversations() {
     return hasMedia ? "📎 Attachment" : "";
   };
 
+  // Every phone we have exchanged a customer-facing message with, plus every
+  // customer on record — union, so a brand-new sender with no customer row yet
+  // still surfaces.
+  const byPhone = new Map();
+  for (const c of custRes.data || []) if (c.phone) byPhone.set(digits(c.phone), c);
+
+  const phones = new Set([...byPhone.keys()]);
+  for (const m of inboundRes.data || []) if (m.from_phone) phones.add(digits(m.from_phone));
+  for (const m of outboundRes.data || []) if (m.recipient) phones.add(digits(m.recipient));
+
   const rows = [];
-  for (const c of custRes.data || []) {
-    const ticketId = latestTicket.get(c.id);
-    if (!ticketId) continue; // no ticket → no chat entry point (rare in practice)
-    const inb = lastIn.get(c.phone);
-    const out = lastOut.get(c.phone);
+  for (const key of phones) {
+    if (!key || staffPhones.has(key)) continue;
+    const c = byPhone.get(key);
+    // Prefer the stored customer phone (canonical "+91…" form) so the thread
+    // lookups, which match on the exact string, keep working.
+    const phone = c?.phone || rawPhoneFor(key, inboundRes.data, outboundRes.data);
+    const ticketId = c ? latestTicket.get(c.id) || null : null;
+    const inb = lastIn.get(phone);
+    const out = lastOut.get(phone);
     const outAt = out ? out.sent_at || out.created_at : null;
 
     // Preview = the newer of the customer's last inbound and our last outbound.
@@ -140,14 +169,78 @@ export async function listConversations() {
     if (!lastAt) continue; // never exchanged a message → skip empty threads
 
     rows.push({
-      customer: { id: c.id, full_name: c.full_name, phone: c.phone },
+      // id may be null for someone who has written in but isn't a customer row
+      // yet — the UI keys on `phone`, which always exists.
+      customer: { id: c?.id || null, full_name: c?.full_name || null, phone },
+      phone,
       ticketId, lastMessage, lastAt, lastDir,
       lastInboundAt: inb ? inb.created_at : null,
-      botOn: !isPaused(c.ai_paused_until),
+      botOn: !isPaused(c?.ai_paused_until),
     });
   }
   rows.sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
   return { conversations: rows };
+}
+
+// The phone string as it was actually stored on a message, for numbers with no
+// customer row (so thread lookups match the exact stored value).
+function rawPhoneFor(key, inbound, outbound) {
+  const d = (p) => String(p || "").replace(/\D/g, "");
+  const hit = (inbound || []).find((m) => d(m.from_phone) === key);
+  if (hit) return hit.from_phone;
+  const out = (outbound || []).find((m) => d(m.recipient) === key);
+  return out ? out.recipient : key;
+}
+
+/* The thread for a phone number, with no ticket required. getConversation()
+   stays as the ticket-keyed entry point and delegates here. */
+export async function getConversationByPhone(phone) {
+  if (!phone) return { phone: null, messages: [] };
+
+  const [inbound, outbound, cust] = await Promise.all([
+    supabase.from("wa_inbound").select("*").eq("from_phone", phone),
+    supabase.from("notifications").select("*")
+      .eq("recipient", phone).in("audience", ["customer", "agent", "bot"]),
+    supabase.from("customers").select("full_name, ai_paused_until").eq("phone", phone).maybeSingle(),
+  ]);
+
+  return {
+    phone,
+    customer: cust.data?.full_name || null,
+    messages: buildThread(inbound.data, outbound.data),
+    botOn: !isPaused(cust.data?.ai_paused_until),
+  };
+}
+
+// Manager reply to a phone number that may not have a ticket yet.
+export async function sendMessageToPhone({ phone, body, replyTo }) {
+  const text = (body || "").trim();
+  if (!text) { const e = new Error("Message is empty"); e.status = 400; throw e; }
+  if (!phone) { const e = new Error("No phone number"); e.status = 400; throw e; }
+
+  // A manual reply means a human has taken over — pause the bot, same rule the
+  // ticket-keyed path applies.
+  await supabase.from("customers")
+    .update({ ai_paused_until: new Date(Date.now() + HANDOFF_WINDOW_MS).toISOString() })
+    .eq("phone", phone);
+
+  const quote = replyTo?.body
+    ? { body: String(replyTo.body).slice(0, 300), wamid: replyTo.wamid || null }
+    : null;
+  const id = await queueNotification({ recipient: phone, audience: "agent", body: text, replyTo: quote });
+  const { data } = await supabase
+    .from("notifications").select("status, last_error").eq("id", id).maybeSingle();
+  return { ok: data?.status === "SENT", status: data?.status, error: data?.last_error || null };
+}
+
+// Bot on/off for a phone (no ticket needed). No-op when there's no customer row
+// yet — there is nothing to pause against.
+export async function setBotForPhone(phone, on) {
+  const { data, error } = await supabase.from("customers")
+    .update({ ai_paused_until: on ? null : OFF_UNTIL })
+    .eq("phone", phone).select("id").maybeSingle();
+  if (error) throw new Error("setBotForPhone: " + error.message);
+  return { ok: true, applied: !!data };
 }
 
 export async function getConversation(ticketId) {

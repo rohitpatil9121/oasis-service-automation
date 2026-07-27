@@ -77,10 +77,37 @@ async function sendInteractiveViaMeta(toPhone, interactive) {
   return { sid: data.messages?.[0]?.id };
 }
 
+// Send a PDF (or any file) as a WhatsApp document, by public URL — Meta fetches
+// it, so the link must be publicly readable (our invoices bucket is).
+async function sendDocumentViaMeta(toPhone, { link, filename, caption }) {
+  const to = normalizePhone(toPhone).replace(/\D/g, "");
+  const url = `https://graph.facebook.com/${env.metaGraphVersion}/${env.metaPhoneNumberId}/messages`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.metaAccessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to,
+      type: "document",
+      document: { link, filename, ...(caption ? { caption } : {}) },
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(`Meta document send failed (${res.status}): ${data.error?.message || "unknown"}`);
+    err.metaStatus = res.status;
+    err.metaCode = data.error?.code;
+    throw err;
+  }
+  return { sid: data.messages?.[0]?.id };
+}
+
 // Send a pre-approved template (Meta only). Templates bypass the 24-hour
 // customer-service window, so this is how staff alerts actually get delivered.
 // `template` = { name, language, variables: [...] } (see services/waTemplates.js).
-async function sendTemplateViaMeta(toPhone, { name, language = "en", variables = [], otpCode }) {
+async function sendTemplateViaMeta(toPhone, { name, language = "en", variables = [], otpCode, headerDocument }) {
   const to = normalizePhone(toPhone).replace(/\D/g, "");
   const url = `https://graph.facebook.com/${env.metaGraphVersion}/${env.metaPhoneNumberId}/messages`;
 
@@ -88,6 +115,19 @@ async function sendTemplateViaMeta(toPhone, { name, language = "en", variables =
   const components = variables.length
     ? [{ type: "body", parameters: variables.map((text) => ({ type: "text", text: String(text ?? "") })) }]
     : [];
+
+  // A template whose header is a DOCUMENT — this is the only way to deliver a
+  // PDF outside the 24-hour service window. The header component must come
+  // first in the array.
+  if (headerDocument?.link) {
+    components.unshift({
+      type: "header",
+      parameters: [{
+        type: "document",
+        document: { link: headerDocument.link, filename: headerDocument.filename || "document.pdf" },
+      }],
+    });
+  }
 
   // Authentication templates carry a copy-code button; Meta requires the code to
   // be passed to that button too, or the send fails with a parameter mismatch.
@@ -169,6 +209,27 @@ export async function sendWhatsAppTemplate(toPhone, template, fallbackBody) {
 
   const result = await sendTemplateViaMeta(toPhone, template);
   log.info(`[WA TEMPLATE SENT ${template.name}] ${result.sid} -> ${toPhone}`);
+  return { ...result, mock: false };
+}
+
+// Send a document (our GST invoice PDF). Meta only — Twilio's media send takes a
+// different shape and we don't run it in production, so there it degrades to the
+// readable text plus the link rather than failing the whole notification.
+export async function sendWhatsAppDocument(toPhone, { link, filename, caption }, fallbackBody) {
+  if (env.whatsappMock) {
+    const sid = "MOCK-" + Math.random().toString(36).slice(2, 10);
+    log.info(`[WA MOCK DOCUMENT ${filename}] -> ${toPhone}\n${link}\n[sid ${sid}]`);
+    return { sid, mock: true };
+  }
+
+  if (env.whatsappProvider !== "meta") {
+    const result = await sendViaTwilio(toPhone, `${fallbackBody || ""}\n${link}`.trim());
+    log.info(`[WA SENT twilio] ${result.sid} -> ${toPhone}`);
+    return { ...result, mock: false };
+  }
+
+  const result = await sendDocumentViaMeta(toPhone, { link, filename, caption });
+  log.info(`[WA DOCUMENT SENT ${filename}] ${result.sid} -> ${toPhone}`);
   return { ...result, mock: false };
 }
 

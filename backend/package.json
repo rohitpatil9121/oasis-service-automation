@@ -24,6 +24,7 @@
     "groq-sdk": "^1.2.1",
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.2",
+    "pdfmake": "^0.2.23",
     "twilio": "^5.3.0"
   }
 }

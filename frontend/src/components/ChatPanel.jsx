@@ -28,19 +28,30 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
   }
 
+  // A chat doesn't always have a ticket: during WhatsApp intake the customer
+  // exists before the request does. Fall back to the phone-keyed endpoints so
+  // those conversations are still readable and answerable.
+  const phone = ticket.customer?.phone;
+  const byTicket = !!ticket.id;
+
   const load = useCallback(async () => {
     try {
-      const { messages, botOn } = await api.getConversation(ticket.id);
+      const { messages, botOn } = byTicket
+        ? await api.getConversation(ticket.id)
+        : await api.getPhoneConversation(phone);
       setMessages(messages);
       if (typeof botOn === "boolean") setBotOn(botOn);
-      markSeen(ticket.id); // manager is viewing this chat → clear its unread badge
+      markSeen(ticket.id || phone); // viewing the chat clears its unread badge
     } catch { /* ignore transient */ } finally { setLoaded(true); }
-  }, [ticket.id]);
+  }, [ticket.id, phone, byTicket]);
 
   async function toggleBot() {
     const next = !botOn;
     setBotOn(next);
-    try { await api.setBot(ticket.id, next); } catch { setBotOn(!next); }
+    try {
+      if (byTicket) await api.setBot(ticket.id, next);
+      else await api.setPhoneBot(phone, next);
+    } catch { setBotOn(!next); }
   }
 
   useEffect(() => {
@@ -68,7 +79,9 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
     setText(""); setReplyTo(null);
     try {
       const payload = quoting ? { wamid: quoting.waMessageId || null, body: snippet(quoting) } : null;
-      const res = await api.sendMessage(ticket.id, body, payload);
+      const res = byTicket
+        ? await api.sendMessage(ticket.id, body, payload)
+        : await api.sendPhoneMessage(phone, body, payload);
       if (!res.ok) setWarn("Couldn't deliver — the customer may be outside WhatsApp's 24-hour window. They need to message first.");
       await load();
     } catch (err) { setWarn(err.message); } finally { setSending(false); }
