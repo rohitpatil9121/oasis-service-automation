@@ -79,17 +79,23 @@ export function buildInvoiceDoc(inv) {
     { text: formatAmount(l.gross), fontSize: 8.5, alignment: "right", margin: [3, 3, 3, 3] },
   ]);
 
-  // Totals ride in the same table so the column rules line up, exactly as Tally prints them.
-  const totalRow = (label, value, opts = {}) => [
-    { text: "", border: [true, false, false, false] },
-    { text: "", border: [false, false, false, false] },
-    { text: "", border: [false, false, false, false] },
-    { text: label, fontSize: 8.5, alignment: "right", bold: !!opts.bold, margin: [3, 2, 3, 2], border: [false, false, false, false] },
-    {
-      text: value, fontSize: opts.big ? 10 : 8.5, alignment: "right", bold: !!opts.bold,
-      margin: [3, 2, 3, 2], border: [true, !!opts.ruleAbove, true, false],
-    },
-  ];
+  // Totals ride in the same table so the column rules line up, exactly as Tally
+  // prints them. Borders are [left, top, right, bottom]; `closeBox` draws the
+  // bottom edge across every cell so the last row seals the table instead of
+  // leaving it open under TOTAL.
+  const totalRow = (label, value, opts = {}) => {
+    const b = !!opts.closeBox;
+    return [
+      { text: "", border: [true, false, false, b] },
+      { text: "", border: [false, false, false, b] },
+      { text: "", border: [false, false, false, b] },
+      { text: label, fontSize: 8.5, alignment: "right", bold: !!opts.bold, margin: [3, 2, 3, 2], border: [false, false, false, b] },
+      {
+        text: value, fontSize: opts.big ? 10 : 8.5, alignment: "right", bold: !!opts.bold,
+        margin: [3, 2, 3, 2], border: [true, !!opts.ruleAbove, true, b],
+      },
+    ];
+  };
 
   const taxRows = interstate
     ? [totalRow(`IGST`, formatAmount(inv.igst))]
@@ -214,7 +220,7 @@ export function buildInvoiceDoc(inv) {
             totalRow("Taxable Value", formatAmount(inv.taxable_value), { ruleAbove: true }),
             ...taxRows,
             ...(Number(inv.round_off) !== 0 ? [totalRow("Round Off", formatAmount(inv.round_off))] : []),
-            totalRow("TOTAL", rs(inv.total), { bold: true, big: true, ruleAbove: true }),
+            totalRow("TOTAL", rs(inv.total), { bold: true, big: true, ruleAbove: true, closeBox: true }),
           ],
         },
         layout: {
