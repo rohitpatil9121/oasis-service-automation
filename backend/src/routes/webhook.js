@@ -13,6 +13,55 @@ import { log } from "../lib/logger.js";
 
 const router = Router();
 
+/* Record Meta's delivery receipts against the notification we sent.
+
+   Each entry is { id (wamid), status, timestamp, recipient_id, errors[] }.
+   `status` walks sent → delivered → read; `failed` carries an error code, and
+   that code is the whole point of this function — 131026 ("message
+   undeliverable"), 131047 (re-engagement required) and friends are the
+   difference between "the customer ignored us" and "the message never arrived".
+
+   Statuses can arrive out of order and repeat, so never downgrade a row that
+   has already reached a later stage. */
+const STATUS_RANK = { accepted: 0, sent: 1, delivered: 2, read: 3, failed: 4 };
+
+async function recordDeliveryStatuses(statuses) {
+  for (const s of statuses) {
+    if (!s?.id) continue;
+    const at = s.timestamp ? new Date(Number(s.timestamp) * 1000).toISOString() : new Date().toISOString();
+
+    const { data: row } = await supabase
+      .from("notifications").select("id, delivery_status")
+      .eq("provider_sid", s.id).maybeSingle();
+    if (!row) continue; // not one of ours (or sent before this column existed)
+
+    // Ignore a stale receipt that would move the row backwards.
+    if ((STATUS_RANK[s.status] ?? -1) < (STATUS_RANK[row.delivery_status] ?? -1)) continue;
+
+    const patch = { delivery_status: s.status };
+    if (s.status === "delivered") patch.delivered_at = at;
+    if (s.status === "read") { patch.read_at = at; if (!row.delivered_at) patch.delivered_at = at; }
+    if (s.status === "failed") {
+      const err = s.errors?.[0] || {};
+      patch.failure_code = err.code ?? null;
+      patch.failure_detail = [err.title, err.message, err.error_data?.details]
+        .filter(Boolean).join(" — ").slice(0, 500) || "unknown";
+      // Surface it on the main status too, so the dashboard stops calling a
+      // message that never arrived a success.
+      patch.status = "FAILED";
+      patch.last_error = `undelivered (${err.code ?? "?"}): ${patch.failure_detail}`.slice(0, 500);
+      log.warn(`[WA UNDELIVERED] ${s.id} -> ${s.recipient_id}: ${patch.failure_detail}`);
+    }
+
+    const { error } = await supabase.from("notifications").update(patch).eq("id", row.id);
+    // Graceful until phase10_delivery_status.sql is applied.
+    if (error && /column .* does not exist|schema cache/i.test(error.message)) {
+      log.warn("delivery status columns missing — run phase10_delivery_status.sql");
+      return;
+    }
+  }
+}
+
 // How long to wait after the customer's LAST message before the bot replies.
 // People often fire several messages in a row ("hi" … "my RO is leaking" …
 // "since morning"). Without this pause the bot answers the first line while
@@ -219,8 +268,18 @@ router.post("/whatsapp", async (req, res) => {
     res.sendStatus(200); // ack immediately so Meta doesn't retry/duplicate
     try {
       const value = req.body?.entry?.[0]?.changes?.[0]?.value;
+
+      // Delivery receipts. Meta reports every message's fate here (sent →
+      // delivered → read, or failed with a code). We used to drop these, which
+      // meant an accepted-but-never-delivered message was indistinguishable
+      // from a successful one on the dashboard.
+      if (value?.statuses?.length) {
+        await recordDeliveryStatuses(value.statuses);
+        return;
+      }
+
       const msg = value?.messages?.[0];
-      if (!msg) return; // delivery/read status events have no messages — ignore
+      if (!msg) return; // nothing actionable in this event
 
       const from = "+" + msg.from; // Meta sends e.g. "918668732890" (no +)
       // Template quick-reply buttons (e.g. estimate Approve/Reject) come back as
