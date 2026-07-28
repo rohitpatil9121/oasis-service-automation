@@ -13,9 +13,10 @@ import { log } from "../lib/logger.js";
 // AI bot on/off is stored per customer in `customers.ai_paused_until`:
 //   null / past timestamp  => bot ON (auto-replies)
 //   future timestamp       => bot OFF (manager is handling)
-// Sending a manual message auto-pauses for 12h (rolling); the chat toggle sets it
-// explicitly (ON = clear, OFF = far future).
-const HANDOFF_WINDOW_MS = 12 * 60 * 60 * 1000; // 12 hours
+// The dashboard toggle is the ONLY thing that changes this (ON = clear,
+// OFF = far future). Nothing pauses the bot automatically — not a manual reply,
+// not an escalation, not a complaint. It used to auto-pause for 12h whenever the
+// office sent a message, which silently killed the AI for the rest of the day.
 const OFF_UNTIL = "2099-01-01T00:00:00.000Z"; // "indefinitely off" until toggled on
 
 const isPaused = (ts) => !!ts && new Date(ts).getTime() > Date.now();
@@ -218,11 +219,8 @@ export async function sendMessageToPhone({ phone, body, replyTo }) {
   if (!text) { const e = new Error("Message is empty"); e.status = 400; throw e; }
   if (!phone) { const e = new Error("No phone number"); e.status = 400; throw e; }
 
-  // A manual reply means a human has taken over — pause the bot, same rule the
-  // ticket-keyed path applies.
-  await supabase.from("customers")
-    .update({ ai_paused_until: new Date(Date.now() + HANDOFF_WINDOW_MS).toISOString() })
-    .eq("phone", phone);
+  // Same rule as the ticket-keyed path: sending a message does NOT pause the
+  // bot. Only the explicit Bot On/Off toggle does.
 
   const quote = replyTo?.body
     ? { body: String(replyTo.body).slice(0, 300), wamid: replyTo.wamid || null }
@@ -325,13 +323,11 @@ export async function sendCustomerMessage({ ticketId, body, actorId, replyTo }) 
     recipient: ticket.customer.phone, audience: "agent", ticketId, body: text, replyTo: quote,
   });
 
-  // Auto-pause the AI for 12h so it doesn't talk over the manager — unless it's
-  // already paused for longer (e.g. toggled off). Keeps the longer pause.
-  const next = new Date(Date.now() + HANDOFF_WINDOW_MS);
-  const cur = ticket.customer.ai_paused_until ? new Date(ticket.customer.ai_paused_until) : null;
-  await supabase.from("customers")
-    .update({ ai_paused_until: (cur && cur > next ? cur : next).toISOString() })
-    .eq("id", ticket.customer.id);
+  // Sending a manual message deliberately does NOT pause the bot. It used to
+  // auto-pause for 12h, which meant one quick reply from the office silently
+  // switched the AI off for the rest of the day and nobody noticed until the
+  // customer stopped getting answers. The Bot On/Off toggle is now the only
+  // thing that changes this — off means off because someone chose it.
 
   const { data } = await supabase
     .from("notifications").select("status, last_error").eq("id", id).maybeSingle();
