@@ -15,7 +15,6 @@ import { COMPANY_INFO } from "./knowledge.js";
 import { env } from "../../config/env.js";
 import { log } from "../../lib/logger.js";
 
-const HANDOFF_WINDOW_MS = 12 * 60 * 60 * 1000; // pause the bot 12h on handoff
 const isOpen = (status) => status && status !== "CLOSED" && status !== "CANCELLED";
 
 // Ensure there's a draft/open ticket to attach details to. Reuses an existing
@@ -216,7 +215,8 @@ async function logComplaint(ctx, { ticket_number, details } = {}) {
     if (error) log.error("complaint audit row skipped:", error.message);
   }
 
-  await pauseBot(ctx.phone);
+  // Managers are alerted below, but the bot keeps answering: the AI is switched
+  // off only from the dashboard toggle, never automatically.
   const ref = ticket?.ticket_number ? ` (${ticket.ticket_number})` : "";
   for (const phone of await managerPhones()) {
     await queueNotification({
@@ -226,15 +226,6 @@ async function logComplaint(ctx, { ticket_number, details } = {}) {
   }
   ctx.handedOff = true;
   return { ok: true, ticket_number: ticket?.ticket_number || null, reopened };
-}
-
-async function pauseBot(phone) {
-  const { data: cust } = await supabase.from("customers").select("id").eq("phone", phone).maybeSingle();
-  if (cust) {
-    await supabase.from("customers")
-      .update({ ai_paused_until: new Date(Date.now() + HANDOFF_WINDOW_MS).toISOString() })
-      .eq("id", cust.id);
-  }
 }
 
 // ---- Flow 5: reschedule / cancel ----
@@ -298,9 +289,9 @@ async function requestReschedule(ctx, { ticket_number, preferred_time } = {}) {
 }
 
 async function escalateToHuman(ctx, reason) {
-  // Pause the bot for this customer so a manager can take over (same mechanism
-  // the dashboard uses — see conversation.js ai_paused_until).
-  await pauseBot(ctx.phone);
+  // Alert managers, but leave the bot running. Owner's rule: the AI is only ever
+  // switched off by the dashboard toggle, so an escalation never silently
+  // disables it — a manager turns it off if they want to take the chat over.
   for (const phone of await managerPhones()) {
     await queueNotification({
       recipient: phone, audience: "manager", ticketId: ctx.ticketId || null,
