@@ -593,11 +593,15 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
 
 export async function listParts() {
   const { data, error } = await supabase
-    .from("stock_items").select("id, name, unit_price, brand, base_cost")
+    .from("stock_items").select("id, name, sku, unit_price, brand, base_cost")
     .eq("is_active", true).order("name");
   if (error) throw new Error("listParts: " + error.message);
   return (data || []).map((p) => ({
     id: p.id, name: p.name, price: Number(p.unit_price || 0), brand: p.brand || "other",
+    // The app shows "BRAND · SKU" under the part name on the bill. sku is
+    // nullable and currently unset on every stock item, so the app must treat
+    // it as optional and fall back to the brand alone.
+    sku: p.sku || null,
     minPrice: Number(p.base_cost || 0),
   }));
 }

@@ -1,7 +1,14 @@
-// Renders the customer's GST tax invoice as a PDF, laid out like a Tally sales
-// invoice: bordered header block, seller/buyer panels, an itemised table with
-// HSN/SAC, the HSN-wise tax summary Tally prints below it, amount in words,
-// bank details and a signature block.
+// Renders the customer's service bill as a PDF: bordered header block,
+// seller/buyer panels, an itemised table, amount in words, bank details and a
+// signature block.
+//
+// Deliberately NOT a tax invoice (owner's decision). No GSTIN, no place of
+// supply, no CGST/SGST/IGST breakup and no tax summary — the customer copy is a
+// plain bill. The tax figures are still computed and stored on every invoice row
+// (invoices.taxable_value / cgst / sgst / igst / line_items[].hsn) for the Tally
+// export and the GST returns; they are simply not printed here. Because prices
+// are GST-inclusive (see lib/gst.js), each line's `gross` IS the amount quoted to
+// the customer, so the printed lines add up to the total with nothing hidden.
 //
 // pdfmake (not Puppeteer) on purpose: it is pure JS, so the deploy stays small
 // and there is no headless Chromium to keep alive on the server for what is a
@@ -58,8 +65,7 @@ function labelValueRows(pairs) {
 }
 
 export function buildInvoiceDoc(inv) {
-  const { seller, buyer, lines, hsnSummary } = inv;
-  const interstate = inv.is_interstate;
+  const { seller, buyer, lines } = inv;
   const upi = upiLink(seller, inv);
 
   // ---- itemised table ----
@@ -97,45 +103,6 @@ export function buildInvoiceDoc(inv) {
     ];
   };
 
-  const taxRows = interstate
-    ? [totalRow(`IGST`, formatAmount(inv.igst))]
-    : [totalRow(`CGST`, formatAmount(inv.cgst)), totalRow(`SGST`, formatAmount(inv.sgst))];
-
-  // ---- rate-wise tax summary ----
-  // Grouped by GST rate rather than by HSN, since the codes are off the printed
-  // copy. Collapse the HSN-wise rows the caller passed in.
-  const rateMap = new Map();
-  for (const h of hsnSummary) {
-    const row = rateMap.get(h.gstRate) || { gstRate: h.gstRate, taxable: 0, cgst: 0, sgst: 0, igst: 0 };
-    row.taxable += h.taxable; row.cgst += h.cgst; row.sgst += h.sgst; row.igst += h.igst;
-    rateMap.set(h.gstRate, row);
-  }
-  const rateSummary = [...rateMap.values()].sort((a, b) => a.gstRate - b.gstRate);
-
-  const summaryHead = interstate
-    ? ["Taxable Value", "IGST Rate", "IGST Amount", "Total Tax"]
-    : ["Taxable Value", "CGST Rate", "CGST Amt", "SGST Rate", "SGST Amt", "Total Tax"];
-
-  const summaryBody = rateSummary.map((h) => {
-    const tax = interstate ? h.igst : h.cgst + h.sgst;
-    const cells = interstate
-      ? [formatAmount(h.taxable), `${h.gstRate}%`, formatAmount(h.igst), formatAmount(tax)]
-      : [formatAmount(h.taxable), `${h.gstRate / 2}%`, formatAmount(h.cgst),
-         `${h.gstRate / 2}%`, formatAmount(h.sgst), formatAmount(tax)];
-    return cells.map((c) => ({
-      text: String(c), fontSize: 8, alignment: "right", margin: [3, 3, 3, 3],
-    }));
-  });
-
-  const totalTax = interstate ? inv.igst : inv.cgst + inv.sgst;
-  const summaryTotal = (interstate
-    ? [formatAmount(inv.taxable_value), "", formatAmount(inv.igst), formatAmount(totalTax)]
-    : [formatAmount(inv.taxable_value), "", formatAmount(inv.cgst), "", formatAmount(inv.sgst), formatAmount(totalTax)]
-  ).map((c) => ({
-    text: String(c), fontSize: 8, bold: true, fillColor: "#f6f6f6",
-    alignment: "right", margin: [3, 3, 3, 3],
-  }));
-
   const sellerAddr = [seller.address_line1, seller.address_line2,
     [seller.city, seller.pincode].filter(Boolean).join(" - ")].filter(Boolean);
 
@@ -146,17 +113,13 @@ export function buildInvoiceDoc(inv) {
 
     footer: (page, count) => ({
       columns: [
-        { text: "This is a computer-generated invoice.", fontSize: 7, color: "#888888", margin: [28, 0, 0, 0] },
+        { text: "This is a computer-generated bill.", fontSize: 7, color: "#888888", margin: [28, 0, 0, 0] },
         { text: `Page ${page} of ${count}`, fontSize: 7, color: "#888888", alignment: "right", margin: [0, 0, 28, 0] },
       ],
     }),
 
     content: [
-      { text: "TAX INVOICE", alignment: "center", bold: true, fontSize: 13, margin: [0, 0, 0, 2] },
-      {
-        text: seller.gstin ? `GSTIN: ${seller.gstin}` : "",
-        alignment: "center", fontSize: 8.5, color: "#555555", margin: [0, 0, 0, 8],
-      },
+      { text: "BILL", alignment: "center", bold: true, fontSize: 13, margin: [0, 0, 0, 8] },
 
       // Seller + invoice meta
       {
@@ -172,13 +135,12 @@ export function buildInvoiceDoc(inv) {
               seller.email ? `Email: ${seller.email}` : null,
             ]),
             labelValueRows([
-              ["Invoice No.", inv.invoice_no],
+              ["Bill No.", inv.invoice_no],
               ["Dated", istDate(inv.issued_at)],
               // The invoice number IS the request id now, so only show a separate
               // reference line on older invoices where the two actually differ.
               inv.ticket_number && inv.ticket_number !== inv.invoice_no
                 ? ["Reference", inv.ticket_number] : null,
-              ["Place of Supply", inv.place_of_supply],
               ["Payment Mode", inv.payment_mode],
             ]),
           ]],
@@ -196,11 +158,10 @@ export function buildInvoiceDoc(inv) {
         table: {
           widths: ["100%"],
           body: [[
-            partyBlock("BUYER (BILL TO)", [
+            partyBlock("BILL TO", [
               buyer.full_name,
               buyer.address,
               buyer.phone ? `Phone: ${buyer.phone}` : null,
-              buyer.gstin ? `GSTIN: ${buyer.gstin}` : null,
             ]),
           ]],
         },
@@ -220,9 +181,8 @@ export function buildInvoiceDoc(inv) {
           body: [
             itemHeader,
             ...itemRows,
-            totalRow("Taxable Value", formatAmount(inv.taxable_value), { ruleAbove: true }),
-            ...taxRows,
-            ...(Number(inv.round_off) !== 0 ? [totalRow("Round Off", formatAmount(inv.round_off))] : []),
+            ...(Number(inv.round_off) !== 0
+              ? [totalRow("Round Off", formatAmount(inv.round_off), { ruleAbove: true })] : []),
             totalRow("TOTAL", rs(inv.total), { bold: true, big: true, ruleAbove: true, closeBox: true }),
           ],
         },
@@ -234,29 +194,8 @@ export function buildInvoiceDoc(inv) {
       },
 
       {
-        text: [{ text: "Amount Chargeable (in words): ", fontSize: 8.5, color: "#555555" },
+        text: [{ text: "Amount (in words): ", fontSize: 8.5, color: "#555555" },
                { text: amountInWords(inv.total), fontSize: 9, bold: true }],
-        margin: [0, 0, 0, 10],
-      },
-
-      { text: "Tax Summary", bold: true, fontSize: 9, margin: [0, 0, 0, 4] },
-      {
-        table: {
-          headerRows: 1,
-          widths: interstate ? ["*", 70, 80, 80] : ["*", 55, 70, 55, 70, 75],
-          body: [
-            summaryHead.map((t) => ({
-              text: t, bold: true, fontSize: 8, fillColor: "#eeeeee", margin: [3, 4, 3, 4],
-              alignment: "right",
-            })),
-            ...summaryBody,
-            summaryTotal,
-          ],
-        },
-        layout: {
-          hLineColor: () => BORDER, vLineColor: () => BORDER,
-          hLineWidth: () => 0.5, vLineWidth: () => 0.5,
-        },
         margin: [0, 0, 0, 12],
       },
 
@@ -274,7 +213,7 @@ export function buildInvoiceDoc(inv) {
               { text: "Declaration", bold: true, fontSize: 8.5, margin: [0, 0, 0, 2] },
               {
                 text: seller.terms
-                  || "We declare that this invoice shows the actual price of the goods and services described and that all particulars are true and correct.",
+                  || "We declare that this bill shows the actual price of the goods and services described and that all particulars are true and correct.",
                 fontSize: 7.5, color: "#555555",
               },
             ],
@@ -329,7 +268,7 @@ function upiLink(seller, inv) {
   const pn = String(seller.upi_payee_name || seller.trade_name || seller.legal_name || "").trim();
   const parts = [`pa=${pa}`, "cu=INR"];
   if (pn) parts.push(`pn=${encodeURIComponent(pn)}`);
-  if (inv?.invoice_no) parts.push(`tn=${encodeURIComponent(`Invoice ${inv.invoice_no}`)}`);
+  if (inv?.invoice_no) parts.push(`tn=${encodeURIComponent(`Bill ${inv.invoice_no}`)}`);
   return `upi://pay?${parts.join("&")}`;
 }
 

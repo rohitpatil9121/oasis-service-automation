@@ -276,7 +276,7 @@ export function customerPaymentReceived({ ticketNumber, amount, mode }) {
   };
 }
 
-// The GST tax invoice, delivered as a PDF. The template's HEADER is a DOCUMENT
+// The customer's service bill, delivered as a PDF. The template's HEADER is a DOCUMENT
 // — that is the only way to put a file in front of a customer who is outside the
 // 24-hour service window. `pdfUrl` must be publicly fetchable: Meta downloads it
 // server-side, it is not proxied through us.
@@ -291,8 +291,8 @@ export function customerInvoice({ customerName, invoiceNo, amount, mode, pdfUrl,
     },
     document: { link: pdfUrl, filename: filename || `${invoiceNo}.pdf` },
     body:
-      `Hi ${customerName}, here is your tax invoice.\n` +
-      `Invoice No: ${invoiceNo}\n` +
+      `Hi ${customerName}, here is your bill.\n` +
+      `Bill No: ${invoiceNo}\n` +
       `Amount: ${amount}\n` +
       `Paid via: ${mode}\n\n` +
       `Thank you for choosing Oasis Globe.`,
