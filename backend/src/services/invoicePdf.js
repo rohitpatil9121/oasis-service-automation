@@ -207,12 +207,10 @@ export function buildInvoiceDoc(inv) {
           {
             width: "42%",
             stack: [
-              ...(seller.bank_name || seller.bank_account ? [
-                { text: "Bank Details", bold: true, fontSize: 8.5, margin: [0, 0, 0, 2] },
-                { text: [seller.bank_name, seller.bank_account ? `A/c: ${seller.bank_account}` : null,
-                         seller.bank_ifsc ? `IFSC: ${seller.bank_ifsc}` : null]
-                    .filter(Boolean).join("\n"), fontSize: 8, margin: [0, 0, 0, 8] },
-              ] : []),
+              // No bank block by owner's decision — the customer pays the
+              // technician on the spot (cash or the UPI QR alongside), so account
+              // and IFSC on the printed copy were noise. The details are still on
+              // the company profile and in the stored seller snapshot.
               { text: "Declaration", bold: true, fontSize: 8.5, margin: [0, 0, 0, 2] },
               {
                 text: seller.terms
