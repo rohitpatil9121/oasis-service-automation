@@ -13,6 +13,7 @@ const NAV = [
       { to: "/chats", label: "All Chats", icon: "chat" },
       { to: "/clients", label: "Clients", icon: "user" },
       { to: "/technicians", label: "Technicians", icon: "users" },
+      { to: "/live-map", label: "Live Map", icon: "pin" },
     ],
   },
   {

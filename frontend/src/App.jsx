@@ -5,6 +5,7 @@ import Dashboard from "./pages/Dashboard.jsx";
 import TicketView from "./pages/TicketView.jsx";
 import Technicians from "./pages/Technicians.jsx";
 import TechnicianView from "./pages/TechnicianView.jsx";
+import LiveMap from "./pages/LiveMap.jsx";
 import Stock from "./pages/Stock.jsx";
 import Incentives from "./pages/Incentives.jsx";
 import Customers from "./pages/Customers.jsx";
@@ -29,6 +30,7 @@ export default function App() {
       <Route path="/tickets/:id" element={<Protected><TicketView /></Protected>} />
       <Route path="/technicians" element={<Protected><Technicians /></Protected>} />
       <Route path="/technicians/:id" element={<Protected><TechnicianView /></Protected>} />
+      <Route path="/live-map" element={<Protected><LiveMap /></Protected>} />
       <Route path="/stock" element={<Protected><Stock /></Protected>} />
       <Route path="/incentives" element={<Protected><Incentives /></Protected>} />
       <Route path="/chats" element={<Protected><Inbox /></Protected>} />

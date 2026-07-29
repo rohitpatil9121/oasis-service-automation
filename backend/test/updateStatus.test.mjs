@@ -74,7 +74,20 @@ function makeClient() {
     };
     return b;
   };
-  return { from: (tbl) => build().from(tbl) };
+  return {
+    from: (tbl) => build().from(tbl),
+    // mergeTechWork() goes through the atomic merge_tech_work RPC
+    // (db/phase7_atomic_tech_work.sql), not from()/update(). Mirror its one
+    // semantic that matters here: a patch shallow-merges into tech_work and an
+    // omitted key is left alone rather than deleted.
+    rpc: async (fn, params) => {
+      if (fn !== "merge_tech_work") return { data: null, error: null };
+      const t = store.tickets[params.p_ticket_id];
+      if (!t) return { data: null, error: { message: "ticket not found" } };
+      t.tech_work = { ...(t.tech_work || {}), ...(params.p_patch || {}) };
+      return { data: null, error: null };
+    },
+  };
 }
 
 // ---- Wire the mocks in place of the real modules, then import the SUT ----

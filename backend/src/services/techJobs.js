@@ -60,12 +60,23 @@ const CHARGE_LABELS = {
 
 const rupees = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
+/* A billed part is { id, name, price, qty }: `price` is the per-piece rate, so
+   the line the customer pays is rate × qty. Bills written before quantities
+   existed carry no `qty` and default to 1, which is what they always meant. */
+export const PART_QTY_MAX = 99;
+const partQty = (p) => Math.max(1, Math.min(PART_QTY_MAX, Math.floor(Number(p?.qty) || 1)));
+const partLineTotal = (p) => Number(p?.price || 0) * partQty(p);
+const partsSum = (parts = []) => parts.reduce((s, p) => s + partLineTotal(p), 0);
+// "RO Membrane x2: ₹7,000" — the multiplier only shows when there is one.
+const partBillLine = (p) =>
+  `${p.name}${partQty(p) > 1 ? ` x${partQty(p)}` : ""}: ${rupees(partLineTotal(p))}`;
+
 // Build the itemised estimate the customer receives on WhatsApp: charge line +
 // each part with its price + grand total. `work` is the technician's step data
-// ({ charge, parts:[{name,price}], total }).
+// ({ charge, parts:[{name,price,qty}], total }).
 function formatEstimateBill(ticket, work = {}) {
   const parts = Array.isArray(work.parts) ? work.parts : [];
-  const partsTotal = parts.reduce((s, p) => s + Number(p.price || 0), 0);
+  const partsTotal = partsSum(parts);
   const chargeAmt = CHARGE_FREE.has(work.charge) ? 0 : 250;
   const total = Number(work.total ?? chargeAmt + partsTotal);
   const chargeLabel = CHARGE_LABELS[work.charge] || "Service Charge";
@@ -74,7 +85,7 @@ function formatEstimateBill(ticket, work = {}) {
 
   const lines = ["Problem found", "", `Issue: ${problem}`, "", "Estimate:",
     `${chargeLabel}: ${rupees(chargeAmt)}`];
-  for (const p of parts) lines.push(`${p.name}: ${rupees(p.price)}`);
+  for (const p of parts) lines.push(partBillLine(p));
   lines.push("------------------------------", `Total: ${rupees(total)}`, "",
     "The technician has started the work.");
   return lines.join("\n");
@@ -416,8 +427,18 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
   const techName = ticket.technician?.full_name || "our technician";
 
   // Estimate guard: a part's price must stay between its minimum price
-  // (base_cost, if set) and MRP (unit_price, if set).
+  // (base_cost, if set) and MRP (unit_price, if set), and its quantity must be a
+  // whole number the app's stepper could actually have produced — a fat-fingered
+  // or tampered qty would otherwise multiply straight into the customer's bill.
   if (action === "estimate" && Array.isArray(work.parts) && work.parts.length) {
+    for (const p of work.parts) {
+      if (p.qty == null) continue; // pre-quantity bill ⇒ means 1
+      const q = Number(p.qty);
+      if (!Number.isInteger(q) || q < 1 || q > PART_QTY_MAX) {
+        const e = new Error(`${p.name || "Part"}: quantity must be between 1 and ${PART_QTY_MAX}`);
+        e.status = 400; throw e;
+      }
+    }
     const ids = work.parts.map((p) => p.id).filter(Boolean);
     if (ids.length) {
       const { data: rows, error: pErr } = await supabase
@@ -476,11 +497,11 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
     const eChargeAmt = work.service_charge != null
       ? Number(work.service_charge) || 0
       : (CHARGE_FREE.has(work.charge) ? 0 : 250);
-    const eTotal = Number(work.total ?? eChargeAmt + eParts.reduce((s, p) => s + Number(p.price || 0), 0));
+    const eTotal = Number(work.total ?? eChargeAmt + partsSum(eParts));
     const eProblem = (Array.isArray(work.problems) && work.problems.join(", "))
       || ticket.issue_description || "—";
     const charges = [`${CHARGE_LABELS[work.charge] || "Service Charge"}: ${rupees(eChargeAmt)}`,
-      ...eParts.map((p) => `${p.name}: ${rupees(p.price)}`)].join(", ");
+      ...eParts.map(partBillLine)].join(", ");
     const tpl = customerEstimate({
       ticketNumber: ticket.ticket_number, problem: eProblem, charges,
       total: rupees(eTotal), body: formatEstimateBill(ticket, work),
