@@ -83,12 +83,15 @@ async function buildLines(work, company) {
     const price = Number(p.price) || 0;
     if (price <= 0) continue;
     const cat = catalog.get(p.id);
+    // `price` is the per-piece rate the technician billed; the line is rate × qty.
+    // Jobs billed before quantities existed carry no `qty`, so they fall back to 1.
+    const qty = Math.max(1, Number(p.qty) || 1);
     lines.push({
       description: p.name || cat?.name || "Part",
       hsn: cat?.hsn_code || "8421",
-      qty: Number(p.qty) || 1,
+      qty,
       rate: price,
-      amount: price,
+      amount: price * qty,
       gstRate: cat?.gst_rate != null ? Number(cat.gst_rate) : (Number(company.default_gst_rate) || 18),
     });
   }

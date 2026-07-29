@@ -118,7 +118,7 @@ export default function Incentives() {
                             <div className="mt-1 flex flex-wrap gap-2 text-slate-500">
                               {j.parts.map((p, i) => (
                                 <span key={i}>
-                                  {BRAND_LABEL[p.brand] || p.brand} {inr(p.price)} → {inr(p.payout)}
+                                  {BRAND_LABEL[p.brand] || p.brand} {p.qty > 1 ? `×${p.qty} ` : ""}{inr(p.price)} → {inr(p.payout)}
                                 </span>
                               ))}
                             </div>

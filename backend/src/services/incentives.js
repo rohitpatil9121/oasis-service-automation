@@ -1,6 +1,6 @@
 // Technician performance incentives. Everything here is COMPUTED from closed
 // tickets — nothing is written. Each closed ticket carries the technician's
-// billing in tickets.tech_work ({ parts:[{id,name,price}], payments:[{method,
+// billing in tickets.tech_work ({ parts:[{id,name,price,qty}], payments:[{method,
 // amount}], total }); we look each part's brand/base_cost up in the parts
 // catalog (stock_items) and apply the owner's incentive rules.
 import { supabase } from "../config/supabase.js";
@@ -44,18 +44,22 @@ async function loadCatalog() {
 // (0.06 or 0.10); mode is the ticket's payment mode for the Oasis GST cut.
 export function partIncentive(part, catalog, brandRate, mode) {
   const meta = catalog.get(part.id) || {};
-  const price = Number(part.price || 0);
+  // `part.price` is the per-piece rate; two membranes earn two membranes' worth.
+  // Bills written before quantities existed carry no `qty`, so they default to 1.
+  const qty = Math.max(1, Number(part.qty) || 1);
+  const rate = Number(part.price || 0);
+  const price = rate * qty; // what the customer actually paid for this line
   const brand = meta.brand;
 
   if (brand === "kent" || brand === "aquaguard") {
-    return { brand, price, payout: round2(price * brandRate) };
+    return { brand, qty, price, payout: round2(price * brandRate) };
   }
   if (brand === "oasis") {
-    const margin = Math.max(0, price - Number(meta.base_cost || 0));
+    const margin = Math.max(0, rate - Number(meta.base_cost || 0)) * qty;
     const payout = mode === "online" ? margin * (1 - RULES.GST_RATE) : margin;
-    return { brand, price, margin: round2(margin), payout: round2(payout) };
+    return { brand, qty, price, margin: round2(margin), payout: round2(payout) };
   }
-  return { brand: brand || "other", price, payout: 0 }; // unbranded ⇒ no incentive
+  return { brand: brand || "other", qty, price, payout: 0 }; // unbranded ⇒ no incentive
 }
 
 // Roll a single day's closed tickets into one technician payout. The daily
