@@ -192,6 +192,12 @@ export async function issueInvoiceForTicket({ ticket, work, paymentMode }) {
     bank_name: company.bank_name, bank_account: company.bank_account, bank_ifsc: company.bank_ifsc,
     upi_id: company.upi_id, upi_payee_name: company.upi_payee_name,
     terms: company.terms,
+    // Which technician actually did the job, printed as "Service By" on the bill.
+    // Kept inside the seller snapshot rather than its own column so it is frozen
+    // with the rest of the bill: renderStoredInvoice() rebuilds purely from this
+    // row, so a re-download months later still names the same technician even if
+    // the job is later reassigned or the technician leaves.
+    served_by: ticket.technician?.full_name || null,
   };
   const buyerSnap = {
     full_name: buyer.full_name || "Customer", address: buyer.address || "",

@@ -119,7 +119,7 @@ export function buildInvoiceDoc(inv) {
     }),
 
     content: [
-      { text: "BILL", alignment: "center", bold: true, fontSize: 13, margin: [0, 0, 0, 8] },
+      { text: "SERVICE BILL", alignment: "center", bold: true, fontSize: 13, margin: [0, 0, 0, 8] },
 
       // Seller + invoice meta
       {
@@ -141,6 +141,9 @@ export function buildInvoiceDoc(inv) {
               // reference line on older invoices where the two actually differ.
               inv.ticket_number && inv.ticket_number !== inv.invoice_no
                 ? ["Reference", inv.ticket_number] : null,
+              // Older bills were issued before the technician was captured, so
+              // this row appears only when the snapshot actually carries a name.
+              seller.served_by ? ["Service By", seller.served_by] : null,
               ["Payment Mode", inv.payment_mode],
             ]),
           ]],
