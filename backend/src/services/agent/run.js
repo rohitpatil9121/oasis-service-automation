@@ -41,7 +41,13 @@ const isBareGreeting = (t) => GREETING_RE.test((t || "").trim());
 const looksLikeOpening = (t) =>
   /oasis globe water purifier service/i.test(t || "") && /please share/i.test(t || "");
 
-const MAX_STEPS = 3;    // safety cap on tool round-trips per message (each re-sends prompt+tools, so fewer = fewer tokens)
+/* Safety cap on tool round-trips per message. Each step re-sends prompt+tools, so
+   a lower number is cheaper — but this was briefly cut to 3 and that broke real
+   intakes: a message carrying name + issue + address legitimately needs
+   create_or_get_request, save_customer_details and update_request, which used the
+   entire budget and left no turn in which to reply. Correctness wins; the extra
+   steps are only consumed on turns that genuinely need them. */
+const MAX_STEPS = 5;
 const MAX_HISTORY = 12; // turns of clean transcript kept for context (trimmed to ease Groq's per-minute token limit)
 
 // Hard ceiling on how long ONE customer message may spend in the agent loop.
@@ -51,9 +57,11 @@ const MAX_HISTORY = 12; // turns of clean transcript kept for context (trimmed t
 const AGENT_DEADLINE_MS = parseInt(process.env.AGENT_DEADLINE_MS || "30000", 10);
 // Per-request timeout handed to the provider, so a single hung call can't eat
 // the whole budget on its own.
-const CALL_TIMEOUT_MS = parseInt(process.env.AGENT_CALL_TIMEOUT_MS || "12000", 10);
+const CALL_TIMEOUT_MS = parseInt(process.env.AGENT_CALL_TIMEOUT_MS || "15000", 10);
 
 const HOLDING_REPLY = "One moment — our team is checking this and will reply here shortly.";
+// Neutral "keep going" line, used when the model produced nothing usable.
+const FALLBACK_REPLY = "Could you share a bit more so I can help?";
 
 /* ---- Guardrails -------------------------------------------------------------
 
@@ -161,7 +169,12 @@ async function openrouterChat(params) {
       Authorization: `Bearer ${env.openrouterApiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ ...params, model: env.openrouterModel }),
+    // OpenRouter routes each call to one of several upstream hosts, and their
+    // speeds differ a lot for the same model. Sorting by throughput biases routing
+    // to the fastest available one — measured median for this prompt was ~5s with
+    // default routing, and a slow route is what pushed a live call past the timeout
+    // and needlessly failed us over to the free Groq tier.
+    body: JSON.stringify({ ...params, model: env.openrouterModel, provider: { sort: "throughput" } }),
     signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
   });
   if (!res.ok) {
@@ -260,7 +273,10 @@ function makeChatCaller() {
       return await first(params);
     } catch (e) {
       if (!or) throw e; // no fallback configured → surface the error
-      log.warn(`${firstName} unavailable (${statusOf(e) || "?"}) — switching to ${secondName} (${env.openrouterModel})`);
+      // Include the message, not just the status: a client-side abort (our own
+      // CALL_TIMEOUT_MS firing) has no HTTP status, so a bare "(?)" hides the most
+      // useful case — the provider was merely slow, not down.
+      log.warn(`${firstName} unavailable (${statusOf(e) || e?.name || "?"}: ${e?.message || "no detail"}) — switching to ${secondName}`);
       switched = true;
       try { return await second(params); }
       catch (e2) {
@@ -402,7 +418,21 @@ export async function runAgent({ fromPhone, text }) {
       log.info(`step budget spent on tools for ${phone} — forcing a text reply`);
       const res = await chat({
         model: env.groqModel,
-        messages,
+        // `tools` must still be sent: the history contains tool_call/tool messages,
+        // and providers reject a request that references tools it wasn't given.
+        // tool_choice "none" is what actually blocks another call.
+        messages: [
+          ...messages,
+          {
+            role: "system",
+            content:
+              "Write the WhatsApp reply to the customer now, based on what the tools " +
+              "returned. Plain text only. Never mention tools, function names or what " +
+              "you are about to do — the customer must not see any of that. If details " +
+              "are still missing, ask only for those in one short line.",
+          },
+        ],
+        tools: ACTIVE_TOOL_DEFS,
         tool_choice: "none",
         temperature: 0,
         max_tokens: 300,
@@ -423,8 +453,11 @@ export async function runAgent({ fromPhone, text }) {
   // Output guardrail. Runs BEFORE the canonical-text substitutions below so it can
   // never mangle the approved confirmation or OPENING wording.
   if (PROMPT_LEAK_RE.test(reply)) {
-    log.warn(`[guardrail] prompt leak suppressed in reply to ${phone}`);
-    reply = OFF_TOPIC_REPLY;
+    // NOT the off-topic line: a leak usually happens mid-intake, where telling a
+    // customer "I only handle purifier service" is both wrong and confusing. Fall
+    // back to the neutral prompt-for-more so the conversation can continue.
+    log.warn(`[guardrail] prompt leak suppressed in reply to ${phone}: ${reply.slice(0, 120)}`);
+    reply = FALLBACK_REPLY;
   } else {
     reply = sanitizeReply(reply);
   }
@@ -440,7 +473,7 @@ export async function runAgent({ fromPhone, text }) {
   // existing session with history).
   if (looksLikeOpening(reply)) reply = OPENING;
 
-  if (!reply) reply = timedOut ? HOLDING_REPLY : "Could you share a bit more so I can help?";
+  if (!reply) reply = timedOut ? HOLDING_REPLY : FALLBACK_REPLY;
 
   // Persist a clean transcript (no tool plumbing) + the active ticket/customer.
   const newHistory = [
