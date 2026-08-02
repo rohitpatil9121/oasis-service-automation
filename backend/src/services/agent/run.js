@@ -9,10 +9,10 @@ import { supabase } from "../../config/supabase.js";
 import { env } from "../../config/env.js";
 import { normalizePhone } from "../../lib/phone.js";
 import { log } from "../../lib/logger.js";
-import { TOOL_DEFS } from "./tools.js";
+import { ACTIVE_TOOL_DEFS } from "./tools.js";
 import { executeTool } from "./executor.js";
 import { getLatestTicketByCustomerPhone } from "../tickets.js";
-import { SYSTEM_PROMPT, OPENING } from "./prompt.js";
+import { SYSTEM_PROMPT, OPENING, OFF_TOPIC_REPLY } from "./prompt.js";
 
 const isOpenStatus = (s) => s && s !== "CLOSED" && s !== "CANCELLED";
 
@@ -41,8 +41,74 @@ const isBareGreeting = (t) => GREETING_RE.test((t || "").trim());
 const looksLikeOpening = (t) =>
   /oasis globe water purifier service/i.test(t || "") && /please share/i.test(t || "");
 
-const MAX_STEPS = 5;    // safety cap on tool round-trips per message (each re-sends prompt+tools, so fewer = fewer tokens)
+const MAX_STEPS = 3;    // safety cap on tool round-trips per message (each re-sends prompt+tools, so fewer = fewer tokens)
 const MAX_HISTORY = 12; // turns of clean transcript kept for context (trimmed to ease Groq's per-minute token limit)
+
+// Hard ceiling on how long ONE customer message may spend in the agent loop.
+// Without this there is no upper bound at all: MAX_STEPS sequential calls, each
+// with its own retries, could stack into minutes while the customer waits. When
+// the deadline passes we stop and send HOLDING_REPLY so a manager picks it up.
+const AGENT_DEADLINE_MS = parseInt(process.env.AGENT_DEADLINE_MS || "30000", 10);
+// Per-request timeout handed to the provider, so a single hung call can't eat
+// the whole budget on its own.
+const CALL_TIMEOUT_MS = parseInt(process.env.AGENT_CALL_TIMEOUT_MS || "12000", 10);
+
+const HOLDING_REPLY = "One moment — our team is checking this and will reply here shortly.";
+
+/* ---- Guardrails -------------------------------------------------------------
+
+   The system prompt is the primary guardrail; these are the deterministic backstop
+   for the two cases a prompt alone cannot be trusted with:
+
+   1. INPUT — a message whose whole purpose is to override the prompt. Matching a
+      handful of unambiguous jailbreak phrasings lets us answer without calling the
+      model at all: cheaper, instant, and not dependent on the model holding the line.
+      Kept deliberately narrow — these strings do not occur in a genuine service
+      message, so a false positive would take real effort to produce. Anything
+      subtler is left to the prompt's SCOPE section, which handles it in context.
+
+   2. OUTPUT — the model leaking its instructions, or emitting markdown that renders
+      as literal asterisks in WhatsApp. */
+
+export const INJECTION_RE = new RegExp(
+  [
+    "ignore (all |any |the )?(previous|prior|above|earlier) (instruction|prompt|rule|message)",
+    "disregard (all |any |the )?(previous|prior|above|earlier)",
+    "forget (all |your |the )?(previous|prior|above|earlier|instruction|rule)",
+    "(system|initial|original) prompt",
+    "your (instructions|system message|rules|prompt)",
+    "you are (now|no longer) (a|an|my)",
+    "(developer|debug|god|dan) mode",
+    "act as (a|an|my) (?!.*purifier)",
+    "pretend (to be|you are)",
+    "repeat (everything|the text) above",
+  ].join("|"),
+  "i"
+);
+
+// The model's own instructions leaking into a customer-facing reply.
+export const PROMPT_LEAK_RE =
+  /(SCOPE —|OUT OF SCOPE|SYSTEM_PROMPT|You are the WhatsApp assistant|identify_customer|submit_request|create_or_get_request|tool call)/i;
+
+const MAX_REPLY_CHARS = 900; // a service reply is 1-4 short lines; anything longer has drifted
+
+// WhatsApp shows markdown asterisks literally, and the model slips into them despite
+// the prompt. Strip formatting rather than let "**Ticket ID**" reach the customer.
+export function sanitizeReply(text) {
+  let t = (text || "")
+    .replace(/```[\s\S]*?```/g, " ")     // code fences — never valid in a service reply
+    .replace(/^#{1,6}\s+/gm, "")          // markdown headings
+    .replace(/\*\*(.+?)\*\*/g, "$1")      // bold
+    .replace(/(^|\s)\*(?!\s)(.+?)\*(?=\s|$)/g, "$1$2") // italics (not bullet "* ")
+    .replace(/^\s*[*•]\s+/gm, "- ")       // bullet markers → plain dash
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  // NOTE: deliberately does NOT strip trailing spaces before newlines. The approved
+  // OPENING uses them as fill-in blanks ("– Name: "), and eating them would silently
+  // edit customer-facing copy for a purely cosmetic gain.
+  if (t.length > MAX_REPLY_CHARS) t = t.slice(0, MAX_REPLY_CHARS).trimEnd() + "…";
+  return t;
+}
 
 // Groq key pool. GROQ_API_KEY can be a comma-separated list; each key is a
 // separate account with its own per-minute AND per-day token budget. When one
@@ -69,7 +135,7 @@ async function callGroqPooled(params) {
     const idx = pickGroq();
     if (idx === -1) break; // all keys cooling down
     try {
-      return await groqClients[idx].chat.completions.create(params);
+      return await groqClients[idx].chat.completions.create(params, { timeout: CALL_TIMEOUT_MS });
     } catch (e) {
       lastErr = e;
       if (statusOf(e) !== 429) throw e; // not a rate limit → a real error, surface it
@@ -96,6 +162,7 @@ async function openrouterChat(params) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ ...params, model: env.openrouterModel }),
+    signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -115,12 +182,16 @@ const statusOf = (e) => e?.status ?? e?.response?.status;
 // won't fix itself on retry.
 const isRetryable = (s) => s === 429 || (s >= 500 && s < 600);
 
-// A 429 is a per-MINUTE window — a 500ms nap is useless, we have to let the
-// window roll over. Honour Retry-After when the provider sends one.
+// Keep every wait short. This used to sleep 5s then 20s on a 429 to let a
+// per-minute window roll over — but that ran INSIDE the step loop, so one
+// message could stack 25s per step into minutes. The overall AGENT_DEADLINE_MS
+// is the safety net now; a retry here is only worth it if it's quick, and a
+// provider asking us to wait longer than that is handled as a miss, not a nap.
+const MAX_BACKOFF_MS = 3000;
 function backoffMs(e, attempt) {
   const retryAfter = Number(e?.headers?.["retry-after"]);
-  if (retryAfter) return Math.min(retryAfter * 1000, 30000);
-  return statusOf(e) === 429 ? [5000, 20000][attempt - 1] ?? 20000 : 500 * attempt;
+  if (retryAfter) return Math.min(retryAfter * 1000, MAX_BACKOFF_MS);
+  return statusOf(e) === 429 ? MAX_BACKOFF_MS : 500 * attempt;
 }
 
 // A per-DAY quota 429 (Groq TPD) sends a Retry-After of hours — retrying is
@@ -129,7 +200,7 @@ function backoffMs(e, attempt) {
 const MAX_SANE_RETRY_SEC = 120;
 const isExhausted = (e) => Number(e?.headers?.["retry-after"]) > MAX_SANE_RETRY_SEC;
 
-async function callWithRetry(label, makeCall, tries = 3) {
+async function callWithRetry(label, makeCall, tries = 2) {
   let lastErr;
   for (let attempt = 1; attempt <= tries; attempt++) {
     try {
@@ -149,36 +220,52 @@ async function callWithRetry(label, makeCall, tries = 3) {
   throw lastErr;
 }
 
-// One caller per customer message. Tries the Groq key pool first (rotating keys
-// on 429); if every key is rate-limited, switches to OpenRouter for the rest of
-// this message. Order: Groq pool → OpenRouter → (last resort) Groq pool again.
+// Which provider to try FIRST. Groq is faster, but on its free 8K-TPM tier a
+// single intake message blows the budget partway through, so EVERY message pays
+// a 429 + backoff before falling through. When Groq is unpaid and OpenRouter is
+// on a paid model, "openrouter" avoids that per-message tax. Flip back to "groq"
+// once the Groq Developer tier is active.
+const PRIMARY = (process.env.LLM_PRIMARY || "groq").toLowerCase() === "openrouter"
+  ? "openrouter" : "groq";
+
+// One caller per customer message. Tries PRIMARY first; on failure it switches to
+// the other provider for the REST of this message (no point re-testing a provider
+// that just rate-limited us mid-message), with the primary kept as a last resort.
 function makeChatCaller() {
   const or = hasFallback();
-  let useFallback = false;
+  let switched = false;
 
   const openrouter = (p) => callWithRetry("OpenRouter", () => openrouterChat(p));
+  const groq = (p) => callGroqPooled(p); // sweeps all Groq keys, rotating on 429
+
+  // No OpenRouter key configured → Groq is the only option, whatever PRIMARY says.
+  const orFirst = or && PRIMARY === "openrouter";
+  const first = orFirst ? openrouter : groq;
+  const second = orFirst ? groq : openrouter;
+  const firstName = orFirst ? "OpenRouter" : "Groq";
+  const secondName = orFirst ? "Groq" : "OpenRouter";
 
   return async function chat(params) {
-    // Already switched to OpenRouter earlier in this message.
-    if (useFallback) {
-      try { return await openrouter(params); }
+    // Already switched to the secondary earlier in this message.
+    if (switched) {
+      try { return await second(params); }
       catch (e) {
-        // OpenRouter also down (e.g. 402 out of credit) — try the Groq pool once
-        // more (a key's per-minute window may have rolled over) rather than erroring.
-        log.warn(`OpenRouter ${statusOf(e)} down — last resort: Groq key pool`);
-        return await callGroqPooled(params);
+        // Secondary also down (e.g. OpenRouter 402 out of credit, or every Groq
+        // key cooling) — try the primary once more rather than erroring out.
+        log.warn(`${secondName} ${statusOf(e)} down — last resort: ${firstName}`);
+        return await first(params);
       }
     }
     try {
-      return await callGroqPooled(params); // sweeps all Groq keys, rotating on 429
+      return await first(params);
     } catch (e) {
       if (!or) throw e; // no fallback configured → surface the error
-      log.warn(`All Groq keys unavailable (${statusOf(e) || "?"}) — switching to OpenRouter (${env.openrouterModel})`);
-      useFallback = true;
-      try { return await openrouter(params); }
+      log.warn(`${firstName} unavailable (${statusOf(e) || "?"}) — switching to ${secondName} (${env.openrouterModel})`);
+      switched = true;
+      try { return await second(params); }
       catch (e2) {
-        log.warn(`OpenRouter ${statusOf(e2)} down — last resort: Groq key pool`);
-        return await callGroqPooled(params);
+        log.warn(`${secondName} ${statusOf(e2)} down — last resort: ${firstName}`);
+        return await first(params);
       }
     }
   };
@@ -233,6 +320,25 @@ export async function runAgent({ fromPhone, text }) {
     return OPENING;
   }
 
+  // Prompt-injection / prompt-extraction attempt → answer deterministically without
+  // spending an LLM call. Still recorded in history so the thread reads correctly on
+  // the dashboard and the model sees what was asked if the chat continues.
+  if (INJECTION_RE.test(userText)) {
+    log.warn(`[guardrail] injection attempt from ${phone}: ${userText.slice(0, 120)}`);
+    await saveSession(session.id, {
+      state: session.state,
+      data: {
+        history: [
+          ...history,
+          { role: "user", content: userText },
+          { role: "assistant", content: OFF_TOPIC_REPLY },
+        ].slice(-MAX_HISTORY),
+        ticketId: ctx.ticketId, customerId: ctx.customerId,
+      },
+    });
+    return OFF_TOPIC_REPLY;
+  }
+
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
     ...history,
@@ -240,13 +346,23 @@ export async function runAgent({ fromPhone, text }) {
   ];
 
   let reply = "";
+  let timedOut = false;
+  const deadline = Date.now() + AGENT_DEADLINE_MS;
   const chat = makeChatCaller(); // Groq → OpenRouter fallback, per message
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
+      // Out of time — stop here rather than starting another round-trip. Any
+      // tool writes already made (customer details, issue) are persisted, so the
+      // request isn't lost; we just stop composing and hand over to a human.
+      if (Date.now() > deadline) {
+        timedOut = true;
+        log.warn(`runAgent deadline (${AGENT_DEADLINE_MS}ms) hit at step ${step} for ${phone} — sending holding reply`);
+        break;
+      }
       const res = await chat({
         model: env.groqModel,
         messages,
-        tools: TOOL_DEFS,
+        tools: ACTIVE_TOOL_DEFS,
         tool_choice: "auto",
         temperature: 0, // intake should be consistent, not creative
         max_tokens: 1024,
@@ -272,6 +388,27 @@ export async function runAgent({ fromPhone, text }) {
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
       }
     }
+
+    /* The step budget can be spent entirely on tool calls, leaving no turn in which
+       to actually say anything — observed on a real intake message that triggered
+       create_or_get_request, save_customer_details and update_request back to back.
+       The tool writes all succeeded, but the customer would have received the generic
+       "Could you share a bit more so I can help?" right after describing their problem.
+
+       One more call with tool_choice "none" forces a natural-language reply from the
+       state the tools just produced. Skipped when a canonical reply is already
+       decided (submit/cancel set ctx.confirmation and it is sent verbatim). */
+    if (!reply && !ctx.confirmation && !timedOut && Date.now() < deadline) {
+      log.info(`step budget spent on tools for ${phone} — forcing a text reply`);
+      const res = await chat({
+        model: env.groqModel,
+        messages,
+        tool_choice: "none",
+        temperature: 0,
+        max_tokens: 300,
+      });
+      reply = (res.choices?.[0]?.message?.content || "").trim();
+    }
   } catch (e) {
     // Surface WHY it failed (Groq 429 rate limit / 4xx bad request / 5xx outage),
     // otherwise this is an unexplainable "technical issue" in the customer's chat.
@@ -281,6 +418,15 @@ export async function runAgent({ fromPhone, text }) {
       `runAgent error${status ? ` [HTTP ${status}]` : ""}${code ? ` (${code})` : ""} for ${phone}: ${e.message}`
     );
     return "Sorry, there was a technical issue. Please send your message again.";
+  }
+
+  // Output guardrail. Runs BEFORE the canonical-text substitutions below so it can
+  // never mangle the approved confirmation or OPENING wording.
+  if (PROMPT_LEAK_RE.test(reply)) {
+    log.warn(`[guardrail] prompt leak suppressed in reply to ${phone}`);
+    reply = OFF_TOPIC_REPLY;
+  } else {
+    reply = sanitizeReply(reply);
   }
 
   // If the request was submitted, send the exact approved confirmation verbatim
@@ -294,7 +440,7 @@ export async function runAgent({ fromPhone, text }) {
   // existing session with history).
   if (looksLikeOpening(reply)) reply = OPENING;
 
-  if (!reply) reply = "Could you share a bit more so I can help?";
+  if (!reply) reply = timedOut ? HOLDING_REPLY : "Could you share a bit more so I can help?";
 
   // Persist a clean transcript (no tool plumbing) + the active ticket/customer.
   const newHistory = [

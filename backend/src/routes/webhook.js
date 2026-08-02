@@ -70,12 +70,14 @@ async function recordDeliveryStatuses(statuses) {
 // lines together.
 // Kept short so replies feel fast; still long enough to batch a rapid follow-up.
 // Tunable via BOT_REPLY_DELAY_MS.
-const REPLY_DELAY_MS = parseInt(process.env.BOT_REPLY_DELAY_MS || "2000", 10);
+const REPLY_DELAY_MS = parseInt(process.env.BOT_REPLY_DELAY_MS || "1200", 10);
 const pending = new Map(); // phone -> { parts: [], send, timer }
 
 // Human-like pause BEFORE every bot reply is actually sent (typing delay), on top
-// of the debounce above. Set BOT_SEND_DELAY_MS=0 to disable. Default 1s.
-const SEND_DELAY_MS = parseInt(process.env.BOT_SEND_DELAY_MS || "1000", 10);
+// of the debounce above. Off by default: the agent loop already takes seconds, so
+// this only added to a wait customers were already feeling. Set a value in ms to
+// bring it back.
+const SEND_DELAY_MS = parseInt(process.env.BOT_SEND_DELAY_MS || "0", 10);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Persist the inbound message FIRST (so the inquiry is never lost even if intake
