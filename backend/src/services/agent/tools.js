@@ -1,4 +1,6 @@
-
+// Tool definitions sent to the model. The WHOLE list is re-sent on every step of
+// every message, so an unused tool is a per-message cost — see getToolDefs() below.
+import { env } from "../../config/env.js";
 
 export const TOOL_DEFS = [
   {
@@ -6,9 +8,8 @@ export const TOOL_DEFS = [
     function: {
       name: "identify_customer",
       description:
-        "Look up the messaging customer (by WhatsApp number): saved name, address, " +
-        "and any open service request. Call FIRST in a new conversation so you don't " +
-        "re-ask details we already have.",
+        "Look up this customer: saved name, address, and any open request. Call FIRST in a " +
+        "new conversation so you never re-ask details we already have.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -32,8 +33,7 @@ export const TOOL_DEFS = [
     function: {
       name: "create_or_get_request",
       description:
-        "Start the customer's request (reuses their open one if any, else a new draft). " +
-        "Call once you begin taking a request, before saving the issue.",
+        "Start the request (reuses their open one if any). Call before saving the issue.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -42,9 +42,8 @@ export const TOOL_DEFS = [
     function: {
       name: "update_request",
       description:
-        "Add/update details on the current request. Call whenever the customer describes a " +
-        "symptom, the appliance, an address, or EXTRA info (preferred timings, access/parking, " +
-        "landmarks, 'call before coming'). Pass a field's full combined value if built up over messages.",
+        "Add/update details on the current request. Call whenever the customer gives a " +
+        "symptom, appliance, address, or extra info. Pass a field's FULL combined value.",
       parameters: {
         type: "object",
         properties: {
@@ -54,8 +53,7 @@ export const TOOL_DEFS = [
           notes: {
             type: "string",
             description:
-              "Extra info beyond the core issue for the manager/technician — timings ('after 5pm', " +
-              "'Sunday only'), access instructions, landmarks, 'call before coming'. Pass full combined notes.",
+              "Extra info for the technician: timings, access/parking, landmarks, 'call before coming'.",
           },
         },
       },
@@ -66,8 +64,8 @@ export const TOOL_DEFS = [
     function: {
       name: "submit_request",
       description:
-        "Finalise the request once name, address and issue are all known. Returns the ticket " +
-        "number on success, or the list of still-missing fields.",
+        "Finalise once name, address and issue are known. Returns the ticket number, or the " +
+        "still-missing fields.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -91,8 +89,8 @@ export const TOOL_DEFS = [
     function: {
       name: "get_my_requests",
       description:
-        "List this customer's recent requests (by WhatsApp number), with status and technician. " +
-        "Use when they ask about their status without a ticket number.",
+        "List this customer's recent requests with status and technician. Use for a status " +
+        "question with no ticket number.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -101,9 +99,8 @@ export const TOOL_DEFS = [
     function: {
       name: "get_request_status",
       description:
-        "Get status, assigned technician and any scheduled visit for a specific ticket number. " +
-        "Use when they ask 'what's the status' / 'when will he come' with a ticket number. " +
-        "Report only what it returns — never invent a date or time.",
+        "Status, technician and any scheduled visit for a given ticket number. Report only " +
+        "what it returns — never invent a date or time.",
       parameters: {
         type: "object",
         properties: {
@@ -118,8 +115,8 @@ export const TOOL_DEFS = [
     function: {
       name: "log_complaint",
       description:
-        "Record a complaint about an EXISTING request — technician didn't come, not fixed, unhappy — " +
-        "and alert the team. Pass the ticket number if known. Also pauses the bot for human follow-up.",
+        "Record a complaint about an EXISTING request (technician did not come, not fixed, " +
+        "unhappy) and alert the team. Pass the ticket number if known.",
       parameters: {
         type: "object",
         properties: {
@@ -151,8 +148,8 @@ export const TOOL_DEFS = [
     function: {
       name: "request_reschedule",
       description:
-        "Note that the customer wants to change their visit time and alert the team to confirm a new " +
-        "slot. Pass the ticket number (if known) and their preferred time in their own words. Do NOT promise a slot.",
+        "Flag that the customer wants a different visit time and alert the team. Pass the ticket " +
+        "number (if known) and their preferred time. Do NOT promise a slot.",
       parameters: {
         type: "object",
         properties: {
@@ -167,8 +164,8 @@ export const TOOL_DEFS = [
     function: {
       name: "escalate_to_human",
       description:
-        "Hand the conversation to a human manager and pause the bot. Use when the customer asks to talk " +
-        "to a person, or is abusive — NOT for a complaint about a specific request (use log_complaint).",
+        "Hand the chat to a human manager. Use when they ask for a person, or are abusive — " +
+        "NOT for a complaint about a specific request (use log_complaint).",
       parameters: {
         type: "object",
         properties: {
@@ -179,3 +176,17 @@ export const TOOL_DEFS = [
     },
   },
 ];
+
+// Tools that are pointless to advertise under the current configuration. Sending a
+// tool the model must not act on costs tokens on every step AND invites a wasted
+// round-trip: with FAQ_ENABLED=false, get_company_info only ever returns "tell them
+// the team will confirm", so the model calls it and then has to ask again anyway.
+const DISABLED = new Set(env.faqEnabled ? [] : ["get_company_info"]);
+
+// The active tool list. Computed once at import (the flags are env-level, not
+// per-request) so there is no per-message filtering cost.
+export const ACTIVE_TOOL_DEFS = TOOL_DEFS.filter((t) => !DISABLED.has(t.function.name));
+
+export function getToolDefs() {
+  return ACTIVE_TOOL_DEFS;
+}

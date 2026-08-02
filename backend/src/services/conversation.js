@@ -103,15 +103,27 @@ function buildThread(inboundRows = [], outboundRows = []) {
    A conversation exists as soon as a message is exchanged, so that is what this
    now lists. `ticketId` is still returned when there is one, so opening a chat
    from a ticket keeps working. */
+// The inbox is polled every few seconds by every open dashboard, so the message
+// scans below are bounded by a rolling time window instead of a flat row cap.
+// Unbounded, this pulled 3000 inbound + 3000 outbound rows on EVERY poll and grew
+// forever. We only need the LATEST message per phone, so anything older than the
+// window can't change the result — except for a thread that has been silent for
+// longer than the window, which drops off the list. Widen INBOX_WINDOW_DAYS if
+// the office needs to see dormant threads without searching.
+const INBOX_WINDOW_DAYS = parseInt(process.env.INBOX_WINDOW_DAYS || "90", 10);
+
 export async function listConversations() {
+  const since = new Date(Date.now() - INBOX_WINDOW_DAYS * 86400_000).toISOString();
   const [custRes, ticketRes, inboundRes, outboundRes, staffRes] = await Promise.all([
     supabase.from("customers").select("id, full_name, phone, ai_paused_until"),
     supabase.from("tickets").select("id, customer_id, created_at")
       .order("created_at", { ascending: false }),
     supabase.from("wa_inbound").select("from_phone, body, media_id, created_at")
+      .gte("created_at", since)
       .order("created_at", { ascending: false }).limit(3000),
     supabase.from("notifications").select("recipient, body, audience, sent_at, created_at")
       .in("audience", ["customer", "agent", "bot"])
+      .gte("created_at", since)
       .order("created_at", { ascending: false }).limit(3000),
     // Staff share the same inbox tables — keep managers/technicians out of the
     // CUSTOMER chat list (they have their own thread view).
