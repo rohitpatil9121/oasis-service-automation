@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client.js";
 import ChatPanel from "../components/ChatPanel.jsx";
-import { Icon, Spinner, Alert } from "../components/ui.jsx";
+import NewTicketModal from "../components/NewTicketModal.jsx";
+import { Icon, Spinner, Alert, Button } from "../components/ui.jsx";
 import { isUnread } from "../lib/notify.js";
 
 const POLL_MS = 10000;
@@ -29,6 +30,7 @@ export default function Inbox() {
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
+  const [raising, setRaising] = useState(null); // conversation we're raising a request for
   const [params, setParams] = useSearchParams();
   const activeId = params.get("c"); // selected customer id
 
@@ -135,6 +137,23 @@ export default function Inbox() {
               className="flex items-center gap-1 border-b border-slate-100 bg-white px-3 py-2 text-sm text-slate-500 sm:hidden">
               <Icon name="back" className="h-4 w-4" /> All chats
             </button>
+
+            {/* Raise a request straight from the chat. The bot normally does this,
+                but a conversation can stall before it gets there — the customer
+                stops replying, or never says what is wrong. This is the manual
+                way out, pre-filled with whatever the chat already told us. */}
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-white px-3 py-2">
+              <span className="truncate text-sm font-semibold text-slate-800">
+                {active.customer.full_name || active.customer.phone}
+              </span>
+              {active.ticketId
+                ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">Has a request</span>
+                : <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">No request yet</span>}
+              <Button className="ml-auto" onClick={() => setRaising(active)}>
+                Create request
+              </Button>
+            </div>
+
             <div className="flex-1 overflow-hidden p-3 sm:p-4">
               <ChatPanel
                 key={active.phone || active.customer.id}
@@ -150,6 +169,15 @@ export default function Inbox() {
           </div>
         )}
       </div>
+
+      {raising && (
+        <NewTicketModal
+          initial={raising.customer}
+          subtitle={`From the chat with ${raising.customer.full_name || raising.customer.phone}`}
+          onClose={() => setRaising(null)}
+          onCreated={() => { setRaising(null); load(); }}
+        />
+      )}
     </div>
   );
 }
