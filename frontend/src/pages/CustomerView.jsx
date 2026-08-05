@@ -4,7 +4,8 @@ import { api } from "../api/client.js";
 import StatusBadge from "../components/StatusBadge.jsx";
 import RatingStars from "../components/RatingStars.jsx";
 import ChatPanel from "../components/ChatPanel.jsx";
-import { Card, Icon, Spinner, Alert } from "../components/ui.jsx";
+import NewTicketModal from "../components/NewTicketModal.jsx";
+import { Card, Icon, Spinner, Alert, Button } from "../components/ui.jsx";
 
 const fmt = (d) => (d ? new Date(d).toLocaleString() : "—");
 const OPEN = ["NEW", "ASSIGNED", "IN_PROGRESS"];
@@ -16,6 +17,7 @@ export default function CustomerView() {
   const [tickets, setTickets] = useState([]);
   const [err, setErr] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [raising, setRaising] = useState(false); // "Create request" modal
 
   const load = useCallback(async () => {
     try {
@@ -53,8 +55,9 @@ export default function CustomerView() {
     <div>
       <BackLink />
 
-      {/* Header */}
-      <div className="mt-3 mb-5 flex items-center gap-3">
+      {/* Header. "Create request" sits here as well as in the inbox — this is
+          the other place the office already has the client in front of them. */}
+      <div className="mt-3 mb-5 flex flex-wrap items-center gap-3">
         <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand/10 text-base font-bold text-brand">{initials}</span>
         <div>
           <h1 className="text-xl font-bold leading-tight text-slate-900">{customer.full_name || "Client"}</h1>
@@ -62,6 +65,14 @@ export default function CustomerView() {
             <span className="font-mono">{customer.phone}</span>
             {customer.address && <span className="text-slate-400">· {customer.address}</span>}
           </div>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {open > 0
+            ? <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+                {open} open {open === 1 ? "request" : "requests"}
+              </span>
+            : <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">No open request</span>}
+          <Button onClick={() => setRaising(true)}>Create request</Button>
         </div>
       </div>
 
@@ -132,6 +143,15 @@ export default function CustomerView() {
             </table>
           </div>
         </Card>
+      )}
+
+      {raising && (
+        <NewTicketModal
+          initial={customer}
+          subtitle={`For ${customer.full_name || customer.phone}`}
+          onClose={() => setRaising(false)}
+          onCreated={() => { setRaising(false); load(); }}
+        />
       )}
     </div>
   );
