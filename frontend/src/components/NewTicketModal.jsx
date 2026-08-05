@@ -2,11 +2,22 @@ import { useState } from "react";
 import { api } from "../api/client.js";
 import { Modal, Button, Field, Input, Textarea, Select, PhoneInput, Alert } from "./ui.jsx";
 
-// Manual ticket entry — for requests that come in by phone call / walk-in.
+// Manual ticket entry — for requests that come in by phone call / walk-in, and
+// from the inbox when the bot didn't manage to raise one from the chat.
 // Uses the same createTicket path, so the customer still gets a WhatsApp
 // confirmation and managers still get alerted.
-export default function NewTicketModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({ full_name: "", phone: "", address: "", issue_description: "", lead_source: "our service team" });
+//
+// `initial` pre-fills whatever we already know (name, phone, address from the
+// chat). The office still types the issue — that is the one thing we can't
+// safely guess from a conversation.
+export default function NewTicketModal({ onClose, onCreated, initial, subtitle }) {
+  const [form, setForm] = useState({
+    full_name: initial?.full_name || "",
+    phone: initial?.phone || "",
+    address: initial?.address || "",
+    issue_description: "",
+    lead_source: "our service team",
+  });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -21,13 +32,15 @@ export default function NewTicketModal({ onClose, onCreated }) {
   }
 
   return (
-    <Modal title="New service request" subtitle="For requests received by phone call or walk-in." onClose={onClose}>
+    <Modal title="New service request" subtitle={subtitle || "For requests received by phone call or walk-in."} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <Alert>{err}</Alert>
-        <Field label="Customer name"><Input value={form.full_name} onChange={set("full_name")} required autoFocus /></Field>
+        <Field label="Customer name"><Input value={form.full_name} onChange={set("full_name")} required /></Field>
         <Field label="Phone (WhatsApp if possible)"><PhoneInput value={form.phone} onChange={set("phone")} required placeholder="98765 43210" /></Field>
         <Field label="Address"><Textarea value={form.address} onChange={set("address")} rows={2} /></Field>
-        <Field label="Issue description"><Textarea value={form.issue_description} onChange={set("issue_description")} rows={3} required /></Field>
+        <Field label="Issue description" hint={initial ? "Copy this from what the customer wrote in the chat." : undefined}>
+          <Textarea value={form.issue_description} onChange={set("issue_description")} rows={3} required autoFocus />
+        </Field>
         <Field label="Lead source" hint="Shown to the customer in their request confirmation.">
           <Select value={form.lead_source} onChange={set("lead_source")}>
             <option value="our service team">Oasis Globe (our service team)</option>

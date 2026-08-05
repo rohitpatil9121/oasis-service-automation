@@ -115,7 +115,9 @@ const INBOX_WINDOW_DAYS = parseInt(process.env.INBOX_WINDOW_DAYS || "90", 10);
 export async function listConversations() {
   const since = new Date(Date.now() - INBOX_WINDOW_DAYS * 86400_000).toISOString();
   const [custRes, ticketRes, inboundRes, outboundRes, staffRes] = await Promise.all([
-    supabase.from("customers").select("id, full_name, phone, ai_paused_until"),
+    // `address` rides along so the inbox can pre-fill "Create request" without a
+    // second round-trip — the row is already being read for the name and phone.
+    supabase.from("customers").select("id, full_name, phone, address, ai_paused_until"),
     supabase.from("tickets").select("id, customer_id, created_at")
       .order("created_at", { ascending: false }),
     supabase.from("wa_inbound").select("from_phone, body, media_id, created_at")
@@ -184,7 +186,7 @@ export async function listConversations() {
     rows.push({
       // id may be null for someone who has written in but isn't a customer row
       // yet — the UI keys on `phone`, which always exists.
-      customer: { id: c?.id || null, full_name: c?.full_name || null, phone },
+      customer: { id: c?.id || null, full_name: c?.full_name || null, phone, address: c?.address || null },
       phone,
       ticketId, lastMessage, lastAt, lastDir,
       lastInboundAt: inb ? inb.created_at : null,

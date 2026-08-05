@@ -28,6 +28,14 @@ router.post("/jobs/:id/step", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Technician cancels the job from the app: { reason }. Same path as the
+// dashboard's cancel, so the customer gets the same message and the reason is
+// recorded against the ticket.
+router.post("/jobs/:id/cancel", async (req, res, next) => {
+  try { res.json({ job: await tech.cancelMyJob(req.user.id, req.params.id, req.body?.reason) }); }
+  catch (e) { next(e); }
+});
+
 // Technician captures a job photo (base64 data URL in body.image).
 router.post("/jobs/:id/photo", async (req, res, next) => {
   try { res.json(await tech.saveJobPhoto(req.user.id, req.params.id, req.body?.image, req.body?.client_id)); }

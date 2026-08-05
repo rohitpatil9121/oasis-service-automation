@@ -279,6 +279,26 @@ export async function getMyJob(techId, ticketId) {
   return job;
 }
 
+/* The technician cancels a job from the app — customer not home, wrong address,
+   changed their mind at the door. Goes through the same updateStatus() the
+   dashboard uses, so the reason is recorded, the customer gets the same
+   cancellation message, and the idempotency guard still applies.
+
+   The app offers the same reason list the dashboard does (see the dashboard's
+   CancelModal) so the two don't drift apart in reporting. Like the dashboard,
+   the backend accepts any non-empty reason rather than enforcing the list —
+   "Other" is a free-text option on both. */
+export async function cancelMyJob(techId, ticketId, reason) {
+  const ticket = await loadOwned(techId, ticketId);
+  const why = String(reason || "").trim();
+  if (!why) { const e = new Error("A cancellation reason is required"); e.status = 400; throw e; }
+  if (ticket.status === "CLOSED") {
+    const e = new Error("This job is already closed"); e.status = 409; throw e;
+  }
+  await updateStatus(ticketId, "CANCELLED", techId, why);
+  return getMyJob(techId, ticketId);
+}
+
 // Estimate approval from the customer's WhatsApp reply. When the customer has a
 // ticket awaiting approval (tech_status ESTIMATE_SENT) and replies APPROVE/REJECT
 // (or yes/no, haan/nahi), mark it VERIFIED/REJECTED and confirm. Returns true if
