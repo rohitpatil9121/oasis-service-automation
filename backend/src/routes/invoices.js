@@ -6,6 +6,7 @@ import { getCompanyProfile, getInvoiceForTicket, renderStoredInvoice } from "../
 import { queueNotification } from "../services/notifications.js";
 import { customerInvoice } from "../services/waTemplates.js";
 import { buildTallyXml } from "../services/tallyExport.js";
+import { CUSTOMER_NOTIFY } from "../config/notify.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -100,15 +101,17 @@ router.post("/:id/resend", requireRole("owner", "manager"), async (req, res, nex
     const phone = req.body?.phone || inv.buyer?.phone;
     if (!phone) return res.status(400).json({ error: "No phone on this invoice" });
 
-    const tpl = customerInvoice({
-      customerName: inv.buyer?.full_name || "Customer",
-      invoiceNo: inv.invoice_no, amount: rupees(inv.total),
-      mode: inv.payment_mode || "—", pdfUrl: inv.pdf_url,
-    });
-    const id = await queueNotification({
-      recipient: phone, audience: "customer", ticketId: inv.ticket?.id,
-      body: tpl.body, template: tpl.template, document: tpl.document,
-    });
+    if (CUSTOMER_NOTIFY.invoice) {
+      const tpl = customerInvoice({
+        customerName: inv.buyer?.full_name || "Customer",
+        invoiceNo: inv.invoice_no, amount: rupees(inv.total),
+        mode: inv.payment_mode || "—", pdfUrl: inv.pdf_url,
+      });
+      const id = await queueNotification({
+        recipient: phone, audience: "customer", ticketId: inv.ticket?.id,
+        body: tpl.body, template: tpl.template, document: tpl.document,
+      });
+    }
     res.json({ ok: true, notificationId: id });
   } catch (e) { next(e); }
 });

@@ -6,6 +6,7 @@ import { sendPush } from "./push.js";
 import { getTicket } from "./tickets.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { log } from "../lib/logger.js";
+import { CUSTOMER_NOTIFY } from "../config/notify.js";
 
 export async function listTechnicians() {
   const { data, error } = await supabase
@@ -130,11 +131,13 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
   if (!String(ticket.issue_description ?? "").trim())
     log.warn(`Ticket ${ticket.ticket_number} assigned with NO issue recorded`);
 
-  const assignedTpl = customerTechnicianAssigned({ techName: tech.full_name });
-  await queueNotification({
-    recipient: ticket.customer.phone, audience: "customer", ticketId,
-    body: assignedTpl.body, template: assignedTpl.template,
-  });
+  if (CUSTOMER_NOTIFY.technicianAssigned) {
+    const assignedTpl = customerTechnicianAssigned({ techName: tech.full_name });
+    await queueNotification({
+      recipient: ticket.customer.phone, audience: "customer", ticketId,
+      body: assignedTpl.body, template: assignedTpl.template,
+    });
+  }
 
   // Phone push to the technician's device (no-op if FCM/token not set up).
   await sendPush(tech.push_token, {
