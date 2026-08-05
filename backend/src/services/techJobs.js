@@ -15,6 +15,7 @@ import {
 import { issueInvoiceForTicket } from "./invoice.js";
 import { log } from "../lib/logger.js";
 import { mergeTechWork } from "../lib/techWork.js";
+import { CUSTOMER_NOTIFY } from "../config/notify.js";
 
 const SELECT =
   "*, customer:customers(*), technician:users!tickets_assigned_technician_id_fkey(id,full_name,phone)";
@@ -235,16 +236,18 @@ export async function createMyCall(techId, { name, phone, area, problem }) {
   // raised call means the customer hasn't messaged us, so we're outside the
   // 24-hour window and free-form text would silently fail.
   if (ticket.customer?.phone) {
-    const custTpl = customerRequestReceived({
-      customerName: ticket.customer.full_name,
-      ticketNumber: ticket.ticket_number,
-      issue,
-      address: ticket.customer.address,
-    });
-    await queueNotification({
-      recipient: ticket.customer.phone, audience: "customer", ticketId: ticket.id,
-      body: custTpl.body, template: custTpl.template,
-    });
+    if (CUSTOMER_NOTIFY.requestReceived) {
+      const custTpl = customerRequestReceived({
+        customerName: ticket.customer.full_name,
+        ticketNumber: ticket.ticket_number,
+        issue,
+        address: ticket.customer.address,
+      });
+      await queueNotification({
+        recipient: ticket.customer.phone, audience: "customer", ticketId: ticket.id,
+        body: custTpl.body, template: custTpl.template,
+      });
+    }
   }
 
   // Office visibility — same manager fan-out the dashboard uses.
@@ -312,11 +315,13 @@ export async function handleEstimateReply(phone, text) {
   // Approve → confirm + work starts. Reject → no message (the technician will
   // send a revised estimate or collect the visit charge only, each with its own).
   if (verified) {
-    const tpl = customerEstimateApproved({ ticketNumber: t.ticket_number });
-    await queueNotification({
-      recipient: phone, audience: "customer", ticketId: t.id,
-      body: tpl.body, template: tpl.template,
-    });
+    if (CUSTOMER_NOTIFY.estimateApproved) {
+      const tpl = customerEstimateApproved({ ticketNumber: t.ticket_number });
+      await queueNotification({
+        recipient: phone, audience: "customer", ticketId: t.id,
+        body: tpl.body, template: tpl.template,
+      });
+    }
   }
   if (t.assigned_technician_id) {
     const { data: tech } = await supabase
@@ -352,11 +357,13 @@ async function issueArrivalOtp(ticket, ticketId) {
     arrival_otp_expires: new Date(Date.now() + ARRIVAL_OTP_TTL_MS).toISOString(),
   });
   if (ticket.customer?.phone) {
-    const tpl = customerArrivalOtp({ code });
-    await queueNotification({
-      recipient: ticket.customer.phone, audience: "customer", ticketId,
-      body: tpl.body, template: tpl.template,
-    });
+    if (CUSTOMER_NOTIFY.arrivalOtp) {
+      const tpl = customerArrivalOtp({ code });
+      await queueNotification({
+        recipient: ticket.customer.phone, audience: "customer", ticketId,
+        body: tpl.body, template: tpl.template,
+      });
+    }
   }
 }
 
@@ -487,7 +494,7 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
 
   // Estimate → send the customer the itemised bill as a RECORD of what the
   // technician showed them on site. No reply is expected: work starts immediately.
-  if (action === "estimate" && cust?.phone) {
+  if (action === "estimate" && cust?.phone && CUSTOMER_NOTIFY.estimate) {
     // Collapse the itemised bill into fixed template variables (charges as one
     // comma-joined line, since a Meta template can't have a variable count of
     // parts). The full readable bill stays as the fallback body.
@@ -513,7 +520,7 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
   }
 
   // Work done → tell the customer the amount due and to pay in the tech's presence.
-  if (action === "workdone" && cust?.phone) {
+  if (action === "workdone" && cust?.phone && CUSTOMER_NOTIFY.workCompleted) {
     const due = Number(work.total ?? tech_work.total ?? 0);
     const tpl = work.visitOnly
       ? customerVisitCharge({ ticketNumber: ticket.ticket_number, amount: rupees(due) })
@@ -532,14 +539,16 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
       || (Array.isArray(work.payments) && work.payments.map((p) => p.method).filter(Boolean).join(" + "))
       || "—";
     if (work.visitOnly || tech_work.visitOnly) mode = `${mode} (Visit charge)`;
-    const tpl = customerPaymentReceived({
-      ticketNumber: ticket.ticket_number,
-      amount: rupees(work.total ?? tech_work.total ?? 0), mode,
-    });
-    await queueNotification({
-      recipient: cust.phone, audience: "customer", ticketId,
-      body: tpl.body, template: tpl.template,
-    });
+    if (CUSTOMER_NOTIFY.paymentReceived) {
+      const tpl = customerPaymentReceived({
+        ticketNumber: ticket.ticket_number,
+        amount: rupees(work.total ?? tech_work.total ?? 0), mode,
+      });
+      await queueNotification({
+        recipient: cust.phone, audience: "customer", ticketId,
+        body: tpl.body, template: tpl.template,
+      });
+    }
 
     // …then the GST tax invoice as a PDF. Payment is collected, so the amounts
     // are final and this doubles as the receipt. Never let an invoicing problem
@@ -559,10 +568,12 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
           mode,
           pdfUrl: invoice.pdf_url,
         });
-        await queueNotification({
-          recipient: cust.phone, audience: "customer", ticketId,
-          body: invTpl.body, template: invTpl.template, document: invTpl.document,
-        });
+        if (CUSTOMER_NOTIFY.invoice) {
+          await queueNotification({
+            recipient: cust.phone, audience: "customer", ticketId,
+            body: invTpl.body, template: invTpl.template, document: invTpl.document,
+          });
+        }
       }
     } catch (e) {
       log.error(`Invoice generation failed for ${ticket.ticket_number}:`, e.message);

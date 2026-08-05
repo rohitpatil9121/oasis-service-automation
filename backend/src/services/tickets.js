@@ -6,6 +6,7 @@ import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
 import { attachBoardBucket, TICKET_REUSE_DAYS, closedAtOf } from "../lib/boardBucket.js";
 import { mergeTechWork } from "../lib/techWork.js";
+import { CUSTOMER_NOTIFY } from "../config/notify.js";
 
 export { TICKET_REUSE_DAYS };
 
@@ -165,14 +166,16 @@ export async function createTicket({ customer, issue_description, source = "what
   // 1) Confirmation to the customer. Sent as an approved TEMPLATE: a manually-
   // created request means the customer hasn't messaged us, so we're outside the
   // 24-hour window and free-form text would silently fail.
-  const custTpl = customerRequestReceived({
-    customerName: cust.full_name,
-    ticketNumber: ticket.ticket_number, issue: issue_description, address: cust.address,
-  });
-  await queueNotification({
-    recipient: cust.phone, audience: "customer", ticketId: ticket.id,
-    body: custTpl.body, template: custTpl.template,
-  });
+  if (CUSTOMER_NOTIFY.requestReceived) {
+    const custTpl = customerRequestReceived({
+      customerName: cust.full_name,
+      ticketNumber: ticket.ticket_number, issue: issue_description, address: cust.address,
+    });
+    await queueNotification({
+      recipient: cust.phone, audience: "customer", ticketId: ticket.id,
+      body: custTpl.body, template: custTpl.template,
+    });
+  }
   // 2) Alert the Service Manager(s). Managers rarely have an open 24-hour
   const managers = await getManagerRecipients();
   const mgrTpl = managerNewRequest({
@@ -450,13 +453,15 @@ export async function scheduleVisit({ ticketId, start, end, actorId }) {
   // job can only be worked through the app.
 
   // Customer: their confirmed slot.
-  const ctpl = visitScheduledCustomer({
-    ticketNumber: ticket.ticket_number, customerName: ticket.customer.full_name, when,
-  });
-  await queueNotification({
-    recipient: ticket.customer.phone, audience: "customer", ticketId,
-    body: ctpl.body, template: ctpl.template,
-  });
+  if (CUSTOMER_NOTIFY.visitScheduled) {
+    const ctpl = visitScheduledCustomer({
+      ticketNumber: ticket.ticket_number, customerName: ticket.customer.full_name, when,
+    });
+    await queueNotification({
+      recipient: ticket.customer.phone, audience: "customer", ticketId,
+      body: ctpl.body, template: ctpl.template,
+    });
+  }
 
   log.info(`Visit ${rescheduling ? "rescheduled" : "scheduled"} for ${ticket.ticket_number}: ${when}`);
   return ticket;
@@ -590,13 +595,15 @@ export async function updateStatus(id, toStatus, actorId, reason) {
 
   // Let the customer know their request was cancelled and why.
   if (toStatus === "CANCELLED" && current.customer?.phone) {
-    const tpl = requestCancelledCustomer({
-      ticketNumber: current.ticket_number, customerName: current.customer.full_name, reason,
-    });
-    await queueNotification({
-      recipient: current.customer.phone, audience: "customer", ticketId: id,
-      body: tpl.body, template: tpl.template,
-    });
+    if (CUSTOMER_NOTIFY.cancelled) {
+      const tpl = requestCancelledCustomer({
+        ticketNumber: current.ticket_number, customerName: current.customer.full_name, reason,
+      });
+      await queueNotification({
+        recipient: current.customer.phone, audience: "customer", ticketId: id,
+        body: tpl.body, template: tpl.template,
+      });
+    }
   }
 
   // Tell the customer their request is completed when the manager closes it.
@@ -654,6 +661,7 @@ export async function sendDueRatingRequests() {
       const body =
         `Your service request ${t.ticket_number} is complete.\n` +
         `How was our service? Tap below to rate us.`;
+      if (!CUSTOMER_NOTIFY.ratingRequest) continue;
       const within24h = await customerMessagedWithin(phone, 24 * 3600 * 1000);
       if (within24h) {
         const row = (n) => ({ id: `rate_${t.id}_${n}`, title: "★".repeat(n), description: RATING_LABELS[n] });
@@ -669,11 +677,13 @@ export async function sendDueRatingRequests() {
           },
         });
       } else {
-        const tpl = requestCompletedCustomer({ ticketNumber: t.ticket_number });
-        await queueNotification({
-          recipient: phone, audience: "customer", ticketId: t.id,
-          body: tpl.body, template: tpl.template,
-        });
+        if (CUSTOMER_NOTIFY.ratingRequest) {
+          const tpl = requestCompletedCustomer({ ticketNumber: t.ticket_number });
+          await queueNotification({
+            recipient: phone, audience: "customer", ticketId: t.id,
+            body: tpl.body, template: tpl.template,
+          });
+        }
       }
     } catch (e) {
       log.error(`rating request ${t.ticket_number}:`, e.message);
