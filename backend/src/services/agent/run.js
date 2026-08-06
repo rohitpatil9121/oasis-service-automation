@@ -16,15 +16,27 @@ import { SYSTEM_PROMPT, OPENING, OFF_TOPIC_REPLY } from "./prompt.js";
 
 const isOpenStatus = (s) => s && s !== "CLOSED" && s !== "CANCELLED";
 
-// True when this customer already has a FINALISED open request (e.g. one the
-// service team logged for them). Such a customer must never get the generic
-// "share your name / issue / address" opening — their details are already on file.
-async function hasLoggedRequest(phone) {
+/* True when we already hold this customer's details, so the generic
+   "share your name / issue / address" opening would be wrong.
+
+   Two cases count:
+     - a FINALISED open request (e.g. one the service team logged for them)
+     - a saved name on the customer record, from any past job
+
+   The second case used to be missing, and it read badly: a repeat customer whose
+   last job had closed said "hi" and got asked for their name and address all over
+   again, as though we had never served them. Letting the model handle it instead
+   means it calls identify_customer and confirms what we have. */
+async function hasSavedDetails(phone) {
   try {
-    const latest = await getLatestTicketByCustomerPhone(phone);
+    const [{ data: cust }, latest] = await Promise.all([
+      supabase.from("customers").select("full_name").eq("phone", phone).maybeSingle(),
+      getLatestTicketByCustomerPhone(phone),
+    ]);
+    if (cust?.full_name) return true;
     return !!(latest && isOpenStatus(latest.status) && latest.intake_complete);
   } catch (e) {
-    log.error("hasLoggedRequest:", e.message);
+    log.error("hasSavedDetails:", e.message);
     return false; // on error fall back to the normal greeting path
   }
 }
@@ -322,10 +334,10 @@ export async function runAgent({ fromPhone, text }) {
 
   // Brand-new chat + a bare greeting → send the fixed opening verbatim, no LLM.
   // Guarantees the full 4-point message (the model was dropping line 4).
-  // BUT skip this shortcut when the customer already has a logged request — it
-  // bypasses the LLM (so identify_customer never runs) and would ask a customer
-  // whose request the service team already filed for their name/issue/address again.
-  if (!history.length && isBareGreeting(userText) && !(await hasLoggedRequest(phone))) {
+  // BUT skip it for anyone whose details we already hold — the shortcut bypasses
+  // the LLM (so identify_customer never runs) and would ask a customer we have
+  // served before for their name and address as if they were a stranger.
+  if (!history.length && isBareGreeting(userText) && !(await hasSavedDetails(phone))) {
     await saveSession(session.id, {
       state: session.state,
       data: {

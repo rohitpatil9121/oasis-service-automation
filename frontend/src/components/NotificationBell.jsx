@@ -6,38 +6,47 @@ import { isUnread, markSeen, beep, popup, requestNotifyPermission } from "../lib
 
 const POLL_MS = 8000;
 
-// Header notification bell: polls the ticket list, shows a red count of chats with
-// new customer messages, and a dropdown to jump straight into them. Lives in the
-// global Layout, so the sound + popup alert fire on EVERY page — not just the
-// dashboard. The unread state itself comes from notify.js (seen tracked locally).
+/* Header notification bell: shows a red count of chats with new customer
+   messages and a dropdown to jump straight into them. Lives in the global
+   Layout, so the sound + popup fire on every page. "Seen" is tracked locally
+   by notify.js.
+
+   Driven by the CONVERSATION list, not the ticket list. It used to poll tickets,
+   which meant a message only ever raised an alert if the sender already had a
+   ticket — so the exact people who most need attention (someone writing in for
+   the first time, or after their last job closed) arrived silently. Keyed on
+   phone for the same reason: a conversation exists before a ticket does. */
 export default function NotificationBell() {
-  const [tickets, setTickets] = useState([]);
+  const [convos, setConvos] = useState([]);
   const [open, setOpen] = useState(false);
-  const prevRef = useRef(null); // ticketId -> last_inbound_at from the previous poll
+  const prevRef = useRef(null); // phone -> lastInboundAt from the previous poll
   const nav = useNavigate();
 
   const load = useCallback(async () => {
     try {
-      const { tickets } = await api.listTickets();
+      const { conversations } = await api.listConversations();
+      const list = conversations || [];
       // Fire a sound + browser popup when a customer messages since the last poll.
       const prev = prevRef.current;
       const curr = new Map();
       const fresh = [];
-      for (const t of tickets) {
-        if (!t.last_inbound_at) continue;
-        curr.set(t.id, t.last_inbound_at);
-        if (prev && (!prev.has(t.id) || new Date(t.last_inbound_at) > new Date(prev.get(t.id)))) fresh.push(t);
+      for (const c of list) {
+        if (!c.lastInboundAt || !c.phone) continue;
+        curr.set(c.phone, c.lastInboundAt);
+        if (prev && (!prev.has(c.phone) || new Date(c.lastInboundAt) > new Date(prev.get(c.phone)))) fresh.push(c);
       }
       prevRef.current = curr;
       if (prev && fresh.length) { // skip the very first load
         beep();
-        const t = fresh[0];
+        const c = fresh[0];
         popup(
-          fresh.length === 1 ? `New message · ${t.customer?.full_name || t.customer?.phone || "Customer"}` : `${fresh.length} new customer messages`,
-          fresh.length === 1 ? (t.issue_description || "Open the chat to view") : "Open the dashboard to view",
+          fresh.length === 1
+            ? `New message · ${c.customer?.full_name || c.phone}`
+            : `${fresh.length} new customer messages`,
+          fresh.length === 1 ? (c.lastMessage || "Open the chat to view") : "Open All chats to view",
         );
       }
-      setTickets(tickets);
+      setConvos(list);
     } catch { /* ignore transient */ }
   }, []);
 
@@ -48,13 +57,15 @@ export default function NotificationBell() {
     return () => clearInterval(id);
   }, [load]);
 
-  const unread = tickets.filter(isUnread);
+  // Keyed on phone, matching the inbox, so opening a chat from either place
+  // clears the badge in both.
+  const unread = convos.filter((c) => isUnread({ id: c.phone, last_inbound_at: c.lastInboundAt }));
 
-  const openTicket = (t) => {
-    markSeen(t.id);
+  const openChat = (c) => {
+    markSeen(c.phone);
     setOpen(false);
-    setTickets((list) => [...list]); // re-render so the badge updates immediately
-    nav(`/tickets/${t.id}`);
+    setConvos((list) => [...list]); // re-render so the badge updates immediately
+    nav(`/inbox?c=${encodeURIComponent(c.phone)}`);
   };
 
   return (
@@ -82,16 +93,16 @@ export default function NotificationBell() {
               {unread.length === 0 ? (
                 <p className="px-3 py-8 text-center text-sm text-slate-400">No new messages 🎉</p>
               ) : (
-                unread.map((t) => (
-                  <button key={t.id} onClick={() => openTicket(t)}
+                unread.map((c) => (
+                  <button key={c.phone} onClick={() => openChat(c)}
                     className="flex w-full items-start gap-2 border-b border-slate-50 px-3 py-2.5 text-left hover:bg-slate-50">
                     <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-medium text-slate-800">{t.customer?.full_name || t.customer?.phone || "Customer"}</span>
-                        <span className="shrink-0 text-[10px] text-slate-400">{timeAgo(t.last_inbound_at)}</span>
+                        <span className="truncate text-sm font-medium text-slate-800">{c.customer?.full_name || c.phone}</span>
+                        <span className="shrink-0 text-[10px] text-slate-400">{timeAgo(c.lastInboundAt)}</span>
                       </span>
-                      <span className="block truncate text-xs text-slate-500">{t.issue_description || t.ticket_number}</span>
+                      <span className="block truncate text-xs text-slate-500">{c.lastMessage || "New message"}</span>
                     </span>
                   </button>
                 ))
