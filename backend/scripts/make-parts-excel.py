@@ -73,10 +73,11 @@ wb = Workbook()
 # ---------------------------------------------------------------- Parts sheet
 ws = wb.active
 ws.title = "Parts"
+# Cash and online pay the same now, so a third payout column would just repeat
+# the second. What still differs is the daily rate — and only for branded parts.
 cols = ["Part", "Brand", "MRP", "Given to tech at", "What applies",
-        f"Pays at {rules['BRAND_RATE']*100:g}%", f"Pays at {rules['BRAND_RATE_BONUS']*100:g}%",
-        "Pays if paid online"]
-header(ws, cols, [38, 12, 12, 17, 22, 14, 15, 17])
+        "Pays normally", f"Pays after a ₹{rules['DAILY_TARGET']:,} day"]
+header(ws, cols, [38, 12, 12, 17, 24, 15, 20])
 
 order = {"kent": 0, "aquaguard": 1, "oasis": 2, "other": 3}
 rows_sorted = sorted(rows, key=lambda r: (order.get(r["brand"], 9), r["name"].lower()))
@@ -85,9 +86,9 @@ for n, r in enumerate(rows_sorted):
     ws.append([
         r["name"], r["brand_label"], r["price"],
         "not set" if r["cost_missing"] else r["cost"],
-        r["rule"], r["pays_6_cash"], r["pays_10_cash"], r["pays_online"],
+        r["rule"], r["pays_6_cash"], r["pays_10_cash"],
     ])
-    style_row(ws, ws.max_row, len(cols), {3, 4, 6, 7, 8}, banded=(n % 2 == 1),
+    style_row(ws, ws.max_row, len(cols), {3, 4, 6, 7}, banded=(n % 2 == 1),
               warn=r["cost_missing"])
     if r["cost_missing"]:
         c = ws.cell(row=ws.max_row, column=4)
@@ -149,6 +150,8 @@ lines = [
     ("No brand set", "Nothing is paid."),
     ("Service charge", f"Nothing is paid \u2014 but it still counts toward the "
                        f"\u20b9{rules['DAILY_TARGET']:,} daily target."),
+    ("Cash or online", "Makes no difference to what the technician earns. GST comes off "
+                       "the Oasis margin either way."),
     ("Quantity", "Per piece. Two of a part pays twice."),
     ("Which jobs count", "Only jobs marked CLOSED. Days run on Indian time."),
     ("", ""),

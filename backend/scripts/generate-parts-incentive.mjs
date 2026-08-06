@@ -58,7 +58,7 @@ function table(g) {
   const head = branded
     ? `<tr><th>Part</th><th class="r">Price</th><th class="r">Pays at ${RULES.BRAND_RATE * 100}%</th><th class="r">Pays at ${RULES.BRAND_RATE_BONUS * 100}%</th></tr>`
     : g.brand === "oasis"
-      ? `<tr><th>Part</th><th class="r">Price</th><th class="r">Cost on file</th><th class="r">Pays &mdash; cash</th><th class="r">Pays &mdash; online</th></tr>`
+      ? `<tr><th>Part</th><th class="r">MRP</th><th class="r">Given to tech at</th><th class="r">He earns</th></tr>`
       : `<tr><th>Part</th><th class="r">Price</th><th class="r">Pays</th></tr>`;
 
   const body = g.items.map((r) => {
@@ -69,8 +69,7 @@ function table(g) {
     if (g.brand === "oasis") {
       return `<tr><td>${esc(r.name)}</td><td class="r n">${money(r.price)}</td>
         <td class="r n ${r.cost ? "" : "warn"}">${r.cost ? money(r.cost) : "not set"}</td>
-        <td class="r n ${r.cost ? "" : "warn"}">${money(r.at10)}</td>
-        <td class="r n ${r.cost ? "" : "warn"}">${money(r.online)}</td></tr>`;
+        <td class="r n ${r.cost ? "" : "warn"}">${money(r.at10)}</td></tr>`;
     }
     return `<tr><td>${esc(r.name)}</td><td class="r n">${money(r.price)}</td><td class="r n zero">${money(0)}</td></tr>`;
   }).join("");
@@ -78,7 +77,7 @@ function table(g) {
   const note = branded
     ? `A flat percentage of the price. The ${RULES.BRAND_RATE_BONUS * 100}% column applies for the whole day once that technician bills ${money(RULES.DAILY_TARGET)}.`
     : g.brand === "oasis"
-      ? `Pays the margin: price minus the cost on file. The online column has ${RULES.GST_RATE * 100}% GST removed. <b>With no cost on file the margin becomes the full price</b>, which is what every row below is currently doing.`
+      ? `He may bill anything from the price we give him the part at, up to MRP, and keeps the difference less ${RULES.GST_RATE * 100}% GST — cash or online, it makes no difference. <b>With no price on file the whole sale becomes his margin</b>, and there is no floor either, which is what every row below is currently doing.`
       : `No brand recorded, so nothing is paid on these.`;
 
   return `<h2>${label[g.brand]} &mdash; ${g.items.length} parts</h2>
@@ -153,7 +152,7 @@ ${groups.map(table).join("\n")}
 <tbody>
 <tr><td>Kent</td><td>${RULES.BRAND_RATE * 100}% of the price, or ${RULES.BRAND_RATE_BONUS * 100}% once the day passes ${money(RULES.DAILY_TARGET)}</td></tr>
 <tr><td>Aquaguard</td><td>Same as Kent</td></tr>
-<tr><td>Oasis</td><td>The margin (price minus cost). Less ${RULES.GST_RATE * 100}% when the customer pays online.</td></tr>
+<tr><td>Oasis</td><td>What he billed minus the price we gave him the part at, less ${RULES.GST_RATE * 100}% GST. Same for cash and online.</td></tr>
 <tr><td>No brand set</td><td>Nothing</td></tr>
 <tr><td>Service charge</td><td>Nothing &mdash; but it counts toward the ${money(RULES.DAILY_TARGET)} daily target</td></tr>
 </tbody></table></div>
