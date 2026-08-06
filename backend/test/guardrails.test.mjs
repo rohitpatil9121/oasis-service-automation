@@ -170,3 +170,16 @@ test("guardrails never mangle or suppress canonical copy", () => {
     assert.ok(!PROMPT_LEAK_RE.test(text), `${label} must not trip the leak filter`);
   }
 });
+
+test("the prompt separates a greeting from an acknowledgement", () => {
+  // A returning customer saying "hi" was being answered with "Happy to help.",
+  // the line meant for "thanks" — so the greeting rule is now spelled out and
+  // pinned here.
+  assert.match(SYSTEM_PROMPT, /A GREETING IS NOT AN ACKNOWLEDGEMENT/);
+  // The instruction wraps across lines in the prompt, so match on the two halves
+  // rather than the exact line break.
+  assert.ok(
+    /Never answer a[\s\S]{0,20}greeting with "Happy to help\."/.test(SYSTEM_PROMPT),
+    "the prompt must forbid answering a greeting with the acknowledgement line",
+  );
+});

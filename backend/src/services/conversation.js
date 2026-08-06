@@ -127,9 +127,15 @@ export async function listConversations() {
       .in("audience", ["customer", "agent", "bot"])
       .gte("created_at", since)
       .order("created_at", { ascending: false }).limit(3000),
-    // Staff share the same inbox tables — keep managers/technicians out of the
-    // CUSTOMER chat list (they have their own thread view).
-    supabase.from("users").select("phone"),
+    /* Technicians share these tables and have their own thread view, so they are
+       kept out of the customer chat list.
+
+       Owners and managers are NOT filtered, because the bot does not treat them
+       as staff either — webhook.js only silences technicians. Filtering every
+       staff role here meant an owner messaging the business number got a reply
+       from the bot while the conversation stayed invisible to the office, which
+       is how a real test message went missing. The two rules now agree. */
+    supabase.from("users").select("phone").eq("role", "technician"),
   ]);
 
   const digits = (p) => String(p || "").replace(/\D/g, "");
