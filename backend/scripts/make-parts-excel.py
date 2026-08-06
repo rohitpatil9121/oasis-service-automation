@@ -73,10 +73,10 @@ wb = Workbook()
 # ---------------------------------------------------------------- Parts sheet
 ws = wb.active
 ws.title = "Parts"
-cols = ["Part", "Brand", "Price", "Cost on file", "What applies",
+cols = ["Part", "Brand", "MRP", "Given to tech at", "What applies",
         f"Pays at {rules['BRAND_RATE']*100:g}%", f"Pays at {rules['BRAND_RATE_BONUS']*100:g}%",
         "Pays if paid online"]
-header(ws, cols, [38, 12, 12, 13, 22, 14, 15, 17])
+header(ws, cols, [38, 12, 12, 17, 22, 14, 15, 17])
 
 order = {"kent": 0, "aquaguard": 1, "oasis": 2, "other": 3}
 rows_sorted = sorted(rows, key=lambda r: (order.get(r["brand"], 9), r["name"].lower()))
@@ -99,14 +99,14 @@ ws.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{ws.max_row}"
 # ---------------------------------------------------------- Fill-costs sheet
 missing = [r for r in rows_sorted if r["cost_missing"]]
 ws2 = wb.create_sheet("Fill costs")
-ws2["A1"] = ("Enter what we pay for each part in the 'Our cost' column, then send this "
-             "back — the payouts recalculate from it.")
+ws2["A1"] = ("For each part, enter the price we give it to the technician at. He may sell it "
+             "anywhere between that and the MRP; whatever he makes above it is his margin.")
 ws2["A1"].font = Font(size=10, italic=True, color=MUTED, name="Segoe UI")
 ws2.merge_cells("A1:D1")
 ws2.row_dimensions[1].height = 26
 ws2.append([])
-ws2.append(["Part", "Brand", "Selling price", "Our cost"])
-for i, w in enumerate([40, 12, 14, 14], start=1):
+ws2.append(["Part", "Brand", "MRP (max he can charge)", "We give it to him at"])
+for i, w in enumerate([40, 12, 22, 21], start=1):
     c = ws2.cell(row=3, column=i)
     c.font = Font(bold=True, size=9, color="FFFFFFFF", name="Segoe UI")
     c.fill = PatternFill("solid", fgColor=HEAD_BG)
@@ -143,18 +143,19 @@ lines = [
              f"{rules['BRAND_RATE_BONUS']*100:g}% for the whole day once that technician bills "
              f"\u20b9{rules['DAILY_TARGET']:,} in one day."),
     ("Aquaguard", "Exactly the same as Kent."),
-    ("Oasis", "The margin: selling price minus our cost. If the customer paid online, "
-              f"{rules['GST_RATE']*100:g}% GST is taken off the margin first."),
+    ("Oasis", "The margin: what he billed minus the price we gave him the part at. He may "
+              "bill anything from that price up to MRP. "
+              f"{rules['GST_RATE']*100:g}% GST comes off the margin, cash or online."),
     ("No brand set", "Nothing is paid."),
     ("Service charge", f"Nothing is paid \u2014 but it still counts toward the "
                        f"\u20b9{rules['DAILY_TARGET']:,} daily target."),
     ("Quantity", "Per piece. Two of a part pays twice."),
     ("Which jobs count", "Only jobs marked CLOSED. Days run on Indian time."),
     ("", ""),
-    ("Right now", f"{len(missing)} Oasis parts have no cost recorded. The Oasis rule is "
-                  "price minus cost, so with the cost at zero those parts pay out their "
-                  "full selling price instead of the margin. Filling in the 'Fill costs' "
-                  "sheet corrects it."),
+    ("Right now", f"{len(missing)} Oasis parts have no price recorded against them. Two things "
+                  "follow: the technician keeps almost the whole sale instead of a margin, "
+                  "and there is no floor — he could bill a ₹3,250 part at ₹1 and the app "
+                  "would allow it. Filling in the 'Fill costs' sheet fixes both."),
 ]
 r = 3
 for k, v in lines:
