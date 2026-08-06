@@ -121,7 +121,7 @@ export async function listConversations() {
     // `address` rides along so the inbox can pre-fill "Create request" without a
     // second round-trip — the row is already being read for the name and phone.
     supabase.from("customers").select("id, full_name, phone, address, ai_paused_until"),
-    supabase.from("tickets").select("id, customer_id, created_at")
+    supabase.from("tickets").select("id, customer_id, created_at, status")
       .order("created_at", { ascending: false }),
     supabase.from("wa_inbound").select("from_phone, body, media_id, created_at")
       .gte("created_at", since)
@@ -141,13 +141,26 @@ export async function listConversations() {
     supabase.from("users").select("phone").eq("role", "technician"),
   ]);
 
+  // Open = anything the office still owes work on. CLOSED and CANCELLED are done.
+  const isOpenTicket = (s) => s && s !== "CLOSED" && s !== "CANCELLED";
+
   const digits = (p) => String(p || "").replace(/\D/g, "");
   const staffPhones = new Set((staffRes.data || []).map((u) => digits(u.phone)).filter(Boolean));
 
-  // Latest ticket id per customer (rows come newest-first, so first wins).
+  /* Latest ticket per customer, and separately the latest STILL-OPEN one
+     (rows come newest-first, so first wins).
+
+     The two are not the same thing and conflating them misled the office: the
+     inbox badged Test Bhushan "Has a request" off a job that closed on 24 July,
+     so it looked as though his message had been picked up when in fact nothing
+     was on the board. The chat needs the latest ticket either way — that is the
+     thread it reads — but "does this customer have a request?" must only ever
+     mean an open one. */
   const latestTicket = new Map();
+  const openTicket = new Map();
   for (const t of ticketRes.data || []) {
     if (!latestTicket.has(t.customer_id)) latestTicket.set(t.customer_id, t.id);
+    if (isOpenTicket(t.status) && !openTicket.has(t.customer_id)) openTicket.set(t.customer_id, t.id);
   }
   // Latest inbound + latest outbound per phone.
   const lastIn = new Map();
@@ -179,6 +192,7 @@ export async function listConversations() {
     // lookups, which match on the exact string, keep working.
     const phone = c?.phone || rawPhoneFor(key, inboundRes.data, outboundRes.data);
     const ticketId = c ? latestTicket.get(c.id) || null : null;
+    const openTicketId = c ? openTicket.get(c.id) || null : null;
     const inb = lastIn.get(phone);
     const out = lastOut.get(phone);
     const outAt = out ? out.sent_at || out.created_at : null;
@@ -197,7 +211,7 @@ export async function listConversations() {
       // yet — the UI keys on `phone`, which always exists.
       customer: { id: c?.id || null, full_name: c?.full_name || null, phone, address: c?.address || null },
       phone,
-      ticketId, lastMessage, lastAt, lastDir,
+      ticketId, openTicketId, lastMessage, lastAt, lastDir,
       lastInboundAt: inb ? inb.created_at : null,
       botOn: !isPaused(c?.ai_paused_until),
     });

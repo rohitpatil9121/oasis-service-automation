@@ -146,9 +146,13 @@ export default function Inbox() {
               <span className="truncate text-sm font-semibold text-slate-800">
                 {active.customer.full_name || active.customer.phone}
               </span>
-              {active.ticketId
-                ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">Has a request</span>
-                : <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">No request yet</span>}
+              {/* Only an OPEN request counts. This used to read the latest ticket
+                  of any age, so a chat whose job closed weeks ago was badged
+                  "Has a request" and looked handled when nothing was on the
+                  board. */}
+              {active.openTicketId
+                ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">Open request</span>
+                : <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">No open request</span>}
               <Button className="ml-auto" onClick={() => setRaising(active)}>
                 Create request
               </Button>
