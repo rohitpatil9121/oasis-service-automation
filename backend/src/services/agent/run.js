@@ -106,11 +106,60 @@ export const INJECTION_RE = new RegExp(
   "i"
 );
 
-// The model's own instructions leaking into a customer-facing reply.
-export const PROMPT_LEAK_RE =
-  /(SCOPE —|OUT OF SCOPE|SYSTEM_PROMPT|You are the WhatsApp assistant|identify_customer|submit_request|create_or_get_request|tool call)/i;
+/* The model's own instructions leaking into a customer-facing reply.
+
+   The tool names are derived from ACTIVE_TOOL_DEFS rather than typed out: the
+   hand-written list had drifted and was missing update_request, so a reply that
+   narrated that particular call sailed straight through to the customer. */
+const TOOL_NAMES = ACTIVE_TOOL_DEFS.map((t) => t.function.name).join("|");
+export const PROMPT_LEAK_RE = new RegExp(
+  `(SCOPE —|OUT OF SCOPE|SYSTEM_PROMPT|You are the WhatsApp assistant|tool call|${TOOL_NAMES})`,
+  "i"
+);
+
+/* A half-emitted tool call — the model writing the JSON as prose instead of
+   calling the tool. Seen live as:
+
+     Please share your service address.
+     "tool": "update_request",
+     "arguments": { "address": "…
+
+   The prose above it is a perfectly good reply, so cut from the JSON onwards
+   rather than throwing the whole message away.
+
+   Matched narrowly on purpose. An earlier draft also caught a bare "name:" at
+   the start of a line, which would have silently truncated the perfectly normal
+   reply that echoes a customer's details back to them ("Name: Amit Sharma").
+   A key only counts as plumbing when it is JSON-quoted, or followed by a quote
+   or brace the way a serialised call is. */
+const TOOL_JSON_RE =
+  /^\s*[{[]?\s*(?:"(?:tool|name|function|arguments|parameters|tool_calls|tool_call)"\s*:|(?:tool|function|arguments|parameters|tool_calls|tool_call)\s*:\s*["{[])/im;
+
+export function stripToolJson(text) {
+  const m = TOOL_JSON_RE.exec(text);
+  if (!m) return text;
+  return text.slice(0, m.index).trim();
+}
 
 const MAX_REPLY_CHARS = 900; // a service reply is 1-4 short lines; anything longer has drifted
+
+/* Our internal board words, and what a customer should read instead.
+
+   The bot greeted a returning customer with "Your request OG-300726-0004 is
+   currently NEW" — accurate internally, meaningless to the person reading it,
+   and it sounds like nothing has happened. The prompt now tells it not to
+   volunteer status at all; this is the backstop for when it does, and it also
+   cleans up the wording when the customer genuinely asks. Matched upper-case
+   only, so ordinary prose ("a new filter") is untouched. */
+const STATUS_WORDS = [
+  [/\bIN[_ ]PROGRESS\b/g, "in progress"],
+  [/\bis currently NEW\b/g, "is open"],
+  [/\bNEW\b/g, "open"],
+  [/\bPENDING\b/g, "open"],
+  [/\bASSIGNED\b/g, "assigned"],
+  [/\bCLOSED\b/g, "complete"],
+  [/\bCANCELLED\b/g, "cancelled"],
+];
 
 // WhatsApp shows markdown asterisks literally, and the model slips into them despite
 // the prompt. Strip formatting rather than let "**Ticket ID**" reach the customer.
@@ -123,6 +172,7 @@ export function sanitizeReply(text) {
     .replace(/^\s*[*•]\s+/gm, "- ")       // bullet markers → plain dash
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+  for (const [re, word] of STATUS_WORDS) t = t.replace(re, word);
   // NOTE: deliberately does NOT strip trailing spaces before newlines. The approved
   // OPENING uses them as fill-in blanks ("– Name: "), and eating them would silently
   // edit customer-facing copy for a purely cosmetic gain.
@@ -464,7 +514,16 @@ export async function runAgent({ fromPhone, text }) {
 
   // Output guardrail. Runs BEFORE the canonical-text substitutions below so it can
   // never mangle the approved confirmation or OPENING wording.
-  if (PROMPT_LEAK_RE.test(reply)) {
+  // Cut any JSON tool-call the model wrote out as prose, keeping the sentence
+  // above it. Done first so a good reply with plumbing stuck on the end is
+  // rescued instead of being replaced wholesale by the fallback below.
+  const cut = stripToolJson(reply);
+  if (cut !== reply) {
+    log.warn(`[guardrail] tool JSON stripped from reply to ${phone}: ${reply.slice(0, 140)}`);
+    reply = cut;
+  }
+
+  if (reply && PROMPT_LEAK_RE.test(reply)) {
     // NOT the off-topic line: a leak usually happens mid-intake, where telling a
     // customer "I only handle purifier service" is both wrong and confusing. Fall
     // back to the neutral prompt-for-more so the conversation can continue.

@@ -16,6 +16,7 @@ import {
   INJECTION_RE,
   PROMPT_LEAK_RE,
   sanitizeReply,
+  stripToolJson,
 } from "../src/services/agent/run.js";
 import { SYSTEM_PROMPT, OPENING, OFF_TOPIC_REPLY } from "../src/services/agent/prompt.js";
 import { TOOL_DEFS, ACTIVE_TOOL_DEFS } from "../src/services/agent/tools.js";
@@ -182,4 +183,69 @@ test("the prompt separates a greeting from an acknowledgement", () => {
     /Never answer a[\s\S]{0,20}greeting with "Happy to help\."/.test(SYSTEM_PROMPT),
     "the prompt must forbid answering a greeting with the acknowledgement line",
   );
+});
+
+/* Regression: a half-emitted tool call reaching the customer.
+
+   Seen live on 6 Aug 2026 — the bot answered "Please share your service
+   address." and then appended the raw JSON of the update_request call it
+   meant to make. Two holes let it through: the leak regex was hand-written
+   and had never been updated with update_request, and even a matching leak
+   threw the whole reply away rather than keeping the good sentence. */
+test("a tool call written out as prose is cut, keeping the sentence above it", () => {
+  const leaked = 'Please share your service address.\n"tool": "update_request",\n"arguments": {\n  "address": "B-12 Sunrise"';
+  const cut = stripToolJson(leaked);
+  assert.equal(cut, "Please share your service address.");
+  assert.ok(!PROMPT_LEAK_RE.test(cut), "what survives must be clean");
+});
+
+test("the JSON cut does not fire on a reply echoing the customer's details", () => {
+  // "Name: Amit Sharma" is ordinary copy — the approved OPENING is built from it.
+  for (const ok of [
+    "Name: Amit Sharma\nAddress: Flat 402, Baner\nIssue: water leaking",
+    OPENING,
+    "Please share your name and address.",
+    "Technician assigned: Bhujang Sangle.",
+  ]) assert.equal(stripToolJson(ok), ok, `wrongly truncated: ${ok.slice(0, 40)}`);
+});
+
+test("every active tool name is covered by the leak guard", () => {
+  for (const t of ACTIVE_TOOL_DEFS) {
+    assert.ok(
+      PROMPT_LEAK_RE.test(`I will now call ${t.function.name} for you`),
+      `${t.function.name} leaks past the guard`,
+    );
+  }
+});
+
+test("the guard does not fire on ordinary service replies", () => {
+  for (const ok of [
+    "Technician assigned: Bhujang Sangle. You'll get an update here.",
+    "Please share your name and address.",
+    "Your request OG-060826-0014 is confirmed.",
+    "Sorry, I can only help with Oasis Globe water purifier service.",
+  ]) assert.ok(!PROMPT_LEAK_RE.test(ok), `false positive on: ${ok}`);
+});
+
+/* Regression: internal board words reaching the customer.
+
+   Reported 6 Aug 2026 — a returning customer's "hi" was answered with
+   "Hi Rohit. Your request OG-300726-0004 is currently NEW. How can we help?"
+   NEW is our word, not theirs, and it reads as "nothing has happened". */
+test("internal status words are translated for the customer", () => {
+  assert.equal(
+    sanitizeReply("Your request OG-300726-0004 is currently NEW. How can we help?"),
+    "Your request OG-300726-0004 is open. How can we help?",
+  );
+  assert.equal(sanitizeReply("Status: ASSIGNED"), "Status: assigned");
+  assert.equal(sanitizeReply("Status: IN_PROGRESS"), "Status: in progress");
+  assert.equal(sanitizeReply("Your request is CLOSED."), "Your request is complete.");
+});
+
+test("ordinary lower-case prose is not mangled by the status guard", () => {
+  for (const ok of [
+    "We will fit a new filter tomorrow.",
+    "Payment is pending from your side.",
+    "The technician assigned to you is Bhujang.",
+  ]) assert.equal(sanitizeReply(ok), ok);
 });
