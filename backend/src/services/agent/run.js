@@ -41,10 +41,16 @@ async function hasSavedDetails(phone) {
   }
 }
 
-// A bare greeting with no service details — "hi", "hello", "service", "namaste".
-// On a brand-new chat we answer these with the fixed OPENING verbatim so every
-// requested line (incl. the purifier photo) always appears; the LLM drops them.
-const GREETING_RE = /^(hi+|hey+|hello+|helo|hlo|namaste|namaskar|good\s*(morning|afternoon|evening)|start|service|enquiry|inquiry)[\s!.,]*$/i;
+/* A bare greeting with no service details — "hi", "hello", "namaste". On a
+   brand-new chat we answer these with the fixed OPENING verbatim so every
+   requested line (incl. the purifier photo) always appears; the LLM drops them.
+
+   "service", "enquiry" and "inquiry" used to be on this list and no longer are.
+   They are not greetings — they are someone telling us what they want, and
+   treating them as hello short-circuited the model entirely, so no request was
+   opened and the person only reached the board if they happened to reply again.
+   They now go through the agent, which opens the request on that turn. */
+const GREETING_RE = /^(hi+|hey+|hello+|helo|hlo|namaste|namaskar|good\s*(morning|afternoon|evening)|start)[\s!.,]*$/i;
 const isBareGreeting = (t) => GREETING_RE.test((t || "").trim());
 
 // True when the model's reply is (a variant of) the opening greeting — used to
