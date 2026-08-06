@@ -5,7 +5,49 @@ import MediaBubble from "./MediaBubble.jsx";
 import { markSeen } from "../lib/notify.js";
 
 const POLL_MS = 10000;
-const time = (iso) => new Date(iso).toLocaleString([], { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
+
+// Just the clock inside a bubble — the day is carried by the date separator
+// above it, exactly as WhatsApp does it.
+const time = (iso) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
+
+// "Today" / "Yesterday" / "12 Aug 2026" for the separator pills.
+const dayKey = (iso) => new Date(iso).toDateString();
+function dayLabel(iso) {
+  const d = new Date(iso);
+  const today = new Date();
+  const yest = new Date(today); yest.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yest.toDateString()) return "Yesterday";
+  return d.toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" });
+}
+
+/* WhatsApp's tick marks, driven by Meta's delivery receipts:
+     one tick   accepted by WhatsApp
+     two ticks  delivered to the handset
+     two blue   read
+     !          the message never arrived
+   Only outbound messages carry them. */
+function Ticks({ status, delivery, pending }) {
+  if (pending) return <span className="opacity-70">🕘</span>;
+  if (status === "FAILED" || delivery === "failed") {
+    return <span title="Not delivered" className="font-bold text-red-200">!</span>;
+  }
+  const two = delivery === "delivered" || delivery === "read";
+  const blue = delivery === "read";
+  return (
+    <svg viewBox="0 0 18 12" className={`h-3 w-[18px] ${blue ? "text-sky-300" : "text-emerald-100/80"}`}
+      fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+      aria-label={blue ? "Read" : two ? "Delivered" : "Sent"}>
+      <path d="M1 6.5 4 9.5 10 2.5" />
+      {two && <path d="M7 6.5 10 9.5 16 2.5" />}
+    </svg>
+  );
+}
+
+/* The WhatsApp wallpaper. Inlined as a data URI so it needs no asset pipeline
+   and no network request — a handful of faint marks tiled behind the thread. */
+const DOODLE =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23000' stroke-opacity='0.035' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M18 24c4-6 10-6 14 0M22 34v8'/%3E%3Ccircle cx='96' cy='22' r='7'/%3E%3Cpath d='M92 22h8M96 18v8'/%3E%3Cpath d='M28 88c6-10 14-10 20 0s-6 16-12 8'/%3E%3Cpath d='M108 74l6 10-12 0z'/%3E%3Cpath d='M116 104c-6 4-12 4-18 0'/%3E%3Ccircle cx='64' cy='120' r='5'/%3E%3Cpath d='M56 56h14v10H56z'/%3E%3Cpath d='M124 44v10M120 49h8'/%3E%3C/g%3E%3C/svg%3E\")";
 
 // Inline WhatsApp chat with the ticket's customer. Shows the full thread
 // (inbound + outbound) and lets the manager send a free-form message — handy
@@ -113,14 +155,25 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
       </div>
 
       {/* messages */}
-      <div ref={scrollRef} onScroll={onScroll} className={`${heightClass} space-y-2 overflow-y-auto bg-slate-50 px-3 py-3`}>
+      <div ref={scrollRef} onScroll={onScroll}
+        style={{ backgroundImage: DOODLE, backgroundColor: "#EFE7DE" }}
+        className={`${heightClass} space-y-1.5 overflow-y-auto px-3 py-3`}>
         {!loaded ? (
-          <p className="pt-8 text-center text-sm text-slate-400">Loading…</p>
+          <p className="pt-8 text-center text-sm text-slate-500">Loading…</p>
         ) : messages.length === 0 ? (
-          <p className="pt-8 text-center text-sm text-slate-400">No messages yet. Say hello 👋</p>
+          <p className="pt-8 text-center text-sm text-slate-500">No messages yet. Say hello 👋</p>
         ) : (
-          messages.map((m) => (
-            <div key={m.id} className={`group flex items-center gap-1.5 ${m.dir === "out" ? "justify-end" : "justify-start"}`}>
+          messages.map((m, i) => (
+            <div key={m.id}>
+            {/* Date separator whenever the day changes, WhatsApp-style pill. */}
+            {(i === 0 || dayKey(m.at) !== dayKey(messages[i - 1].at)) && (
+              <div className="flex justify-center py-2">
+                <span className="rounded-md bg-white/85 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-500 shadow-sm">
+                  {dayLabel(m.at)}
+                </span>
+              </div>
+            )}
+            <div className={`group flex items-center gap-1.5 ${m.dir === "out" ? "justify-end" : "justify-start"}`}>
               {/* reply button (left of outbound bubbles) */}
               {m.dir === "out" && (
                 <button onClick={() => setReplyTo(m)} title="Reply to this message"
@@ -128,14 +181,22 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
                   <Icon name="reply" className="h-3.5 w-3.5" />
                 </button>
               )}
-              <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${
+              <div className={`relative max-w-[78%] rounded-lg px-2.5 py-1.5 text-sm shadow-sm ${
                 m.dir === "out"
-                  ? "rounded-br-sm bg-emerald-600 text-white"
-                  : "rounded-bl-sm border border-slate-200 bg-white text-slate-700"
+                  ? "rounded-tr-none bg-[#128C7E] text-white"
+                  : "rounded-tl-none bg-white text-slate-800"
               }`}>
+                {/* bubble tail */}
+                <span aria-hidden="true" className={`absolute top-0 h-3 w-3 ${
+                  m.dir === "out"
+                    ? "-right-[7px] bg-[#128C7E] [clip-path:polygon(0_0,100%_0,0_100%)]"
+                    : "-left-[7px] bg-white [clip-path:polygon(0_0,100%_0,100%_100%)]"
+                }`} />
                 {m.replyTo?.body && (
-                  <div className={`mb-1 border-l-2 pl-2 text-[11px] ${
-                    m.dir === "out" ? "border-emerald-200 text-emerald-100" : "border-slate-300 text-slate-500"
+                  <div className={`mb-1 rounded border-l-[3px] px-2 py-1 text-[11px] ${
+                    m.dir === "out"
+                      ? "border-emerald-200 bg-white/15 text-emerald-50"
+                      : "border-emerald-500 bg-slate-50 text-slate-500"
                   }`}>
                     {m.replyTo.body}
                   </div>
@@ -144,9 +205,14 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
                   <MediaBubble mediaId={m.mediaId} mediaType={m.mediaType} isOutbound={m.dir === "out"} />
                 )}
                 {m.body ? <p className="whitespace-pre-wrap break-words">{m.body}</p> : null}
-                <div className={`mt-0.5 text-right text-[10px] ${m.dir === "out" ? "text-emerald-100" : "text-slate-400"}`}>
-                  {m.dir === "out" && m.audience === "bot" ? "🤖 Bot · " : ""}
-                  {m.pending ? "sending…" : time(m.at)}{m.status === "FAILED" ? " · failed" : ""}
+                <div className={`mt-0.5 flex items-center justify-end gap-1 text-[10px] leading-none ${
+                  m.dir === "out" ? "text-emerald-100/90" : "text-slate-400"
+                }`}>
+                  {m.dir === "out" && m.audience === "bot" && <span title="Sent by the AI">🤖</span>}
+                  <span>{m.pending ? "sending…" : time(m.at)}</span>
+                  {m.dir === "out" && !m.pending && (
+                    <Ticks status={m.status} delivery={m.delivery} pending={m.pending} />
+                  )}
                 </div>
               </div>
               {/* reply button (right of inbound bubbles) */}
@@ -156,6 +222,7 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
                   <Icon name="reply" className="h-3.5 w-3.5" />
                 </button>
               )}
+            </div>
             </div>
           ))
         )}

@@ -81,6 +81,9 @@ function buildThread(inboundRows = [], outboundRows = []) {
     ...outboundRows.map((m) => ({
       id: "out-" + m.id, dir: "out", body: m.body,
       at: m.sent_at || m.created_at, status: m.status, audience: m.audience,
+      // Meta's receipt: sent -> delivered -> read (or failed). Drives the tick
+      // marks in the chat, the same way WhatsApp itself shows them.
+      delivery: m.delivery_status || null,
       waMessageId: m.provider_sid || null,
       replyTo: m.reply_to_body ? { body: quoteSnippet(m.reply_to_body, false) } : resolve(m.reply_to_wamid),
     })),
