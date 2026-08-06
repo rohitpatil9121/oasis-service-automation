@@ -154,11 +154,13 @@ export default function Inbox() {
               </Button>
             </div>
 
-            <div className="flex-1 overflow-hidden p-3 sm:p-4">
+            {/* The panel fills whatever is left, rather than guessing a pixel
+                height — a guess left the composer hanging off the bottom. */}
+            <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">
               <ChatPanel
                 key={active.phone || active.customer.id}
                 ticket={{ id: active.ticketId, customer: active.customer }}
-                heightClass="h-[calc(100vh-19rem)]"
+                heightClass="min-h-0 flex-1"
               />
             </div>
           </>

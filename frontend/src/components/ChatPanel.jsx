@@ -49,6 +49,25 @@ function Ticks({ status, delivery, pending }) {
 const DOODLE =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23000' stroke-opacity='0.035' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M18 24c4-6 10-6 14 0M22 34v8'/%3E%3Ccircle cx='96' cy='22' r='7'/%3E%3Cpath d='M92 22h8M96 18v8'/%3E%3Cpath d='M28 88c6-10 14-10 20 0s-6 16-12 8'/%3E%3Cpath d='M108 74l6 10-12 0z'/%3E%3Cpath d='M116 104c-6 4-12 4-18 0'/%3E%3Ccircle cx='64' cy='120' r='5'/%3E%3Cpath d='M56 56h14v10H56z'/%3E%3Cpath d='M124 44v10M120 49h8'/%3E%3C/g%3E%3C/svg%3E\")";
 
+/* A small palette — the handful anyone actually uses replying to a customer.
+   Not a full picker: the office types on a desktop keyboard, not a phone. */
+const EMOJI = ["😊", "🙏", "👍", "👌", "✅", "❌", "🙋", "😢",
+  "🙌", "🔧", "💧", "🧰", "📞", "📍", "📅", "⏰",
+  "💰", "🧾", "🚚", "⭐", "🙍", "😅", "🙎", "🔄",
+  "❗", "❓", "👋", "🎉", "🙂", "🤝", "💬", "🛠"];
+
+/* Turn URLs and phone numbers in a message into links, like WhatsApp does.
+   Bill links and numbers come through chat constantly and were dead text. */
+const LINK_RE = /(https?:\/\/\S+|\+?\d[\d\s-]{8,}\d)/g;
+function Linkify({ text, out }) {
+  const cls = out ? "underline decoration-emerald-200 underline-offset-2" : "text-emerald-700 underline underline-offset-2";
+  return (text || "").split(LINK_RE).map((part, i) => {
+    if (i % 2 === 0) return part;
+    const href = part.startsWith("http") ? part : "tel:" + part.replace(/[\s-]/g, "");
+    return <a key={i} href={href} target="_blank" rel="noreferrer" className={cls}>{part}</a>;
+  });
+}
+
 // Inline WhatsApp chat with the ticket's customer. Shows the full thread
 // (inbound + outbound) and lets the manager send a free-form message — handy
 // for asking the customer to clarify a missing detail.
@@ -60,6 +79,9 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
   const [loaded, setLoaded] = useState(false);
   const [botOn, setBotOn] = useState(true);
   const [replyTo, setReplyTo] = useState(null); // message the manager is quoting
+  const [emoji, setEmoji] = useState(false);
+  const [atBottom, setAtBottom] = useState(true); // drives the jump-to-latest button
+  const boxRef = useRef(null);
   const scrollRef = useRef(null);
   const atBottomRef = useRef(true); // only auto-scroll when the user is already at the bottom
 
@@ -68,6 +90,7 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
   function onScroll(e) {
     const el = e.currentTarget;
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    setAtBottom(atBottomRef.current);
   }
 
   // A chat doesn't always have a ticket: during WhatsApp intake the customer
@@ -106,6 +129,23 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
     if (scrollRef.current && atBottomRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
+  // Grow the box with the text, the way WhatsApp's composer does.
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 128) + "px";
+  }, [text]);
+
+  // Jump to the message being quoted, the way tapping a reply does in WhatsApp.
+  function jumpTo(id) {
+    const el = document.getElementById("msg-" + id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("ring-2", "ring-emerald-400");
+    setTimeout(() => el.classList.remove("ring-2", "ring-emerald-400"), 1200);
+  }
+
   // A short label for a quoted message (handles media-only messages).
   const snippet = (m) => (m?.body || "").trim() || (m?.mediaId ? "📎 Attachment" : "");
 
@@ -137,7 +177,7 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
   }
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+    <div className="relative flex h-full max-h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
       {/* header */}
       <div className="flex items-center gap-2.5 border-b border-slate-100 bg-emerald-600 px-4 py-3 text-white">
         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
@@ -173,7 +213,7 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
                 </span>
               </div>
             )}
-            <div className={`group flex items-center gap-1.5 ${m.dir === "out" ? "justify-end" : "justify-start"}`}>
+            <div id={`msg-${m.id}`} className={`group flex scroll-mt-4 items-center gap-1.5 rounded-lg transition ${m.dir === "out" ? "justify-end" : "justify-start"}`}>
               {/* reply button (left of outbound bubbles) */}
               {m.dir === "out" && (
                 <button onClick={() => setReplyTo(m)} title="Reply to this message"
@@ -204,7 +244,7 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
                 {m.mediaId && (
                   <MediaBubble mediaId={m.mediaId} mediaType={m.mediaType} isOutbound={m.dir === "out"} />
                 )}
-                {m.body ? <p className="whitespace-pre-wrap break-words">{m.body}</p> : null}
+                {m.body ? <p className="whitespace-pre-wrap break-words"><Linkify text={m.body} out={m.dir === "out"} /></p> : null}
                 <div className={`mt-0.5 flex items-center justify-end gap-1 text-[10px] leading-none ${
                   m.dir === "out" ? "text-emerald-100/90" : "text-slate-400"
                 }`}>
@@ -228,6 +268,15 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
         )}
       </div>
 
+      {!atBottom && messages.length > 0 && (
+        <button type="button" title="Jump to the latest message"
+          onClick={() => { atBottomRef.current = true; setAtBottom(true);
+            scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }}
+          className="absolute bottom-20 right-5 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-lg leading-none text-slate-500 shadow-pop transition hover:text-emerald-600">
+          &#8595;
+        </button>
+      )}
+
       {warn && <div className="border-t border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">{warn}</div>}
 
       {/* reply preview */}
@@ -247,17 +296,30 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
       )}
 
       {/* composer */}
-      <form onSubmit={send} className="flex items-end gap-2 border-t border-slate-100 p-2.5">
+      <form onSubmit={send} className="relative flex shrink-0 items-end gap-2 border-t border-slate-100 bg-slate-50 p-2.5">
+        {emoji && (
+          <div className="absolute bottom-full left-2 mb-1 grid w-72 grid-cols-8 gap-0.5 rounded-xl border border-slate-200 bg-white p-2 shadow-pop">
+            {EMOJI.map((e) => (
+              <button key={e} type="button" onClick={() => { setText((t) => t + e); setEmoji(false); boxRef.current?.focus(); }}
+                className="rounded p-1 text-lg leading-none transition hover:bg-slate-100">{e}</button>
+            ))}
+          </div>
+        )}
+        <button type="button" onClick={() => setEmoji((v) => !v)} title="Emoji"
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg leading-none transition hover:bg-slate-200 ${emoji ? "bg-slate-200" : ""}`}>
+          😊
+        </button>
         <textarea
-          rows={2}
+          ref={boxRef}
+          rows={1}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onComposerKeyDown}
-          placeholder="Type a WhatsApp message… (Shift+Enter for new line)"
-          className="flex-1 resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
+          placeholder="Type a message"
+          className="max-h-32 flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
         />
         <button type="submit" disabled={sending || !text.trim()}
-          className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white transition hover:bg-emerald-700 disabled:opacity-50"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700 disabled:opacity-50"
           aria-label="Send">
           <Icon name="send" className="h-4 w-4" />
         </button>
