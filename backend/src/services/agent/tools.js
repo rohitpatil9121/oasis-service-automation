@@ -43,12 +43,17 @@ export const TOOL_DEFS = [
       name: "update_request",
       description:
         "Add/update details on the current request. Call whenever the customer gives a " +
-        "symptom, appliance, address, or extra info. Pass a field's FULL combined value.",
+        "name, symptom, appliance, address, or extra info. Pass a field's FULL combined value.",
       parameters: {
         type: "object",
         properties: {
           issue: { type: "string", description: "What is wrong, e.g. 'water leaking', 'low flow', 'not working'" },
           appliance: { type: "string", description: "Purifier brand/model if mentioned, e.g. 'Kent RO'" },
+          // Also accepted here, not only on save_customer_details. A customer who
+          // sends "Suresh Patil, Flat 9 Shivaji Nagar" gives both at once, and the
+          // model would put them in one update_request call and silently lose the
+          // name — leaving intake stuck with a nameless draft request.
+          name: { type: "string", description: "Customer's full name, if given here" },
           address: { type: "string", description: "Service address, if given here" },
           notes: {
             type: "string",

@@ -39,12 +39,36 @@ async function identifyCustomer(ctx) {
   // is the in-progress request we're still collecting — don't surface it here, or
   // the model thinks intake is done and stops mid-conversation.
   const open = latest && isOpen(latest.status) && latest.intake_complete ? latest : null;
+
+  /* The unfinished request, reported separately from a finalised one.
+
+     A draft used to be hidden entirely, to stop the model reading it as "intake
+     is done" and going quiet mid-conversation. But hiding it left the model
+     blind to its own work: it would save the issue, then next turn ask for that
+     same issue again, and the details already collected were lost. Reporting it
+     as a draft with an explicit missing[] list gives it both halves — this is
+     not finished, and here is exactly what is still needed. */
+  const draft = !open && latest && isOpen(latest.status) ? latest : null;
+  const missing = [];
+  if (draft) {
+    if (!cust?.full_name) missing.push("name");
+    if (!cust?.address) missing.push("address");
+    if (!draft.issue_description) missing.push("issue");
+  }
+
   return {
     known: !!(cust && cust.full_name),
     name: cust?.full_name || null,
     address: cust?.address || null,
     open_request: open
       ? { ticket_number: open.ticket_number, status: open.status, issue: open.issue_description || null }
+      : null,
+    draft_request: draft
+      ? {
+          ticket_number: draft.ticket_number,
+          issue: draft.issue_description || null,
+          missing, // ask for these and nothing else, then submit_request
+        }
       : null,
   };
 }
@@ -66,13 +90,15 @@ async function createOrGetRequest(ctx) {
   };
 }
 
-async function updateRequest(ctx, { issue, appliance, address, notes } = {}) {
-  if (address) await upsertCustomerByPhone(ctx.phone, { address });
+async function updateRequest(ctx, { issue, appliance, address, notes, name } = {}) {
+  // Name and address both land on the customer row. update_request accepts them
+  // as well as save_customer_details so a detail can never fall between the two.
+  if (address || name) await upsertCustomerByPhone(ctx.phone, { address, full_name: name });
   if (issue || appliance || notes) {
     await ensureTicket(ctx);
     await updateTicketIntake(ctx.ticketId, { issue, appliance, notes });
   }
-  return { ok: true, saved: { issue: issue || null, appliance: appliance || null, address: address || null, notes: notes || null } };
+  return { ok: true, saved: { issue: issue || null, appliance: appliance || null, address: address || null, name: name || null, notes: notes || null } };
 }
 
 async function submitRequest(ctx) {

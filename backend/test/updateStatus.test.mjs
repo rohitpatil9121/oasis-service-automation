@@ -113,25 +113,42 @@ beforeEach(() => resetWorld());
 
 const customerNotifs = () => notifCalls.filter((n) => n.audience === "customer");
 
-test("closing an IN_PROGRESS ticket sends the completion message once", async () => {
+/* What "sends the completion message once" means today.
+
+   Closing no longer messages the customer inline. The technician is usually
+   still standing in the kitchen when the job is closed, so asking "how was our
+   service?" that instant was wrong. updateStatus stamps rating_due_at instead,
+   and sendDueRatingRequests — polled by the server — delivers the combined
+   "your request is complete / rate us" message once the delay has elapsed.
+
+   So the one-per-transition invariant now lives on that stamp: a real close
+   sets it, a repeated or losing close must not set it again with a later time,
+   which would silently push the customer's message further away each retry. */
+const dueAt = () => store.tickets[TICKET_ID].tech_work?.rating_due_at;
+
+test("closing an IN_PROGRESS ticket stamps the rating exactly once", async () => {
   await updateStatus(TICKET_ID, "CLOSED", "actor-1");
   assert.equal(store.tickets[TICKET_ID].status, "CLOSED");
-  assert.equal(customerNotifs().length, 1);
+  assert.ok(dueAt(), "rating_due_at must be stamped");
+  assert.equal(customerNotifs().length, 0, "nothing goes out while the tech is still on site");
 });
 
-test("closing an already-CLOSED ticket sends nothing (no phantom 'failed' dup)", async () => {
-  await updateStatus(TICKET_ID, "CLOSED", "actor-1"); // real transition → 1
-  await updateStatus(TICKET_ID, "CLOSED", "actor-2"); // no-op → 0
-  assert.equal(customerNotifs().length, 1);
+test("closing an already-CLOSED ticket changes nothing (no phantom dup)", async () => {
+  await updateStatus(TICKET_ID, "CLOSED", "actor-1");
+  const first = dueAt();
+  await updateStatus(TICKET_ID, "CLOSED", "actor-2"); // no-op
+  assert.equal(dueAt(), first, "a repeated close must not push the rating later");
+  assert.equal(customerNotifs().length, 0);
 });
 
-test("concurrent closes (dashboard + tech app racing) send exactly one", async () => {
+test("concurrent closes (dashboard + tech app racing) stamp exactly one", async () => {
   await Promise.all([
     updateStatus(TICKET_ID, "CLOSED", "manager"),
     updateStatus(TICKET_ID, "CLOSED", "technician"),
   ]);
   assert.equal(store.tickets[TICKET_ID].status, "CLOSED");
-  assert.equal(customerNotifs().length, 1);
+  assert.ok(dueAt());
+  assert.equal(customerNotifs().length, 0);
 });
 
 test("a no-op transition returns the ticket without touching the DB", async () => {
