@@ -94,7 +94,7 @@ export default function Inbox() {
             </p>
           ) : (
             filtered.map((c) => {
-              const unread = isUnread({ id: c.ticketId || c.phone, last_inbound_at: c.lastInboundAt });
+              const unread = isUnread({ id: c.phone, last_inbound_at: c.lastInboundAt });
               const key = c.phone || c.customer.id;
               const on = key === activeId;
               return (
