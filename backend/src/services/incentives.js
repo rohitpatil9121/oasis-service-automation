@@ -15,9 +15,9 @@ export const RULES = {
 const ONLINE_METHODS = new Set(["upi", "credit card", "card", "online"]);
 const round2 = (n) => Math.round(n * 100) / 100;
 
-// Which payment mode to bill an Oasis margin against. A ticket is "online" when
-// more was collected online than in cash; no payment recorded ⇒ treat as cash
-// (no GST cut) so an un-collected job never under-pays the technician.
+/* How the job was paid. Reported on every job for the office, but it no longer
+   changes what the technician earns — see partIncentive(). Kept because "cash or
+   UPI" is worth seeing on the earnings screen and in reconciliation. */
 export function paymentMode(payments = []) {
   let online = 0, cash = 0;
   for (const p of payments) {
@@ -40,8 +40,14 @@ async function loadCatalog() {
   return map;
 }
 
-// Incentive for ONE part. brandRate is the day's rate for branded parts
-// (0.06 or 0.10); mode is the ticket's payment mode for the Oasis GST cut.
+/* Incentive for ONE part. brandRate is the day's rate for branded parts (0.06 or
+   0.10).
+
+   `mode` is accepted for callers that still pass it, but it no longer affects the
+   payout. Part prices are MRP and MRP includes GST, so the company owes tax on
+   the sale whichever way the customer paid — the cut therefore applies to every
+   Oasis line, cash or online (owner's decision, 6 Aug 2026). It used to apply on
+   online payments only, which paid ~22% more on an identical cash job. */
 export function partIncentive(part, catalog, brandRate, mode) {
   const meta = catalog.get(part.id) || {};
   // `part.price` is the per-piece rate; two membranes earn two membranes' worth.
@@ -56,7 +62,7 @@ export function partIncentive(part, catalog, brandRate, mode) {
   }
   if (brand === "oasis") {
     const margin = Math.max(0, rate - Number(meta.base_cost || 0)) * qty;
-    const payout = mode === "online" ? margin * (1 - RULES.GST_RATE) : margin;
+    const payout = margin * (1 - RULES.GST_RATE); // always — cash or online
     return { brand, qty, price, margin: round2(margin), payout: round2(payout) };
   }
   return { brand: brand || "other", qty, price, payout: 0 }; // unbranded ⇒ no incentive
