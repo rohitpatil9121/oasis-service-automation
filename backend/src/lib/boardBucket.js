@@ -57,6 +57,16 @@ export function boardBucket(ticket) {
 
   // Unassigned, still open.
   if (ticket.reopened_at || ticket.tech_work?.reopened_at) return "pending";
+
+  /* An unfinished intake is Pending, however new it is.
+
+     The bot opens the request the moment someone asks for service, before it
+     knows the fault or the address — so New filled up with half-collected
+     requests that read like fresh work but cannot be assigned to anybody. They
+     need chasing, not dispatching, and Pending is the column the office works
+     through. A request only counts as New once its details are complete. */
+  if (ticket.intake_complete === false) return "pending";
+
   if (isCreatedTodayIST(ticket.created_at)) return "new";
   return "pending";
 }
