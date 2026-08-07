@@ -7,7 +7,8 @@ import { supabase } from "../config/supabase.js";
 
 // ---- The incentive rules (single source of truth) ----
 export const RULES = {
-  BRAND_RATE: 0.06,        // Kent / Aquaguard: base rate on the part price
+  // Kent / Aquaguard: base rate on the part price. Raised from 6% on 7 Aug 2026.
+  BRAND_RATE: 0.08,
   BRAND_RATE_BONUS: 0.10,  // …bumped to this once the daily target is hit
   DAILY_TARGET: 10000,     // total billing in a day that unlocks the bonus rate
   GST_RATE: 0.18,          // cut from the Oasis margin on online payments
@@ -40,7 +41,7 @@ async function loadCatalog() {
   return map;
 }
 
-/* Incentive for ONE part. brandRate is the day's rate for branded parts (0.06 or
+/* Incentive for ONE part. brandRate is the day's rate for branded parts (0.08 or
    0.10).
 
    `mode` is accepted for callers that still pass it, but it no longer affects the
@@ -70,7 +71,7 @@ export function partIncentive(part, catalog, brandRate, mode) {
 
 // Roll a single day's closed tickets into one technician payout. The daily
 // target is checked first (sum of every ticket's grand total), which decides
-// whether branded parts earn 6% or 10% for the WHOLE day (applied retroactively
+// whether branded parts earn 8% or 10% for the WHOLE day (applied retroactively
 // to every job, exactly as promised to the technician).
 export function summariseDay(tickets, catalog) {
   const billing = tickets.reduce((s, t) => s + Number(t.tech_work?.total || 0), 0);
