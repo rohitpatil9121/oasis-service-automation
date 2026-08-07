@@ -38,10 +38,10 @@ test("the daily rate does not touch Oasis parts", () => {
 });
 
 test("branded parts pay a flat percentage of the price, unaffected by payment mode", () => {
-  assert.equal(pay("kent-1", 550, 1, RULES.BRAND_RATE, "cash"), 33);       // 6%
+  assert.equal(pay("kent-1", 550, 1, RULES.BRAND_RATE, "cash"), 44);       // 8%
   assert.equal(pay("kent-1", 550, 1, RULES.BRAND_RATE_BONUS, "cash"), 55); // 10%
   assert.equal(pay("kent-1", 550, 1, RULES.BRAND_RATE_BONUS, "online"), 55);
-  assert.equal(pay("aqua-1", 1840, 1, RULES.BRAND_RATE, "cash"), 110.4);
+  assert.equal(pay("aqua-1", 1840, 1, RULES.BRAND_RATE, "cash"), 147.2);
 });
 
 test("quantity multiplies both kinds of payout", () => {
@@ -95,7 +95,7 @@ test("below the target the same day pays the base rate", () => {
   ];
   const day = summariseDay(tickets, CATALOG);
   assert.equal(day.target_hit, false);
-  assert.equal(day.payout, 60); // 1000 x 6%
+  assert.equal(day.payout, 80); // 1000 x 8%
 });
 
 test("the service charge earns nothing but still counts toward the target", () => {
