@@ -10,8 +10,8 @@ export const BUCKET_LABEL = {
 };
 
 export const BUCKET_HINT = {
-  new: "Today's unassigned leads",
-  pending: "Carry-over & reopened",
+  new: "Today's leads, details complete",
+  pending: "Carry-over, reopened & incomplete",
   assigned: "Technician in the field",
   service_done: "Closed · last 7 days",
   completed: "Archived · 7+ days",
