@@ -175,12 +175,31 @@ async function getReply(from, text, media = {}) {
 
 // Debounced path (live WhatsApp): buffer rapid-fire messages and reply once,
 // REPLY_DELAY_MS after the customer's last message. `send` delivers the reply.
+/* What the agent is told when a message carries a picture and no words.
+
+   Media used to contribute nothing at all: the attachment was stored, and the
+   text buffer stayed empty. A customer who sent a video of the leak and a photo
+   of his purifier — the very thing our opening message asks for — got silence,
+   and the model never learned he had shown us the problem. It cannot see the
+   image, but it can act on the fact that one arrived.
+
+   A short, plainly-worded marker rather than a tag like [MEDIA]: it lands in the
+   same transcript the model reads as the customer's own words, so it has to read
+   as a sentence about the customer, not as machinery. */
+function mediaMarker(mime = "") {
+  const m = String(mime || "");
+  if (m.startsWith("video")) return "(The customer sent a video of the problem.)";
+  if (m.startsWith("image")) return "(The customer sent a photo of the purifier.)";
+  return "(The customer sent an attachment.)";
+}
+
 async function enqueueReply(from, text, media, send) {
   if (!(await logInbound(from, text, media))) return;
   const phone = normalizePhone(from);
   let p = pending.get(phone);
   if (!p) { p = { parts: [], busy: false }; pending.set(phone, p); }
   if (text) p.parts.push(text);
+  else if (media?.mediaId) p.parts.push(mediaMarker(media.mediaType));
   p.send = send;
   if (p.timer) clearTimeout(p.timer);
   p.timer = setTimeout(() => flushReply(phone, from), REPLY_DELAY_MS);
