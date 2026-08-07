@@ -118,17 +118,25 @@ function formatWhen(iso) {
   return `${date}, ${time}`;
 }
 
-// Map a ticket row to the shape the technician-app screens expect.
-function toJob(t) {
+/* Map a ticket row to the shape the technician-app screens expect.
+
+   `assignedAt` is when this job became this technician's, and it decides which
+   day the job belongs to. Without it the day came from created_at — when the
+   CUSTOMER first wrote in — so a request raised yesterday evening and handed to
+   a technician this morning was filed under "Pending from previous days" while
+   "Today's jobs" read "No open jobs for today". The manager assigned it, the
+   technician saw an empty Today list, and both concluded the app had missed it.
+   A job is today's work from the moment it is given to you. */
+function toJob(t, assignedAt = null) {
   const work = t.tech_work || {};
   const techStatus = work.tech_status || (t.status === "CLOSED" ? "CLOSED" : "NEW");
 
+  // Explicit schedule wins; then when it was assigned; then when it came in.
+  const dayFrom = t.scheduled_start || assignedAt || t.created_at;
+
   let bucket = "today";
   if (t.status === "CLOSED") bucket = "completed";
-  else {
-    const when = t.scheduled_start || t.created_at;
-    bucket = istDay(when) < istDay(Date.now()) ? "pending" : "today";
-  }
+  else bucket = istDay(dayFrom) < istDay(Date.now()) ? "pending" : "today";
 
   let visitCharge = 250;
   if (work.charge && CHARGE_FREE.has(work.charge)) visitCharge = 0;
@@ -142,7 +150,7 @@ function toJob(t) {
     address: t.customer?.address || "",
     // Tickets raised over WhatsApp have no scheduled_start — fall back to when
     // the request came in rather than labelling everything "Today".
-    when: formatWhen(t.scheduled_start || t.created_at),
+    when: formatWhen(dayFrom),
     bucket,
     model: t.appliance || "—",
     issue: t.issue_description || "",
@@ -188,7 +196,27 @@ export async function listMyJobs(techId) {
     .neq("status", "CANCELLED")
     .order("created_at", { ascending: false });
   if (error) throw new Error("listMyJobs: " + error.message);
-  return attachCustomerPhotos((data || []).map(toJob));
+
+  // When each job became this technician's, so the day it is filed under is the
+  // day he was given it rather than the day the customer first wrote in.
+  const assignedAt = await assignedAtByTicket(techId, (data || []).map((t) => t.id));
+  return attachCustomerPhotos((data || []).map((t) => toJob(t, assignedAt.get(t.id) || null)));
+}
+
+/* Latest assignment time per ticket for one technician. A ticket can be
+   reassigned, so the most recent row is the one that counts. Returns an empty
+   map rather than throwing — a job listing must not fail because of the
+   timestamp used to sort it into a day. */
+async function assignedAtByTicket(techId, ticketIds) {
+  const map = new Map();
+  if (!ticketIds.length) return map;
+  const { data, error } = await supabase
+    .from("assignments").select("ticket_id, assigned_at")
+    .eq("technician_id", techId).in("ticket_id", ticketIds)
+    .order("assigned_at", { ascending: false });
+  if (error) { log.error("assignedAtByTicket: " + error.message); return map; }
+  for (const a of data || []) if (!map.has(a.ticket_id)) map.set(a.ticket_id, a.assigned_at);
+  return map;
 }
 
 /* "New Call": the technician adds a walk-in / direct customer from the field.
