@@ -65,7 +65,10 @@ export default function NotificationBell() {
     markSeen(c.phone);
     setOpen(false);
     setConvos((list) => [...list]); // re-render so the badge updates immediately
-    nav(`/inbox?c=${encodeURIComponent(c.phone)}`);
+    // The route is /chats. It was /inbox here, which matches no route at all, so
+    // the catch-all sent every notification click back to the dashboard — the
+    // badge cleared, the chat never opened, and it read as the click not working.
+    nav(`/chats?c=${encodeURIComponent(c.phone)}`);
   };
 
   return (

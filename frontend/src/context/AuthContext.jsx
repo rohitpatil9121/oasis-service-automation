@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { api, setToken } from "../api/client.js";
+import { api, setToken, setUnauthorizedHandler } from "../api/client.js";
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
@@ -40,6 +40,20 @@ export function AuthProvider({ children }) {
     sessionStorage.clear();
     setUser(null);
   }
+
+  /* Hand the API client a way to end the session. Registered once, and it uses
+     the state setters directly rather than logout() so the effect does not have
+     to re-run every render. Any 401 on an authenticated call lands here, which
+     drops the app back to the login screen instead of leaving it signed in with
+     a token the server no longer accepts. */
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setToken(null);
+      sessionStorage.clear();
+      setUser(null);
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   return (
     <AuthContext.Provider

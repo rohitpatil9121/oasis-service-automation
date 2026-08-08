@@ -5,6 +5,17 @@ let authToken = null;
 export function setToken(t) { authToken = t; }
 export function getToken() { return authToken; }
 
+/* What to do when the server says the session is over.
+
+   Tokens last seven days, and nothing used to notice them expiring. The stored
+   user stayed put, so the app still believed it was logged in while every
+   request came back 401 — the board sat empty, each page showed
+   "Request failed (401)", and the only way out was to know to press Log out.
+   AuthContext registers a handler here that clears the session and returns the
+   manager to the login screen, which is what a finished session should do. */
+let onUnauthorized = null;
+export function setUnauthorizedHandler(fn) { onUnauthorized = fn; }
+
 async function request(path, { method = "GET", body } = {}) {
   const res = await fetch(`${BASE}/api${path}`, {
     method,
@@ -15,7 +26,15 @@ async function request(path, { method = "GET", body } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    // Only when we actually sent a token: a 401 from the login call itself is
+    // simply a wrong password, and must stay on the form with its own message.
+    if (res.status === 401 && authToken) {
+      onUnauthorized?.();
+      throw new Error("Your session has expired. Please sign in again.");
+    }
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
   return data;
 }
 
