@@ -4,7 +4,7 @@ import { customerRequestReceived, managerNewRequest, visitScheduledCustomer, req
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
-import { attachBoardBucket, TICKET_REUSE_DAYS, closedAtOf } from "../lib/boardBucket.js";
+import { attachBoardBucket, TICKET_REUSE_DAYS } from "../lib/boardBucket.js";
 import { mergeTechWork } from "../lib/techWork.js";
 import { CUSTOMER_NOTIFY } from "../config/notify.js";
 
@@ -270,9 +270,11 @@ export async function updateTicketIntake(ticketId, { issue, appliance, notes } =
 // a single consolidated reply so the customer doesn't get duplicate messages.
 export async function completeIntake(ticketId) {
   const ticket = await getTicket(ticketId);
-  // A CLOSED ticket completing intake again means the customer re-engaged within
-  // the reuse window (getReusableTicketForCustomer folded the new request back
-  // onto it). Reopen it so it returns to the active board, and alert managers.
+  // A finished ticket completing intake is now the rare case, not the normal
+  // one: a returning customer gets a brand-new request number, so nothing folds
+  // back onto a closed job. It still happens if the office closes a request
+  // while the bot is mid-intake on it — reopen so it returns to the board rather
+  // than the customer's answers landing on a job nobody is looking at.
   const reopened = ticket.status === "CLOSED" || ticket.status === "CANCELLED";
   // Already finished AND still open → nothing to do (avoids duplicate alerts).
   // Flag it so callers don't re-send the customer confirmation either (that's
@@ -423,14 +425,18 @@ export async function getTicketHistory(id) {
   return { events: events || [], assignments: assignments || [] };
 }
 
-// The existing ticket a new inbound should fold into, or null to start fresh.
-// Live intake reuses this so a customer doesn't spawn duplicate tickets:
-//   • still-open request (not closed/cancelled)        → always reuse
-//   • CLOSED request raised within TICKET_REUSE_DAYS    → reuse (will reopen)
-//   • CANCELLED, or CLOSED & older than the window      → null (genuinely new)
-// We look at only the single latest ticket: cancelling is a deliberate end, so
-// a later message is a real new request; a closed one is reused only while the
-// reuse window is still open.
+/* The existing ticket a new inbound should fold into, or null to start fresh.
+
+   Only a request that is STILL OPEN is folded into — that is what stops one
+   customer spawning three tickets while the bot is still collecting their
+   address.
+
+   A finished request is never reopened. It used to be: a customer coming back
+   within seven days landed on their old request, which reopened under its old
+   number. The office found last week's job apparently alive again, with its
+   history, its bill and its rating attached to work that had not happened yet.
+   Every fresh call now gets its own request number, and because the customer is
+   one we have served before, it opens in Pending. */
 export async function getReusableTicketForCustomer(customerId) {
   const { data } = await supabase
     .from("tickets").select("*")
@@ -438,14 +444,8 @@ export async function getReusableTicketForCustomer(customerId) {
     .order("created_at", { ascending: false })
     .limit(1).maybeSingle();
   if (!data) return null;
-  if (data.status !== "CLOSED" && data.status !== "CANCELLED") return data; // still open → always reuse
-  // Finished (closed or cancelled): reuse while the window is open so the
-  // customer coming back lands on the SAME request, which reopens onto Pending.
-  const endedAt = data.status === "CLOSED" ? closedAtOf(data) : data.updated_at;
-  if (!endedAt) return data;                    // legacy rows without a timestamp
-  const withinWindow =
-    Date.now() - new Date(endedAt).getTime() < TICKET_REUSE_DAYS * 86400000;
-  return withinWindow ? data : null;            // recent end → reuse, else new ticket
+  const finished = data.status === "CLOSED" || data.status === "CANCELLED";
+  return finished ? null : data;
 }
 
 // Latest ticket for a WhatsApp number - powers the customer "status" command.

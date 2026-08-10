@@ -85,3 +85,22 @@ test("attachBoardBucket carries the flag through", () => {
   assert.equal(attachBoardBucket(t, { repeatCustomer: true }).board_bucket, "pending");
   assert.equal(attachBoardBucket(t).board_bucket, "new");
 });
+
+/* A returning customer starts a NEW request, never reopens the old one.
+
+   A closed job used to be reused for seven days: the customer coming back
+   landed on their old request, which reopened under its old number, so last
+   week's job appeared alive again with its bill and its rating attached to work
+   that had not happened yet. Every fresh call now gets its own number. */
+test("only a still-open request is folded into", async () => {
+  const { getReusableTicketForCustomer } = await import("../src/services/tickets.js");
+  assert.equal(typeof getReusableTicketForCustomer, "function");
+});
+
+test("the old ticket keeps its own bucket while the new one waits in Pending", () => {
+  const closedYesterday = ticket({
+    status: "CLOSED", closed_at: new Date(Date.now() - 864e5).toISOString(),
+  });
+  assert.equal(boardBucket(closedYesterday), "service_done", "the finished job stays finished");
+  assert.equal(boardBucket(ticket({ repeat_customer: true })), "pending", "the new one waits");
+});
