@@ -198,13 +198,32 @@ export async function createTicket({ customer, issue_description, source = "what
 // upsertCustomerByPhone patch it each turn; completeIntake finishes it.
 
 // Create/patch a customer by phone with only the fields we have so far.
+/* True when the new value says nothing the stored one doesn't already say.
+
+   A returning customer replying "Khula Rassa" and "Wakad" to a greeting is
+   echoing fragments of what we already hold, not correcting anything — but the
+   bot saved them, and KHULA RASSA WAKAD's address went from a Google Maps pin
+   to the single word "Wakad". A technician was then sent to find them with that.
+
+   A genuine correction always introduces something new; a fragment of the value
+   we already have cannot. Compared with case and spacing ignored. */
+export function isFragmentOf(next, stored) {
+  const norm = (v) => String(v || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const a = norm(next), b = norm(stored);
+  return !!a && !!b && b.includes(a);
+}
+
 export async function upsertCustomerByPhone(phone, { full_name, address } = {}) {
   const { data: existing } = await supabase
     .from("customers").select("*").eq("phone", phone).maybeSingle();
   if (existing) {
     const patch = {};
-    if (full_name && full_name !== existing.full_name) patch.full_name = full_name;
-    if (address && address !== existing.address) patch.address = address;
+    if (full_name && full_name !== existing.full_name && !isFragmentOf(full_name, existing.full_name)) {
+      patch.full_name = full_name;
+    }
+    if (address && address !== existing.address && !isFragmentOf(address, existing.address)) {
+      patch.address = address;
+    }
     if (!Object.keys(patch).length) return existing;
     const { data } = await supabase.from("customers").update(patch).eq("id", existing.id).select().single();
     return data;
@@ -339,9 +358,14 @@ export async function listTickets({ status, bucket } = {}) {
     if (!latestByPhone.has(m.from_phone)) latestByPhone.set(m.from_phone, m.created_at);
   }
 
+  // Which tickets belong to a customer we have served before. One small query
+  // over (customer_id, created_at) rather than a count per row — the board asks
+  // this of every ticket it draws.
+  const repeat = await repeatCustomerTickets();
+
   let rows = (data || []).map((t) => {
     t.last_inbound_at = t.customer?.phone ? latestByPhone.get(t.customer.phone) || null : null;
-    return attachBoardBucket(t);
+    return attachBoardBucket(t, { repeatCustomer: repeat.has(t.id) });
   });
 
   if (bucket && bucket !== "all") {
@@ -350,13 +374,42 @@ export async function listTickets({ status, bucket } = {}) {
   return rows;
 }
 
+/* Every ticket that is NOT its customer's first, by id.
+
+   Read once and shared across the board rather than counted per ticket. On a
+   failure it returns an empty set, so the worst case is the old behaviour —
+   a repeat request shown under New — rather than a board that will not load. */
+async function repeatCustomerTickets() {
+  const ids = new Set();
+  const { data, error } = await supabase
+    .from("tickets").select("id, customer_id, created_at")
+    .order("created_at", { ascending: true });
+  if (error) { log.error("repeatCustomerTickets: " + error.message); return ids; }
+  const seen = new Set();
+  for (const t of data || []) {
+    if (!t.customer_id) continue;
+    if (seen.has(t.customer_id)) ids.add(t.id);
+    else seen.add(t.customer_id);
+  }
+  return ids;
+}
+
 export async function getTicket(id) {
   const { data, error } = await supabase
     .from("tickets")
     .select("*, customer:customers(*), technician:users!tickets_assigned_technician_id_fkey(id,full_name,phone)")
     .eq("id", id).single();
   if (error) throw new Error("getTicket: " + error.message);
-  return attachBoardBucket(data);
+
+  // Same question for one ticket: has this customer been here before?
+  let repeatCustomer = false;
+  if (data.customer_id) {
+    const { count } = await supabase
+      .from("tickets").select("id", { count: "exact", head: true })
+      .eq("customer_id", data.customer_id).lt("created_at", data.created_at);
+    repeatCustomer = (count || 0) > 0;
+  }
+  return attachBoardBucket(data, { repeatCustomer });
 }
 
 export async function getTicketHistory(id) {

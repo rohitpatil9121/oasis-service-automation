@@ -67,10 +67,22 @@ export function boardBucket(ticket) {
      through. A request only counts as New once its details are complete. */
   if (ticket.intake_complete === false) return "pending";
 
+  /* A customer we have served before is Pending, not New.
+
+     New is where the office looks for people it does not know yet — someone
+     whose address has to be taken down and whose purifier nobody has seen.
+     A returning customer needs none of that; they need a technician sent, which
+     is the Pending queue's job. Their repeat requests were landing in New and
+     being read as fresh enquiries.
+
+     Set by the caller, which knows whether this is the customer's first ticket. */
+  if (ticket.repeat_customer) return "pending";
+
   if (isCreatedTodayIST(ticket.created_at)) return "new";
   return "pending";
 }
 
-export function attachBoardBucket(ticket) {
-  return { ...ticket, board_bucket: boardBucket(ticket) };
+export function attachBoardBucket(ticket, { repeatCustomer = false } = {}) {
+  const t = repeatCustomer ? { ...ticket, repeat_customer: true } : ticket;
+  return { ...t, board_bucket: boardBucket(t) };
 }
