@@ -2,7 +2,12 @@ import { useEffect, useState, useCallback } from "react";
 import { api } from "../api/client.js";
 import { Card, Icon, Input, Button, Alert, EmptyState, Spinner } from "../components/ui.jsx";
 
-const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
+/* Money, always with both paise. toLocaleString drops a trailing zero, so a
+   payout of 22983.40 printed as "₹22,983.4" — which on a page about what we owe
+   people reads as a typo, or worse, as four paise. Whole rupees keep their
+   ".00" for the same reason: a column of amounts should line up. */
+const inr = (n) =>
+  "₹" + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // IST calendar day as YYYY-MM-DD (matches the backend's day boundaries).
 const istToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 const monthStart = () => istToday().slice(0, 8) + "01";
