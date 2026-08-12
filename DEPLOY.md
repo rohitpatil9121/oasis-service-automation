@@ -4,7 +4,7 @@ Architecture split:
 - **Backend** (`/backend`, Express API) → **Render Web Service**
 - **Frontend** (`/frontend`, Vite/React static site) → **Vercel**
 
-Prerequisites: code pushed to a GitHub repo, a Supabase project, and Meta WhatsApp Cloud API (or Twilio) credentials.
+Prerequisites: code pushed to a GitHub repo, a Supabase project, and Meta WhatsApp Cloud API.
 
 ---
 
