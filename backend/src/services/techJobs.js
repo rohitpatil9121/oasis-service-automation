@@ -219,17 +219,37 @@ async function assignedAtByTicket(techId, ticketIds) {
   return map;
 }
 
+/* The ticket a given outbox item already created, or null. maybeSingle so a
+   first-time call is an ordinary "nothing there" rather than an error. */
+async function findCallByClientId(clientId) {
+  const { data, error } = await supabase
+    .from("tickets").select(SELECT).eq("client_id", clientId).maybeSingle();
+  if (error) throw new Error("findCallByClientId: " + error.message);
+  return data || null;
+}
+
 /* "New Call": the technician adds a walk-in / direct customer from the field.
    Creates the customer + a ticket already assigned to this technician, flags it
    in tech_work so the app can show "Added by you", and notifies the office.
    The customer also gets the same "request logged" confirmation the dashboard
    sends, so every request — however it was raised — leaves a written record with
    the ticket number on the customer's phone. Skipped when no phone was captured. */
-export async function createMyCall(techId, { name, phone, area, problem }) {
+export async function createMyCall(techId, { name, phone, area, problem }, clientId) {
   const full_name = String(name || "").trim() || "New Customer";
   const rawPhone = String(phone || "").trim();
   const issue = String(problem || "").trim();
   if (!issue) { const e = new Error("problem required"); e.status = 400; throw e; }
+
+  /* `clientId` means this came from the phone's offline outbox, which resends
+     anything it never saw an answer to — including calls that did reach us and
+     whose response was lost. Answer the repeat with the ticket it already made,
+     before creating a customer, a ticket, a manager alert and a second "request
+     received" WhatsApp to someone who asked once. See
+     db/phase8_tech_call_idempotency.sql for the column and its unique index. */
+  if (clientId) {
+    const existing = await findCallByClientId(clientId);
+    if (existing) return toJob(existing);
+  }
 
   // Validate + normalise here — upsertCustomer stores the phone exactly as
   // given, and the phone is the WhatsApp identity for the whole platform.
@@ -256,9 +276,19 @@ export async function createMyCall(techId, { name, phone, area, problem }) {
       intake_complete: true,
       assigned_technician_id: techId,
       tech_work: { added_by_tech: true },
+      ...(clientId ? { client_id: clientId } : {}),
     })
     .select(SELECT).single();
-  if (error) throw new Error("createMyCall: " + error.message);
+  if (error) {
+    // Two replays landing together: both looked, both found nothing, and the
+    // unique index refused the second. That is the guard doing its job, not a
+    // failure — hand back the ticket the winner created.
+    if (clientId && error.code === "23505") {
+      const existing = await findCallByClientId(clientId);
+      if (existing) return toJob(existing);
+    }
+    throw new Error("createMyCall: " + error.message);
+  }
 
   // Confirmation to the customer. Sent as the approved TEMPLATE: a technician-
   // raised call means the customer hasn't messaged us, so we're outside the

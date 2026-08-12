@@ -58,8 +58,8 @@ router.post("/jobs/:id/verify-arrival", async (req, res, next) => {
 // Creates the ticket already assigned to them and notifies the office.
 router.post("/calls", async (req, res, next) => {
   try {
-    const { name, phone, area, problem } = req.body || {};
-    res.json({ job: await tech.createMyCall(req.user.id, { name, phone, area, problem }) });
+    const { name, phone, area, problem, client_id } = req.body || {};
+    res.json({ job: await tech.createMyCall(req.user.id, { name, phone, area, problem }, client_id) });
   } catch (e) { next(e); }
 });
 
