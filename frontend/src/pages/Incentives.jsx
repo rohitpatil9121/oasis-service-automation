@@ -40,8 +40,9 @@ export default function Incentives() {
       <div className="mb-5">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">Incentives</h1>
         <p className="mt-0.5 text-sm text-slate-400">
-          Technician payouts, computed from closed jobs. Kent/Aquaguard earn 8% (10% once a
-          technician bills ₹10,000 in a day); Oasis earns the margin, less 18% GST — cash or online alike.
+          Technician payouts, computed from closed jobs. Kent/Aquaguard earn 8% of the price
+          (10% once a technician bills ₹10,000 in a day); Oasis earns the margin. 18% GST comes off
+          both, cash or online alike.
         </p>
       </div>
 

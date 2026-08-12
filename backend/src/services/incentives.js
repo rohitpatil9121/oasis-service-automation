@@ -44,11 +44,18 @@ async function loadCatalog() {
 /* Incentive for ONE part. brandRate is the day's rate for branded parts (0.08 or
    0.10).
 
-   `mode` is accepted for callers that still pass it, but it no longer affects the
-   payout. Part prices are MRP and MRP includes GST, so the company owes tax on
-   the sale whichever way the customer paid — the cut therefore applies to every
-   Oasis line, cash or online (owner's decision, 6 Aug 2026). It used to apply on
-   online payments only, which paid ~22% more on an identical cash job. */
+   GST comes off EVERY payout, on both rules and whichever way the customer paid.
+   Part prices are MRP and MRP includes GST, so the company owes the tax on the
+   sale either way; commission is paid out of what is left, not out of the tax.
+
+   It arrived in two steps. First the Oasis margin, cash or online alike (owner,
+   6 Aug 2026) — before that an identical job paid ~22% more when the customer
+   happened to tap UPI. Then the Kent and Aquaguard percentage, which had been
+   taken off the full MRP and so was quietly paying commission on the tax as well
+   (owner, 12 Aug 2026).
+
+   `mode` is accepted for callers that still pass it, but no longer affects
+   anything. */
 export function partIncentive(part, catalog, brandRate, mode) {
   const meta = catalog.get(part.id) || {};
   // `part.price` is the per-piece rate; two membranes earn two membranes' worth.
@@ -59,7 +66,8 @@ export function partIncentive(part, catalog, brandRate, mode) {
   const brand = meta.brand;
 
   if (brand === "kent" || brand === "aquaguard") {
-    return { brand, qty, price, payout: round2(price * brandRate) };
+    const gross = price * brandRate;
+    return { brand, qty, price, gross: round2(gross), payout: round2(gross * (1 - RULES.GST_RATE)) };
   }
   if (brand === "oasis") {
     const margin = Math.max(0, rate - Number(meta.base_cost || 0)) * qty;
