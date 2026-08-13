@@ -106,6 +106,35 @@ export function visitScheduledCustomer({ ticketNumber, customerName, when }) {
 // silently fail there, so this approved template guarantees delivery.
 // {{1}} customer name  {{2}} ticket  {{3}} service/issue
 // {{1}} ticket
+/* The completion message WITH a tappable way in to the rating.
+
+   Outside WhatsApp's 24-hour window Meta refuses interactive messages, so the
+   5-star list simply cannot be sent — and most customers are outside it by the
+   time their job closes, which is why the plain template below reaches them
+   saying "tap below to rate us" with nothing to tap.
+
+   A template's own quick-reply button is exempt from that rule. Tapping it also
+   counts as a message FROM the customer, which opens the window — so the webhook
+   can answer the tap with the real 5-star list. Two taps instead of one, but it
+   works for every customer rather than the third who happens to be inside.
+
+   Approve this in Meta as a Utility template with body text and ONE quick-reply
+   button labelled "Rate our service", then set RATING_BUTTON_TEMPLATE to its
+   name. Until then nothing here is used. */
+export function ratingRequestWithButton({ ticketNumber, ticketId, name }) {
+  return {
+    template: {
+      name,
+      language: WA_LANG,
+      variables: [v(ticketNumber)],
+      quickReplyPayloads: [`rate_open_${ticketId}`],
+    },
+    body:
+      `Your service request ${ticketNumber} is complete.\n` +
+      `How was our service? Tap "Rate our service" below.`,
+  };
+}
+
 export function requestCompletedCustomer({ ticketNumber }) {
   return {
     template: {

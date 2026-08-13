@@ -1,6 +1,6 @@
 import { supabase } from "../config/supabase.js";
 import { queueNotification } from "./notifications.js";
-import { customerRequestReceived, managerNewRequest, visitScheduledCustomer, requestCancelledCustomer, requestCompletedCustomer } from "./waTemplates.js";
+import { customerRequestReceived, managerNewRequest, visitScheduledCustomer, requestCancelledCustomer, requestCompletedCustomer, ratingRequestWithButton } from "./waTemplates.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
@@ -684,6 +684,46 @@ export const RATING_LABELS = { 1: "Poor", 2: "Fair", 3: "Okay", 4: "Good", 5: "E
 // How long after closing a job before the customer is asked to rate it.
 export const RATING_DELAY_MS = 10 * 60 * 1000;
 
+/* The star menu itself: one WhatsApp list with five rows, ★★★★★ down to ★.
+   Each row id carries ticket + score so the tap is attributed on the webhook.
+
+   Only deliverable INSIDE the 24-hour window — Meta refuses interactive messages
+   outside it. Both callers have established that: the poll checks the window,
+   and the button-tap path is inside it by definition, because the tap itself is
+   the customer message that opened it. */
+export async function sendRatingList({ id, ticket_number, phone }) {
+  const body =
+    `Your service request ${ticket_number} is complete.\n` +
+    `How was our service? Tap below to rate us.`;
+  const row = (n) => ({ id: `rate_${id}_${n}`, title: "★".repeat(n), description: RATING_LABELS[n] });
+  await queueNotification({
+    recipient: phone, audience: "customer", ticketId: id, body,
+    interactive: {
+      type: "list",
+      body: { text: body },
+      action: {
+        button: "Rate our service",
+        sections: [{ title: "Tap your rating", rows: [row(5), row(4), row(3), row(2), row(1)] }],
+      },
+    },
+  });
+}
+
+/* The customer tapped "Rate our service" on the template. Their tap opened the
+   24-hour window, so the star list can now go. Returns false when the payload
+   isn't ours or the ticket has gone, so the caller can fall through to intake
+   rather than swallowing a real message. */
+export async function sendRatingListForPayload(payload) {
+  const m = /^rate_open_(.+)$/.exec(String(payload || ""));
+  if (!m) return false;
+  const { data: t } = await supabase
+    .from("tickets").select("id, ticket_number, customer:customers(phone)")
+    .eq("id", m[1]).maybeSingle();
+  if (!t?.customer?.phone) return false;
+  await sendRatingList({ id: t.id, ticket_number: t.ticket_number, phone: t.customer.phone });
+  return true;
+}
+
 // Sends the rating request for every job whose delay has elapsed. Polled by the
 // server, so a restart just resumes from the DB instead of losing the pending ask.
 export async function sendDueRatingRequests() {
@@ -697,9 +737,22 @@ export async function sendDueRatingRequests() {
 
   for (const t of due || []) {
     const work = t.tech_work || {};
-    if (work.rating_sent_at) continue;
-    // Claim it FIRST: clearing rating_due_at means a second poll (or a second
-    // server instance) can't pick the same ticket up and message twice.
+    /* Already asked. This happens when a job is CLOSED a second time — the
+       dashboard re-closing a ticket the app had closed, say — which stamps a
+       fresh rating_due_at on a ticket that was asked days ago. Skipping alone
+       left rating_due_at standing, so the ticket came back in this query on
+       every poll, for good: 8 of them were sitting in the live database.
+       Clear the stamp so it stops being due; the customer keeps the one ask
+       they already had, which is the whole point of rating_sent_at. */
+    if (work.rating_sent_at) {
+      if (work.rating_due_at) await mergeTechWork(t.id, { rating_due_at: null });
+      continue;
+    }
+    // Claim it FIRST: clearing rating_due_at means the NEXT poll can't pick the
+    // same ticket up and message twice. Note this is a read-then-write, so two
+    // pollers running at the same instant would both get past the check above —
+    // fine while one instance polls once a minute and a run takes seconds, but
+    // a second web instance would need a conditional claim in SQL.
     // rating_due_at must be an explicit null — the old code cleared it by
     // omitting it from a whole-object write, but a merge leaves omitted keys
     // untouched, which would leave the ticket claimable and double-message it.
@@ -711,32 +764,29 @@ export async function sendDueRatingRequests() {
     const phone = t.customer?.phone;
     if (!phone) continue;
     try {
-      const body =
-        `Your service request ${t.ticket_number} is complete.\n` +
-        `How was our service? Tap below to rate us.`;
       if (!CUSTOMER_NOTIFY.ratingRequest) continue;
       const within24h = await customerMessagedWithin(phone, 24 * 3600 * 1000);
       if (within24h) {
-        const row = (n) => ({ id: `rate_${t.id}_${n}`, title: "★".repeat(n), description: RATING_LABELS[n] });
+        await sendRatingList({ id: t.id, ticket_number: t.ticket_number, phone });
+      } else if (env.ratingButtonTemplate) {
+        // Meta refuses the list out here. A template's own quick-reply button is
+        // the one tappable thing that survives, and tapping it opens the window
+        // so the webhook can follow up with the real list.
+        const tpl = ratingRequestWithButton({
+          ticketNumber: t.ticket_number, ticketId: t.id, name: env.ratingButtonTemplate,
+        });
         await queueNotification({
-          recipient: phone, audience: "customer", ticketId: t.id, body,
-          interactive: {
-            type: "list",
-            body: { text: body },
-            action: {
-              button: "Rate our service",
-              sections: [{ title: "Tap your rating", rows: [row(5), row(4), row(3), row(2), row(1)] }],
-            },
-          },
+          recipient: phone, audience: "customer", ticketId: t.id,
+          body: tpl.body, template: tpl.template,
         });
       } else {
-        if (CUSTOMER_NOTIFY.ratingRequest) {
-          const tpl = requestCompletedCustomer({ ticketNumber: t.ticket_number });
-          await queueNotification({
-            recipient: phone, audience: "customer", ticketId: t.id,
-            body: tpl.body, template: tpl.template,
-          });
-        }
+        // No button template approved yet: the plain completion template, which
+        // is what every out-of-window customer has been getting all along.
+        const tpl = requestCompletedCustomer({ ticketNumber: t.ticket_number });
+        await queueNotification({
+          recipient: phone, audience: "customer", ticketId: t.id,
+          body: tpl.body, template: tpl.template,
+        });
       }
     } catch (e) {
       log.error(`rating request ${t.ticket_number}:`, e.message);

@@ -6,6 +6,7 @@ import { handleEstimateReply } from "../services/techJobs.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
 import { isAgentHandling, storeBotMessage } from "../services/conversation.js";
 import { handleRatingReply, handleTypedRating } from "../services/rating.js";
+import { sendRatingListForPayload } from "../services/tickets.js";
 import { supabase } from "../config/supabase.js";
 import { normalizePhone } from "../lib/phone.js";
 import { env } from "../config/env.js";
@@ -323,6 +324,19 @@ router.post("/whatsapp", async (req, res) => {
       // A rating tap is a structured one-tap response, not a conversation:
       // record it, log the tap to the thread, and acknowledge once — never route
       // it through intake (which would otherwise treat it as a new request).
+      /* "Rate our service" on the completion TEMPLATE. The tap is itself a
+         message from the customer, so the 24-hour window is open for the next
+         few seconds — which is the only reason the star list can go at all to
+         someone who last wrote to us days ago. Answer with the list and stop:
+         routing this through intake would read it as a new service request. */
+      if (msg.type === "button" && /^rate_open_/.test(msg.button?.payload || "")) {
+        const sent = await sendRatingListForPayload(msg.button.payload);
+        if (sent) {
+          await logInbound(from, msg.button.text || "Rate our service", { waMessageId });
+          return;
+        }
+      }
+
       if (interactiveReply) {
         const ack = await handleRatingReply(interactiveReply.id);
         if (ack !== null) {

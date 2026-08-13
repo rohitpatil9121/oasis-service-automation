@@ -107,7 +107,7 @@ async function sendDocumentViaMeta(toPhone, { link, filename, caption }) {
 // Send a pre-approved template (Meta only). Templates bypass the 24-hour
 // customer-service window, so this is how staff alerts actually get delivered.
 // `template` = { name, language, variables: [...] } (see services/waTemplates.js).
-async function sendTemplateViaMeta(toPhone, { name, language = "en", variables = [], otpCode, headerDocument }) {
+async function sendTemplateViaMeta(toPhone, { name, language = "en", variables = [], otpCode, headerDocument, quickReplyPayloads }) {
   const to = normalizePhone(toPhone).replace(/\D/g, "");
   const url = `https://graph.facebook.com/${env.metaGraphVersion}/${env.metaPhoneNumberId}/messages`;
 
@@ -138,6 +138,21 @@ async function sendTemplateViaMeta(toPhone, { name, language = "en", variables =
       index: "0",
       parameters: [{ type: "text", text: String(otpCode) }],
     });
+
+  /* Quick-reply buttons approved ON the template. This is the only way to put a
+     tappable option in front of a customer OUTSIDE the 24-hour window, where
+     interactive messages are refused — the rating ask needs it, because most
+     customers have not messaged us for days by the time their job closes.
+     The payload set here is what comes back on the webhook, and note it arrives
+     as a "button" message (button.payload), NOT as interactive.button_reply. */
+  for (const [i, payload] of (quickReplyPayloads || []).entries()) {
+    components.push({
+      type: "button",
+      sub_type: "quick_reply",
+      index: String(i),
+      parameters: [{ type: "payload", payload: String(payload) }],
+    });
+  }
 
   const res = await fetch(url, {
     method: "POST",

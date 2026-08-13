@@ -31,6 +31,13 @@ export const env = {
   // Our own WhatsApp number. Meta rejects a send addressed to the sender itself,
   // so we skip those instead of burning retries on a guaranteed failure.
   metaOwnNumber: process.env.META_OWN_NUMBER,
+  /* Name of an approved template carrying ONE quick-reply button ("Rate our
+     service"). Outside the 24-hour window Meta refuses interactive messages, so
+     the 5-star list cannot be sent — but a template button can, and tapping it
+     counts as a customer message, which opens the window and lets the real list
+     follow. Unset until the template is approved: the rating ask then behaves
+     exactly as it did before, with the plain completion template. */
+  ratingButtonTemplate: process.env.RATING_BUTTON_TEMPLATE || "",
   metaAccessToken: process.env.META_ACCESS_TOKEN,
   metaVerifyToken: process.env.META_VERIFY_TOKEN || "oasis_verify_token",
   metaGraphVersion: process.env.META_GRAPH_VERSION || "v21.0",
