@@ -221,10 +221,34 @@ async function assignedAtByTicket(techId, ticketIds) {
 
 /* The ticket a given outbox item already created, or null. maybeSingle so a
    first-time call is an ordinary "nothing there" rather than an error. */
+/* Postgres reports an unknown column as 42703. Here that means one thing: the
+   backend was deployed before db/phase8_tech_call_idempotency.sql was applied.
+
+   It is worth surviving rather than throwing. The column only buys idempotency —
+   without it a New Call is exactly as safe as it was before the column existed,
+   which is to say it works and can duplicate on a replay. Failing the request
+   instead takes New Call down completely, and it did: every call from the app
+   answered "Something went wrong" the moment the new build reached a technician's
+   phone, because the app had started sending client_id. A missing migration
+   should cost a feature, not the job. */
+const missingColumn = (e) =>
+  e?.code === "42703" || /column .*client_id.* does not exist/i.test(e?.message || "");
+
+let warnedNoColumn = false;
+function warnOnce() {
+  if (warnedNoColumn) return;
+  warnedNoColumn = true;
+  log.error("tickets.client_id is missing — apply db/phase8_tech_call_idempotency.sql. " +
+            "New Calls still work, but a replayed one can create a second ticket.");
+}
+
 async function findCallByClientId(clientId) {
   const { data, error } = await supabase
     .from("tickets").select(SELECT).eq("client_id", clientId).maybeSingle();
-  if (error) throw new Error("findCallByClientId: " + error.message);
+  if (error) {
+    if (missingColumn(error)) { warnOnce(); return null; }
+    throw new Error("findCallByClientId: " + error.message);
+  }
   return data || null;
 }
 
@@ -267,18 +291,25 @@ export async function createMyCall(techId, { name, phone, area, problem }, clien
     custId = data.id;
   }
 
-  const { data: ticket, error } = await supabase.from("tickets")
-    .insert({
-      customer_id: custId,
-      issue_description: issue,
-      source: "technician",
-      status: "NEW",
-      intake_complete: true,
-      assigned_technician_id: techId,
-      tech_work: { added_by_tech: true },
-      ...(clientId ? { client_id: clientId } : {}),
-    })
-    .select(SELECT).single();
+  const row = {
+    customer_id: custId,
+    issue_description: issue,
+    source: "technician",
+    status: "NEW",
+    intake_complete: true,
+    assigned_technician_id: techId,
+    tech_work: { added_by_tech: true },
+  };
+
+  const insert = (extra) => supabase.from("tickets").insert({ ...row, ...extra }).select(SELECT).single();
+
+  let { data: ticket, error } = await insert(clientId ? { client_id: clientId } : {});
+  if (error && missingColumn(error)) {
+    // Migration not applied yet — record the call without the id rather than
+    // refusing it. See the note above missingColumn().
+    warnOnce();
+    ({ data: ticket, error } = await insert({}));
+  }
   if (error) {
     // Two replays landing together: both looked, both found nothing, and the
     // unique index refused the second. That is the guard doing its job, not a

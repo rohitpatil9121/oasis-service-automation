@@ -18,12 +18,14 @@ const TECH_ID = "tech-1";
 const CALL = { name: "Akash", phone: "+919999999999", area: "Kothrud", problem: "NOT WORKING" };
 
 let store;          // { tickets: [...], customers: [...] }
+let columnMissing;  // true = db/phase8 migration not applied yet
 let notifCalls;
 let seq;
 
 function resetWorld() {
   store = { tickets: [], customers: [] };
   notifCalls = [];
+  columnMissing = false;
   seq = 0;
 }
 
@@ -38,6 +40,10 @@ function exec(st) {
       return { data: row, error: null };
     }
     if (st.table === "tickets") {
+      // Postgres refuses a column it does not have: error 42703.
+      if (columnMissing && "client_id" in st.data) {
+        return { data: null, error: { code: "42703", message: "column \"client_id\" of relation \"tickets\" does not exist" } };
+      }
       // The unique index from db/phase8_tech_call_idempotency.sql. Postgres
       // reports a violation as 23505; the service turns that into "here is the
       // ticket you already made" rather than an error.
@@ -153,6 +159,23 @@ test("two genuinely different calls are still two tickets", async () => {
   await createMyCall(TECH_ID, { ...CALL, problem: "LEAKING" }, "c_two");
   assert.equal(store.tickets.length, 2);
   assert.equal(customerNotifs().length, 2);
+});
+
+test("if the migration has not been applied, the call still goes through", async () => {
+  /* The failure this reproduces actually happened: the backend went out before
+     db/phase8_tech_call_idempotency.sql was applied, the app had started sending
+     client_id, and every New Call came back "Something went wrong". A missing
+     column may cost the idempotency; it must not cost the feature. */
+  columnMissing = true;
+  try {
+    const job = await createMyCall(TECH_ID, CALL, "c_abc123");
+    assert.equal(store.tickets.length, 1, "the call is recorded");
+    assert.equal(store.tickets[0].client_id, undefined, "just without the id it cannot store");
+    assert.ok(job.id);
+    assert.equal(customerNotifs().length, 1, "and the customer still hears back");
+  } finally {
+    columnMissing = false;
+  }
 });
 
 test("a call made online, with no client_id, behaves exactly as before", async () => {
