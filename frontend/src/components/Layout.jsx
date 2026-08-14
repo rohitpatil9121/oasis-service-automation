@@ -105,7 +105,7 @@ export default function Layout({ children }) {
       </aside>
 
       {/* ---------- Main column ---------- */}
-      <div className="flex min-h-screen flex-1 flex-col lg:ml-60">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col lg:ml-60">
         {/* Top bar */}
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6">
           {/* mobile brand */}
@@ -113,7 +113,10 @@ export default function Layout({ children }) {
             <Logo className="h-8" badge="h-8 w-8 rounded-lg text-xs" />
           </Link>
 
-          <div className="relative max-w-xl flex-1">
+          {/* min-w-0: a flex item defaults to min-width:auto, so this input refused
+              to shrink below its natural width and pushed the whole page wider than
+              the phone — every screen scrolled sideways at 375px, not just this one. */}
+          <div className="relative min-w-0 max-w-xl flex-1">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
               <Icon name="search" />
             </span>
