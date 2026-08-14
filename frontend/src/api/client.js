@@ -40,9 +40,12 @@ async function request(path, { method = "GET", body } = {}) {
 
 export const api = {
   // auth
-  login: (phone, password) => request("/auth/login", { method: "POST", body: { phone, password } }),
+  /* `scope: "dashboard"` tells the backend which door this is. The OTP endpoints
+     are shared with the technician app, so without it a technician signs in here
+     with his own code and lands on a menu where every page answers 403. */
+  login: (phone, password) => request("/auth/login", { method: "POST", body: { phone, password, scope: "dashboard" } }),
   requestOtp: (phone) => request("/auth/otp/request", { method: "POST", body: { phone } }),
-  verifyOtp: (phone, code) => request("/auth/otp/verify", { method: "POST", body: { phone, code } }),
+  verifyOtp: (phone, code) => request("/auth/otp/verify", { method: "POST", body: { phone, code, scope: "dashboard" } }),
   me: () => request("/auth/me"),
   // tickets
   listTickets: (status) => request(`/tickets${status ? `?status=${status}` : ""}`),

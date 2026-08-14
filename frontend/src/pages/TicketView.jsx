@@ -288,7 +288,7 @@ export default function TicketView() {
 
 function BackLink() {
   return (
-    <Link to="/" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
+    <Link to="/requests" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
       <Icon name="back" /> Back to inbox
     </Link>
   );

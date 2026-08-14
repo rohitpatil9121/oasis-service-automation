@@ -9,7 +9,8 @@ const NAV = [
   {
     group: "Service",
     items: [
-      { to: "/", label: "Service Requests", icon: "inbox", end: true },
+      { to: "/", label: "Home", icon: "grid", end: true, roles: ["owner"] },
+      { to: "/requests", label: "Service Requests", icon: "inbox" },
       { to: "/chats", label: "All Chats", icon: "chat" },
       { to: "/clients", label: "Clients", icon: "user" },
       { to: "/technicians", label: "Technicians", icon: "users" },
@@ -31,15 +32,22 @@ export default function Layout({ children }) {
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const [menuOpen, setMenuOpen] = useState(false);
+  /* An entry with `roles` belongs to those roles only. Anything without the
+     key is for everyone who got this far — the login already refused the roles
+     that have no business on the dashboard at all. Hiding the link is the
+     courtesy; App.jsx is what actually holds the door. */
+  const visibleItems = (sec) => sec.items.filter((n) => !n.roles || n.roles.includes(user?.role));
+
   const initials = (user?.full_name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 
   // Global search: drive the Service Requests list via ?q=. Typing anywhere
-  // sends you to the inbox filtered by the query.
+  // sends you to the board filtered by the query — including from Home, which
+  // has no list of its own to search.
   const q = params.get("q") || "";
   const onSearch = (e) => {
     const value = e.target.value;
-    if (location.pathname !== "/") {
-      navigate(value ? `/?q=${encodeURIComponent(value)}` : "/");
+    if (location.pathname !== "/requests") {
+      navigate(value ? `/requests?q=${encodeURIComponent(value)}` : "/requests");
     } else {
       const next = new URLSearchParams(params);
       value ? next.set("q", value) : next.delete("q");
@@ -59,11 +67,11 @@ export default function Layout({ children }) {
         </div>
 
         <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-          {NAV.map((sec) => (
+          {NAV.map((sec) => visibleItems(sec).length > 0 && (
             <div key={sec.group}>
               <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{sec.group}</div>
               <div className="space-y-0.5">
-                {sec.items.map((n) => (
+                {visibleItems(sec).map((n) => (
                   <NavLink key={n.to} to={n.to} end={n.end}
                     className={({ isActive }) =>
                       `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
@@ -154,7 +162,7 @@ export default function Layout({ children }) {
 
         {/* mobile nav (simple row) */}
         <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-4 py-2 lg:hidden">
-          {NAV.flatMap((s) => s.items).map((n) => (
+          {NAV.flatMap(visibleItems).map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end}
               className={({ isActive }) =>
                 `flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${

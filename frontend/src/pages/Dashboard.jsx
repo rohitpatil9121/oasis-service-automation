@@ -210,7 +210,7 @@ export default function Dashboard() {
           />
         )}
         {search && (
-          <FilterChip label={`“${search}”`} onClear={() => navigate("/")} />
+          <FilterChip label={`“${search}”`} onClear={() => navigate("/requests")} />
         )}
 
         <label className="ml-auto flex items-center gap-1.5">
