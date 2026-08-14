@@ -13,6 +13,7 @@ export default function Dashboard() {
   const [tickets, setTickets] = useState([]);
   const [filter, setFilter] = useState("new");
   const [tech, setTech] = useState("");        // "" = everyone, "unassigned", or a technician id
+  const [sort, setSort] = useState("");        // "" = newest first (the order the API returns)
   const [err, setErr] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -94,6 +95,53 @@ export default function Dashboard() {
     );
   });
 
+  /* Sorting the visible list.
+
+     Request numbers read OG-DDMMYY-NNNN, so comparing them as text puts
+     OG-140826 before OG-170626 — August ahead of June, because the day leads.
+     Pull the parts out and compare them in the order that means something.
+     Anything that does not match the pattern falls back to when it was raised,
+     which is the same order the numbers were handed out in. */
+  const idKey = (t) => {
+    const m = /^OG-(\d{2})(\d{2})(\d{2})-(\d+)$/.exec(t.ticket_number || "");
+    if (!m) return [0, 0, 0, 0, new Date(t.created_at || 0).getTime()];
+    const [, dd, mm, yy, seq] = m;
+    return [+yy, +mm, +dd, +seq, 0];
+  };
+  const cmpArr = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
+
+  /* The bill lives on tech_work.total and is simply absent until the technician
+     writes one — most open jobs have none. Those rows sink to the bottom either
+     way rather than crowding the top of "lowest first" with a wall of blanks:
+     someone sorting by amount is asking about money, and a job with no bill has
+     no answer to give. */
+  const billOf = (t) => {
+    const v = t.tech_work?.total;
+    return v === null || v === undefined || v === "" ? null : Number(v) || 0;
+  };
+
+  /* Direction is a multiplier, NOT swapped arguments. Swapping them reverses
+     the "no bill goes last" rule along with everything else, which put a block
+     of blank amounts at the top of "highest first" — the one place a person
+     sorting by money is certainly looking. */
+  function billCmp(a, b, dir) {
+    const x = billOf(a), y = billOf(b);
+    if (x === null && y === null) return 0;
+    if (x === null) return 1;
+    if (y === null) return -1;
+    return (x - y) * dir;
+  }
+
+  const SORTS = {
+    "": { label: "Newest first", fn: null },
+    bill_desc: { label: "Bill · highest first", fn: (a, b) => billCmp(a, b, -1) },
+    bill_asc: { label: "Bill · lowest first", fn: (a, b) => billCmp(a, b, 1) },
+    id_desc: { label: "Request no. · newest first", fn: (a, b) => cmpArr(idKey(b), idKey(a)) },
+    id_asc: { label: "Request no. · oldest first", fn: (a, b) => cmpArr(idKey(a), idKey(b)) },
+  };
+
+  const sorted = SORTS[sort]?.fn ? [...visible].sort(SORTS[sort].fn) : visible;
+
   const activeLabel = DASHBOARD_BUCKETS.find((s) => s.key === filter)?.label || "All requests";
 
   return (
@@ -164,6 +212,19 @@ export default function Dashboard() {
         {search && (
           <FilterChip label={`“${search}”`} onClear={() => navigate("/")} />
         )}
+
+        <label className="ml-auto flex items-center gap-1.5">
+          <span className="sr-only">Sort requests</span>
+          <Icon name="chevron" className="h-3.5 w-3.5 text-slate-400" />
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white py-1 pl-2 pr-7 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40">
+            {Object.entries(SORTS).map(([key, s]) => (
+              <option key={key || "default"} value={key}>{s.label}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {err && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
@@ -171,7 +232,7 @@ export default function Dashboard() {
       {!loaded ? (
         <div className="flex justify-center rounded-xl border border-slate-200 bg-white py-16"><Spinner className="h-7 w-7" /></div>
       ) : (
-        <TicketTable tickets={visible} emptyHint={search || filter ? "Try a different filter or search." : undefined} showBoard />
+        <TicketTable tickets={sorted} emptyHint={search || filter ? "Try a different filter or search." : undefined} showBoard />
       )}
 
       {showNew && (
