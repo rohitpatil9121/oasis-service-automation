@@ -275,21 +275,24 @@ export async function createMyCall(techId, { name, phone, area, problem }, clien
     if (existing) return toJob(existing);
   }
 
-  // Validate + normalise here — upsertCustomer stores the phone exactly as
-  // given, and the phone is the WhatsApp identity for the whole platform.
-  let custId;
-  if (rawPhone) {
-    if (!isValidPhone(rawPhone)) { const e = new Error("Enter a valid mobile number"); e.status = 400; throw e; }
-    const customer = await upsertCustomer({ full_name, phone: normalizePhone(rawPhone), address: area || null });
-    custId = customer.id;
-  } else {
-    // No phone: still record the person so the ticket has a customer row.
-    const { data, error } = await supabase.from("customers")
-      .insert({ full_name, phone: null, address: area || null })
-      .select("id").single();
-    if (error) throw new Error("createMyCall customer: " + error.message);
-    custId = data.id;
+  /* The number is required, and saying so is the whole of this branch.
+
+     It used to try to record the customer with a null phone. customers.phone is
+     NOT NULL, so that insert could never succeed — every New Call left without a
+     number died on a constraint the technician saw as "Something went wrong",
+     with nothing to say which field was wrong. Nor was the intent reachable: the
+     phone is the customer's identity on WhatsApp, and a ticket that cannot be
+     messaged has no confirmation, no arrival code, no bill and no rating.
+
+     Validate and normalise here — upsertCustomer stores the phone exactly as
+     given. */
+  if (!rawPhone) {
+    const e = new Error("A mobile number is required — the customer gets their updates on WhatsApp");
+    e.status = 400; throw e;
   }
+  if (!isValidPhone(rawPhone)) { const e = new Error("Enter a valid mobile number"); e.status = 400; throw e; }
+  const customer = await upsertCustomer({ full_name, phone: normalizePhone(rawPhone), address: area || null });
+  const custId = customer.id;
 
   const row = {
     customer_id: custId,

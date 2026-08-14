@@ -12,6 +12,7 @@ const REFRESH_MS = 8000;
 export default function Dashboard() {
   const [tickets, setTickets] = useState([]);
   const [filter, setFilter] = useState("new");
+  const [tech, setTech] = useState("");        // "" = everyone, "unassigned", or a technician id
   const [err, setErr] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -33,10 +34,46 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, [load]);
 
+  /* Installation is not a board bucket — see the note in lib/boardBucket.js.
+     It is a mark a ticket carries in addition to its bucket, set when the
+     technician picks "Installation" as the call type while writing the bill.
+     Cancelled jobs are left out: a call that was called off installed nothing. */
+  const inBucket = (t, key) =>
+    key === "installation" ? t.installation && t.board_bucket !== "cancelled" : t.board_bucket === key;
+
+  /* The technician filter sits ACROSS the board columns rather than replacing
+     them: pick Assigned and a name to see what that technician has in hand right
+     now, or All requests and a name to see everything ever put on him. The card
+     counts follow the chosen technician too, so the numbers always describe the
+     list underneath them.
+
+     "unassigned" is an option in its own right — on a busy morning the question
+     is usually which requests have nobody on them yet. */
+  const onTech = (t) =>
+    !tech || (tech === "unassigned" ? !t.technician : t.technician?.id === tech);
+
   const countFor = (key) => {
-    if (!key) return tickets.filter((t) => t.board_bucket !== "cancelled").length;
-    return tickets.filter((t) => t.board_bucket === key).length;
+    const pool = tickets.filter(onTech);
+    if (!key) return pool.filter((t) => t.board_bucket !== "cancelled").length;
+    return pool.filter((t) => inBucket(t, key)).length;
   };
+
+  /* Who to offer, built from the tickets already on screen rather than a second
+     request: a technician with nothing on the board is nothing to look at. The
+     count beside each name is for the column currently selected, so it answers
+     "how many does he have HERE" rather than a total that matches nothing. */
+  const technicianOptions = (() => {
+    const inColumn = tickets.filter((t) => (filter ? inBucket(t, filter) : t.board_bucket !== "cancelled"));
+    const byId = new Map();
+    for (const t of tickets) {
+      if (!t.technician?.id) continue;
+      if (!byId.has(t.technician.id)) byId.set(t.technician.id, { id: t.technician.id, name: t.technician.full_name, count: 0 });
+    }
+    for (const t of inColumn) if (t.technician?.id && byId.has(t.technician.id)) byId.get(t.technician.id).count += 1;
+    const list = [...byId.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    const unassigned = inColumn.filter((t) => !t.technician).length;
+    return { list, unassigned };
+  })();
 
   const hintFor = (key) => {
     if (key) return BUCKET_HINT[key] || "";
@@ -44,7 +81,8 @@ export default function Dashboard() {
   };
 
   const visible = tickets.filter((t) => {
-    if (filter && t.board_bucket !== filter) return false;
+    if (!onTech(t)) return false;
+    if (filter && !inBucket(t, filter)) return false;
     if (filter === "" && t.board_bucket === "cancelled") return false;
     if (!search) return true;
     const query = search.toLowerCase();
@@ -77,7 +115,7 @@ export default function Dashboard() {
       </div>
 
       {/* Board bucket KPIs */}
-      <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-7">
+      <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
         {DASHBOARD_BUCKETS.map((s) => (
           <Kpi
             key={s.key || "all"}
@@ -96,8 +134,32 @@ export default function Dashboard() {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold text-slate-700">{activeLabel}</h2>
         <span className="text-sm text-slate-400">· {visible.length}</span>
+
+        <label className="ml-1 flex items-center gap-1.5">
+          <span className="sr-only">Filter by technician</span>
+          <Icon name="user" className="h-3.5 w-3.5 text-slate-400" />
+          <select
+            value={tech}
+            onChange={(e) => setTech(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white py-1 pl-2 pr-7 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40">
+            <option value="">All technicians</option>
+            {technicianOptions.unassigned > 0 && (
+              <option value="unassigned">Unassigned · {technicianOptions.unassigned}</option>
+            )}
+            {technicianOptions.list.map((t) => (
+              <option key={t.id} value={t.id}>{t.name} · {t.count}</option>
+            ))}
+          </select>
+        </label>
+
         {filter && (
           <FilterChip label={activeLabel} onClear={() => setFilter("")} />
+        )}
+        {tech && (
+          <FilterChip
+            label={tech === "unassigned" ? "Unassigned" : (technicianOptions.list.find((t) => t.id === tech)?.name || "Technician")}
+            onClear={() => setTech("")}
+          />
         )}
         {search && (
           <FilterChip label={`“${search}”`} onClear={() => navigate("/")} />

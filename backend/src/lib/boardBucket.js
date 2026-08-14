@@ -82,7 +82,51 @@ export function boardBucket(ticket) {
   return "pending";
 }
 
+/* Was this job a new machine going in, rather than a repair?
+
+   The technician picks the call type while writing the bill, and "Installation"
+   means the customer now owns a purifier they did not have this morning. That is
+   worth a column of its own on the board: those are the people who need an AMC
+   offer, a first service reminder, and the machine on record — none of which the
+   office can chase if the job is filed among the ordinary repairs.
+
+   Deliberately NOT a board bucket. A bucket is exclusive, so making this one
+   would pull every installation out of Service Done and Completed and leave
+   those counts short. It reads across them instead: a ticket keeps its bucket
+   AND is marked as an installation.
+
+   `charge` is the older field name that builds before the bill redesign wrote;
+   finished jobs from those builds still carry it.
+
+   Two sources, in this order:
+
+   1. The bill, when there is one. The technician picked the call type standing
+      in front of the machine, so it settles the question either way — a job
+      billed as "service" is NOT an installation however its request was worded.
+
+   2. Failing that, the words of the request. Of 502 tickets only 186 carry a
+      bill at all; the rest were closed from the dashboard or predate billing in
+      the app, and among them sit plainly-labelled jobs like "AQUA JADE WHITE NEW
+      INSTALLATION" that would otherwise be invisible for ever. This recovers 33
+      of them.
+
+   Re-installations and shifts are excluded: moving a machine that a customer
+   already owns is not a new machine going in, and it is the new ones the office
+   is looking for. "REE INSTALLATION" is in that list because the live data
+   contains that typo for RE-INSTALLATION. */
+const SAYS_INSTALL = /\b(install|installation)\b/i;
+const SAYS_AGAIN = /\bree?[-\s]?install|\bshift|\brelocat/i;
+
+export function isInstallation(ticket) {
+  const w = ticket?.tech_work || {};
+  const billed = w.call_type ?? w.charge;
+  if (billed) return billed === "installation";
+
+  const issue = ticket?.issue_description || "";
+  return SAYS_INSTALL.test(issue) && !SAYS_AGAIN.test(issue);
+}
+
 export function attachBoardBucket(ticket, { repeatCustomer = false } = {}) {
   const t = repeatCustomer ? { ...ticket, repeat_customer: true } : ticket;
-  return { ...t, board_bucket: boardBucket(t) };
+  return { ...t, board_bucket: boardBucket(t), installation: isInstallation(t) };
 }

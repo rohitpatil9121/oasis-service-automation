@@ -161,6 +161,24 @@ test("two genuinely different calls are still two tickets", async () => {
   assert.equal(customerNotifs().length, 2);
 });
 
+test("a call with no mobile number is refused, and says why", async () => {
+  /* This used to reach an insert of phone: null into a NOT NULL column, so the
+     technician got "Something went wrong" and no idea which field was at fault.
+     The number is not optional: it is how the customer is reached at all. */
+  await assert.rejects(
+    () => createMyCall(TECH_ID, { ...CALL, phone: "" }, "c_nophone"),
+    (e) => e.status === 400 && /mobile number is required/i.test(e.message));
+  assert.equal(store.tickets.length, 0, "and nothing is half-created");
+  assert.equal(store.customers.length, 0);
+});
+
+test("a number that is not a real mobile is refused too", async () => {
+  await assert.rejects(
+    () => createMyCall(TECH_ID, { ...CALL, phone: "12345" }, "c_badphone"),
+    (e) => e.status === 400);
+  assert.equal(store.tickets.length, 0);
+});
+
 test("if the migration has not been applied, the call still goes through", async () => {
   /* The failure this reproduces actually happened: the backend went out before
      db/phase8_tech_call_idempotency.sql was applied, the app had started sending
