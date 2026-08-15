@@ -4,7 +4,6 @@ import { api } from "../api/client.js";
 import BoardBadge from "../components/BoardBadge.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import AssignModal from "../components/AssignModal.jsx";
-import ScheduleModal from "../components/ScheduleModal.jsx";
 import ChatPanel from "../components/ChatPanel.jsx";
 import EditCustomerModal from "../components/EditCustomerModal.jsx";
 import CancelModal from "../components/CancelModal.jsx";
@@ -13,13 +12,6 @@ import InvoiceCard from "../components/InvoiceCard.jsx";
 import { Card, Button, Icon, Select, Spinner, Alert, Textarea } from "../components/ui.jsx";
 
 const fmt = (d) => (d ? new Date(d).toLocaleString() : "—");
-const fmtSlot = (s, e) => {
-  if (!s) return "—";
-  const start = new Date(s).toLocaleString([], { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
-  if (!e) return start;
-  const end = new Date(e).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
-  return `${start} – ${end}`;
-};
 const STATUSES = ["NEW", "CLOSED", "CANCELLED"];
 // Closed reads as "Service done" here to match the board column the ticket
 // lands in once it's closed.
@@ -30,7 +22,6 @@ export default function TicketView() {
   const [ticket, setTicket] = useState(null);
   const [history, setHistory] = useState({ events: [], assignments: [] });
   const [showAssign, setShowAssign] = useState(false);
-  const [showSchedule, setShowSchedule] = useState(false);
   const [showEditCustomer, setShowEditCustomer] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
   const [editIssue, setEditIssue] = useState(false);
@@ -213,28 +204,12 @@ export default function TicketView() {
         </Card>
       )}
 
-      {/* Visit schedule */}
-      <Card className="mb-5 p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Visit schedule</h3>
-            {ticket.scheduled_start ? (
-              <p className="mt-1 flex items-center gap-1.5 font-medium text-slate-700">
-                <Icon name="calendar" className="h-4 w-4 text-brand" />
-                {fmtSlot(ticket.scheduled_start, ticket.scheduled_end)}
-              </p>
-            ) : (
-              <p className="mt-1 text-sm text-slate-400">Not scheduled yet.</p>
-            )}
-          </div>
-          {!closed && (
-            <Button variant="secondary" onClick={() => setShowSchedule(true)}>
-              <Icon name="calendar" /> {ticket.scheduled_start ? "Reschedule" : "Schedule visit"}
-            </Button>
-          )}
-        </div>
-      </Card>
-
+      {/* No visit-schedule card. The slot was never how this business works: a
+          request comes in, the office assigns a technician, and he goes — the
+          customer is told who is coming, not a time window anyone was holding
+          to. The customer-facing "visit scheduled" message has been off in
+          config/notify.js since 3 Aug 2026 for the same reason, so the card was
+          setting a field that no longer said anything to anybody. */}
       {/* History + Activity */}
       <div className="grid gap-5 lg:grid-cols-2">
         <Card className="p-5">
@@ -281,11 +256,6 @@ export default function TicketView() {
           onAssigned={() => { setShowAssign(false); load(); }} />
       )}
 
-      {showSchedule && (
-        <ScheduleModal ticket={ticket} onClose={() => setShowSchedule(false)}
-          onScheduled={() => { setShowSchedule(false); load(); }} />
-      )}
-
       {showEditCustomer && (
         <EditCustomerModal ticket={ticket} onClose={() => setShowEditCustomer(false)}
           onUpdated={() => { setShowEditCustomer(false); load(); }} />
@@ -300,7 +270,7 @@ export default function TicketView() {
 
 function BackLink() {
   return (
-    <Link to="/requests" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
+    <Link to="/requests" className="inline-flex min-h-[44px] items-center gap-1 text-sm text-slate-500 transition hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 sm:min-h-0">
       <Icon name="back" /> Back to inbox
     </Link>
   );

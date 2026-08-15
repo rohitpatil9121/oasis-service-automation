@@ -49,12 +49,9 @@ function Ticks({ status, delivery, pending }) {
 const DOODLE =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23000' stroke-opacity='0.035' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M18 24c4-6 10-6 14 0M22 34v8'/%3E%3Ccircle cx='96' cy='22' r='7'/%3E%3Cpath d='M92 22h8M96 18v8'/%3E%3Cpath d='M28 88c6-10 14-10 20 0s-6 16-12 8'/%3E%3Cpath d='M108 74l6 10-12 0z'/%3E%3Cpath d='M116 104c-6 4-12 4-18 0'/%3E%3Ccircle cx='64' cy='120' r='5'/%3E%3Cpath d='M56 56h14v10H56z'/%3E%3Cpath d='M124 44v10M120 49h8'/%3E%3C/g%3E%3C/svg%3E\")";
 
-/* A small palette — the handful anyone actually uses replying to a customer.
-   Not a full picker: the office types on a desktop keyboard, not a phone. */
-const EMOJI = ["😊", "🙏", "👍", "👌", "✅", "❌", "🙋", "😢",
-  "🙌", "🔧", "💧", "🧰", "📞", "📍", "📅", "⏰",
-  "💰", "🧾", "🚚", "⭐", "🙍", "😅", "🙎", "🔄",
-  "❗", "❓", "👋", "🎉", "🙂", "🤝", "💬", "🛠"];
+/* No emoji palette. It was a desktop convenience that cost a 36px button on the
+   left of every composer, and on a phone that is the width the message box
+   needs. The phone keyboard already carries emoji. */
 
 /* Turn URLs and phone numbers in a message into links, like WhatsApp does.
    Bill links and numbers come through chat constantly and were dead text. */
@@ -79,7 +76,6 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
   const [loaded, setLoaded] = useState(false);
   const [botOn, setBotOn] = useState(true);
   const [replyTo, setReplyTo] = useState(null); // message the manager is quoting
-  const [emoji, setEmoji] = useState(false);
   const [atBottom, setAtBottom] = useState(true); // drives the jump-to-latest button
   const boxRef = useRef(null);
   const scrollRef = useRef(null);
@@ -104,7 +100,13 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
       const { messages, botOn } = byTicket
         ? await api.getConversation(ticket.id)
         : await api.getPhoneConversation(phone);
-      setMessages(messages);
+      /* Default to an empty thread rather than trusting the field to be there.
+         A response without `messages` put `undefined` into state, and the very
+         next render reads `messages.length` — which does not throw inside this
+         panel, it takes the whole PAGE down to a white screen. One endpoint
+         hiccup, one mismatched deploy, and the office sees nothing at all and
+         has no idea why. An empty thread at least still draws the chat. */
+      setMessages(Array.isArray(messages) ? messages : []);
       if (typeof botOn === "boolean") setBotOn(botOn);
       markSeen(ticket.id || phone); // viewing the chat clears its unread badge
     } catch { /* ignore transient */ } finally { setLoaded(true); }
@@ -297,18 +299,6 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
 
       {/* composer */}
       <form onSubmit={send} className="relative flex shrink-0 items-end gap-2 border-t border-slate-100 bg-slate-50 p-2.5">
-        {emoji && (
-          <div className="absolute bottom-full left-2 mb-1 grid w-72 grid-cols-8 gap-0.5 rounded-xl border border-slate-200 bg-white p-2 shadow-pop">
-            {EMOJI.map((e) => (
-              <button key={e} type="button" onClick={() => { setText((t) => t + e); setEmoji(false); boxRef.current?.focus(); }}
-                className="rounded p-1 text-lg leading-none transition hover:bg-slate-100">{e}</button>
-            ))}
-          </div>
-        )}
-        <button type="button" onClick={() => setEmoji((v) => !v)} title="Emoji"
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg leading-none transition hover:bg-slate-200 ${emoji ? "bg-slate-200" : ""}`}>
-          😊
-        </button>
         <textarea
           ref={boxRef}
           rows={1}
@@ -316,10 +306,10 @@ export default function ChatPanel({ ticket, heightClass = "h-72" }) {
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onComposerKeyDown}
           placeholder="Type a message"
-          className="max-h-32 flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+          className="max-h-32 min-h-[44px] flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-base outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 sm:text-sm"
         />
         <button type="submit" disabled={sending || !text.trim()}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700 disabled:opacity-50"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:opacity-50"
           aria-label="Send">
           <Icon name="send" className="h-4 w-4" />
         </button>

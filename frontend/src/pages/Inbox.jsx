@@ -30,6 +30,8 @@ export default function Inbox() {
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
+  // Open on the trouble, not on the noise — that is the point of the split.
+  const [box, setBox] = useState("issues");   // "issues" | "all"
   const [raising, setRaising] = useState(null); // conversation we're raising a request for
   const [params, setParams] = useSearchParams();
   const activeId = params.get("c"); // selected customer id
@@ -47,14 +49,29 @@ export default function Inbox() {
     return () => clearInterval(id);
   }, [load]);
 
+  /* Two boxes, not one long list.
+
+     Everything used to sit in a single stream ordered by time, so a customer
+     saying "water is still leaking after your visit" scrolled away under the
+     ordinary "thanks" and "ok" of the day. Three days of chats had four people
+     waiting on an answer and one unanswered complaint, all of them buried in
+     plain sight.
+
+     "Needs a reply" holds the two kinds of trouble the backend marks: a
+     complaint the bot escalated, and a customer whose last message has gone
+     unanswered for a quarter of an hour. Nothing is hidden — the other tab is
+     still every conversation. */
+  const issues = useMemo(() => convos.filter((c) => c.issue), [convos]);
+  const pool = box === "issues" ? issues : convos;
+
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return convos;
-    return convos.filter((c) =>
+    if (!s) return pool;
+    return pool.filter((c) =>
       (c.customer.full_name || "").toLowerCase().includes(s) ||
       (c.customer.phone || "").includes(s) ||
       (c.lastMessage || "").toLowerCase().includes(s));
-  }, [convos, q]);
+  }, [pool, q]);
 
   // Keyed on phone, not customer id: a conversation can exist before the
   // customer row does (WhatsApp intake still collecting details).
@@ -67,8 +84,24 @@ export default function Inbox() {
       <div className={`flex w-full flex-col border-r border-slate-200 sm:w-80 lg:w-96 ${active ? "hidden sm:flex" : "flex"}`}>
         <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
           <Icon name="chat" className="h-5 w-5 text-emerald-600" />
-          <h1 className="text-sm font-semibold text-slate-800">All chats</h1>
-          <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">{convos.length}</span>
+          <h1 className="text-sm font-semibold text-slate-800">Chats</h1>
+        </div>
+        <div className="flex gap-1 border-b border-slate-100 px-3 py-2" role="tablist" aria-label="Which chats">
+          {[
+            { key: "issues", label: "Needs a reply", n: issues.length },
+            { key: "all", label: "All chats", n: convos.length },
+          ].map((t) => (
+            <button key={t.key} role="tab" aria-selected={box === t.key} onClick={() => setBox(t.key)}
+              className={`flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 sm:min-h-[34px] sm:flex-none ${
+                box === t.key ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+              }`}>
+              {t.label}
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                box === t.key ? "bg-white/20"
+                  : t.key === "issues" && t.n ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600"
+              }`}>{t.n}</span>
+            </button>
+          ))}
         </div>
         <div className="border-b border-slate-100 px-3 py-2">
           <div className="relative">
@@ -78,7 +111,7 @@ export default function Inbox() {
             <input
               value={q} onChange={(e) => setQ(e.target.value)}
               placeholder="Search name, phone, message…"
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-3 text-sm outline-none focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
+              className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-sm outline-none focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/20 sm:h-9"
             />
           </div>
         </div>
@@ -90,7 +123,9 @@ export default function Inbox() {
             <div className="p-3"><Alert>{err}</Alert></div>
           ) : filtered.length === 0 ? (
             <p className="pt-12 text-center text-sm text-slate-400">
-              {q ? "No chats match your search." : "No conversations yet."}
+              {q ? "No chats match your search."
+                 : box === "issues" ? "Nobody is waiting. Every customer has had an answer."
+                 : "No conversations yet."}
             </p>
           ) : (
             filtered.map((c) => {
@@ -110,6 +145,17 @@ export default function Inbox() {
                       <span className="truncate text-sm font-semibold text-slate-800">
                         {c.customer.full_name || c.customer.phone}
                       </span>
+                      {/* Why this one is in the list. A complaint and a customer
+                          simply left waiting need different answers, so they are
+                          not flattened into one "!" — and the label is a word,
+                          not a colour, so it survives being read in grey. */}
+                      {c.issue && (
+                        <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                          c.issueKind === "complaint" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-800"
+                        }`}>
+                          {c.issueKind === "complaint" ? "Complaint" : "Waiting"}
+                        </span>
+                      )}
                       <span className={`ml-auto shrink-0 text-[11px] ${unread ? "font-semibold text-emerald-600" : "text-slate-400"}`}>
                         {when(c.lastAt)}
                       </span>

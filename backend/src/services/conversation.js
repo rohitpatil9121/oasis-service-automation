@@ -56,6 +56,45 @@ function quoteSnippet(body, hasMedia) {
   return hasMedia ? "📎 Attachment" : "";
 }
 
+
+/* Does this conversation need a person?
+
+   Two things qualify, and they are different kinds of trouble:
+
+     "complaint" — the bot escalated it. Someone said the work was wrong, the
+       machine still leaks, nobody came. It stays marked for a day, because a
+       complaint answered in ten minutes and one answered tomorrow are the same
+       complaint until somebody actually replies.
+
+     "waiting"   — the last word in the thread is the customer's, it has been a
+       while, and it is still today's problem. Fifteen minutes is long enough
+       that a person is wondering, and short enough to still fix.
+
+   Both have an upper bound, because a list that never forgets is a list nobody
+   opens. Running this over the live data without one produced 27-day-old
+   "Thanks!" and a stray star rating, all filed as people waiting — after a day
+   with no answer the moment has passed, and what is left is a customer to call,
+   not an inbox row to clear.
+
+   Everything else is an ordinary conversation and stays out of the way. */
+const WAITING_MS = 15 * 60 * 1000;
+const WAITING_MAX_MS = 24 * 3600 * 1000;
+const COMPLAINT_STICKY_MS = 24 * 3600 * 1000;
+
+function issueOf({ key, lastDir, lastAt, complaintAt }) {
+  const at = complaintAt.get(key);
+  if (at && Date.now() - new Date(at).getTime() < COMPLAINT_STICKY_MS) {
+    return { issue: true, issueKind: "complaint", issueAt: at };
+  }
+  if (lastDir === "in" && lastAt) {
+    const age = Date.now() - new Date(lastAt).getTime();
+    if (age > WAITING_MS && age < WAITING_MAX_MS) {
+      return { issue: true, issueKind: "waiting", issueAt: lastAt };
+    }
+  }
+  return { issue: false, issueKind: null, issueAt: null };
+}
+
 // Merge inbound (wa_inbound) + outbound (notifications) rows into one sorted
 // thread, resolving "reply to" quotes on BOTH sides:
 //  - outbound: the manager's reply stores a snapshot (reply_to_body).
@@ -117,7 +156,7 @@ const INBOX_WINDOW_DAYS = parseInt(process.env.INBOX_WINDOW_DAYS || "90", 10);
 
 export async function listConversations() {
   const since = new Date(Date.now() - INBOX_WINDOW_DAYS * 86400_000).toISOString();
-  const [custRes, ticketRes, inboundRes, outboundRes, staffRes] = await Promise.all([
+  const [custRes, ticketRes, inboundRes, outboundRes, staffRes, complaintRes] = await Promise.all([
     // `address` rides along so the inbox can pre-fill "Create request" without a
     // second round-trip — the row is already being read for the name and phone.
     supabase.from("customers").select("id, full_name, phone, address, ai_paused_until"),
@@ -139,6 +178,14 @@ export async function listConversations() {
        from the bot while the conversation stayed invisible to the office, which
        is how a real test message went missing. The two rules now agree. */
     supabase.from("users").select("phone").eq("role", "technician"),
+    /* The bot's own escalations. When it hands a conversation to a human it
+       raises a "COMPLAINT from +91… (OG-…): reason" alert to the office; the row
+       exists whether or not the WhatsApp reached anyone, which is exactly what
+       makes it a dependable marker. The customer's number is in the text. */
+    supabase.from("notifications").select("body, created_at")
+      .eq("audience", "manager").ilike("body", "COMPLAINT from%")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false }).limit(500),
   ]);
 
   // Open = anything the office still owes work on. CLOSED and CANCELLED are done.
@@ -146,6 +193,15 @@ export async function listConversations() {
 
   const digits = (p) => String(p || "").replace(/\D/g, "");
   const staffPhones = new Set((staffRes.data || []).map((u) => digits(u.phone)).filter(Boolean));
+
+  /* phone → when the office was last told this customer is unhappy. */
+  const complaintAt = new Map();
+  for (const n of complaintRes.data || []) {
+    const m = /COMPLAINT from (\+?\d[\d\s-]*)/i.exec(n.body || "");
+    if (!m) continue;
+    const key = digits(m[1]);
+    if (!complaintAt.has(key)) complaintAt.set(key, n.created_at);   // newest first
+  }
 
   /* Latest ticket per customer, and separately the latest STILL-OPEN one
      (rows come newest-first, so first wins).
@@ -214,6 +270,7 @@ export async function listConversations() {
       ticketId, openTicketId, lastMessage, lastAt, lastDir,
       lastInboundAt: inb ? inb.created_at : null,
       botOn: !isPaused(c?.ai_paused_until),
+      ...issueOf({ key, lastDir, lastAt, complaintAt }),
     });
   }
   rows.sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));

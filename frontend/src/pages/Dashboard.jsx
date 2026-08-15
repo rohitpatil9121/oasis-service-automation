@@ -189,7 +189,7 @@ export default function Dashboard() {
           <select
             value={tech}
             onChange={(e) => setTech(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white py-1 pl-2 pr-7 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40">
+            className="h-11 rounded-lg border border-slate-200 bg-white pl-2 pr-7 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 sm:h-7">
             <option value="">All technicians</option>
             {technicianOptions.unassigned > 0 && (
               <option value="unassigned">Unassigned · {technicianOptions.unassigned}</option>
@@ -219,7 +219,7 @@ export default function Dashboard() {
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white py-1 pl-2 pr-7 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40">
+            className="h-11 rounded-lg border border-slate-200 bg-white pl-2 pr-7 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 sm:h-7">
             {Object.entries(SORTS).map(([key, s]) => (
               <option key={key || "default"} value={key}>{s.label}</option>
             ))}
@@ -245,7 +245,7 @@ export default function Dashboard() {
 function FilterChip({ label, onClear }) {
   return (
     <button onClick={onClear}
-      className="inline-flex items-center gap-1.5 rounded-full bg-brand/10 px-2.5 py-0.5 text-xs font-medium text-brand transition hover:bg-brand/20"
+      className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-brand/10 px-3 py-1 text-xs font-medium text-brand transition hover:bg-brand/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 sm:min-h-0 sm:px-2.5 sm:py-0.5"
       aria-label={`Clear filter ${label}`}>
       {label}
       <Icon name="x" className="h-3 w-3" />

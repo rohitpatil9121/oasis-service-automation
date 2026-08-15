@@ -8,3 +8,43 @@ body { @apply bg-slate-50 text-slate-800 antialiased; }
 /* subtle fade-in for modals / page content */
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .animate-in { animation: fadeIn 0.15s ease-out; }
+
+/* Phones: a field smaller than 16px makes iOS Safari zoom the whole page the
+   moment it is focused, and it never zooms back — the office ends up pinching
+   its way around the dashboard after every search. Sizing is left to the
+   components above this width. */
+@media (max-width: 640px) {
+  /* !important because a Tailwind size class (text-xs, text-sm) is a class
+     selector and beats a bare element rule — without it every field styled that
+     way keeps its 12-14px and iOS keeps zooming. Above 640px this rule does not
+     exist, so the desktop sizing is untouched. */
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* Phones: a floor under every interactive thing.
+
+   The dashboard was built for a desk, where a 32px button is a fine target for
+   a mouse pointer that lands where you tell it. A thumb is roughly 44px wide and
+   lands approximately, so the same button on a phone is a guess. Rather than
+   chase every control one by one — and miss the next one somebody adds — the
+   floor lives here, applies below 640px only, and leaves the desktop sizing
+   exactly as it was.
+
+   `min-height` and not `height`: a control taller than the floor (a textarea
+   someone has typed into, a wrapped chip) keeps its own size. Links are left
+   out; a link inside a sentence must not become a 44px block in the middle of a
+   paragraph. Standalone links that need the floor carry it themselves. */
+@media (max-width: 640px) {
+  button,
+  [role="tab"],
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    min-height: 44px;
+  }
+
+  /* Icon-only controls need the width too, or they stay a sliver. */
+  button:not(:has(> :not(svg))) {
+    min-width: 44px;
+  }
+}

@@ -75,7 +75,7 @@ export default function NotificationBell() {
     <div className="relative">
       <button aria-label={unread.length > 0 ? `Notifications, ${unread.length} new` : "Notifications"}
         aria-haspopup="true" aria-expanded={open} onClick={() => setOpen((v) => !v)}
-        className="relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+        className="relative flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 sm:h-9 sm:w-9">
         <Icon name="bell" />
         {unread.length > 0 && (
           <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">

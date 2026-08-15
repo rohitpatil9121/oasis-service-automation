@@ -109,7 +109,7 @@ export default function Layout({ children }) {
         {/* Top bar */}
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6">
           {/* mobile brand */}
-          <Link to="/" aria-label="Oasis Globe home" className="flex items-center lg:hidden">
+          <Link to="/" aria-label="Oasis Globe home" className="flex min-h-[44px] items-center lg:hidden">
             <Logo className="h-8" badge="h-8 w-8 rounded-lg text-xs" />
           </Link>
 
@@ -126,7 +126,7 @@ export default function Layout({ children }) {
               value={q}
               onChange={onSearch}
               placeholder="Search ticket #, customer, phone, issue…"
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
+              className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20 sm:h-9"
             />
           </div>
 
@@ -168,7 +168,7 @@ export default function Layout({ children }) {
           {NAV.flatMap(visibleItems).map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end}
               className={({ isActive }) =>
-                `flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${
+                `flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${
                   isActive ? "bg-brand/10 text-brand" : "text-slate-500"
                 }`}>
               <Icon name={n.icon} className="h-4 w-4" /> {n.label}

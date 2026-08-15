@@ -66,7 +66,8 @@ const BTN = {
 export function Button({ variant = "primary", className = "", children, ...props }) {
   return (
     <button
-      className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition disabled:opacity-50 disabled:pointer-events-none ${BTN[variant]} ${className}`}
+      // min-h-11 on phones: 44px is the smallest a thumb hits reliably.
+      className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 disabled:pointer-events-none disabled:opacity-50 sm:min-h-[38px] ${BTN[variant]} ${className}`}
       {...props}>
       {children}
     </button>

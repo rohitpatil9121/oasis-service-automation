@@ -61,7 +61,7 @@ function SectionHead({ children, hint, action }) {
 
 const boardLink = (to, label) => (
   <Link to={to}
-    className="rounded-md px-1 py-0.5 text-xs font-semibold text-brand transition hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40">
+    className="inline-flex min-h-[44px] items-center rounded-md px-1 text-xs font-semibold text-brand transition hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 sm:min-h-0 sm:py-0.5">
     {label} →
   </Link>
 );

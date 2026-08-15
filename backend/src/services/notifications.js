@@ -6,7 +6,36 @@ import { sendWhatsApp, sendWhatsAppTemplate, sendWhatsAppInteractive, sendWhatsA
 import { log } from "../lib/logger.js";
 
 
+/* The last line of defence against telling a customer the same thing twice.
+
+   One path was found and fixed (a technician re-saving the bill re-fired
+   "Work completed" — Kshitij Gadwe got it four times in six minutes), but that
+   was one path. Any future one lands here, so the check lives here too: an
+   IDENTICAL message, to the SAME person, within a few minutes, is a mistake
+   somewhere upstream and not something a customer should have to read again.
+
+   Deliberately narrow. Only customer-facing messages, only an exact body match,
+   and only inside a short window — two genuine jobs for one customer an hour
+   apart can legitimately produce the same words, and that must still send. */
+const DUP_WINDOW_MS = 5 * 60 * 1000;
+
+async function sentRecently(recipient, body, audience) {
+  if (audience !== "customer" || !recipient || !body) return false;
+  const since = new Date(Date.now() - DUP_WINDOW_MS).toISOString();
+  const { data, error } = await supabase
+    .from("notifications").select("id, created_at")
+    .eq("recipient", recipient).eq("body", body).eq("status", "SENT")
+    .gte("created_at", since).limit(1);
+  if (error) return false;          // a check that cannot run must not block a send
+  return !!(data && data.length);
+}
+
 export async function queueNotification({ recipient, body, audience, ticketId, template, replyTo, interactive, document }) {
+  if (await sentRecently(recipient, body, audience)) {
+    log.warn(`duplicate suppressed for ${recipient}: ${String(body).slice(0, 48)}`);
+    return null;
+  }
+
   let row = {
     channel: "whatsapp",
     recipient,
