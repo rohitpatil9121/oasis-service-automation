@@ -10,7 +10,7 @@ import {
   upsertCustomerByPhone, createDraftTicket, updateTicketIntake, completeIntake,
   getReusableTicketForCustomer, getLatestTicketByCustomerPhone, getTicket,
 } from "../tickets.js";
-import { requestCancelledCustomer } from "../waTemplates.js";
+import { requestCancelledCustomer, managerNewRequest } from "../waTemplates.js";
 import { COMPANY_INFO } from "./knowledge.js";
 import { env } from "../../config/env.js";
 import { log } from "../../lib/logger.js";
@@ -241,13 +241,41 @@ async function logComplaint(ctx, { ticket_number, details } = {}) {
     if (error) log.error("complaint audit row skipped:", error.message);
   }
 
-  // Managers are alerted below, but the bot keeps answering: the AI is switched
-  // off only from the dashboard toggle, never automatically.
+  /* Alert the office — and make sure it can actually arrive.
+
+     This went out as plain text, and plain text is only deliverable inside
+     WhatsApp's 24-hour window. Staff rarely message the business, so the window
+     is usually shut and the alert died with "131047 Re-engagement message" —
+     silently, because a failure is recorded and nobody reads the table.
+
+     It cost a real customer: Shilwant Waghmare wrote "Water is leakages after
+     work" on OG-130826-0007, was told the team would follow up, and the alert
+     reached neither the manager nor the owner. Nobody in the office ever knew.
+
+     A complaint IS new work on that ticket, so it rides the approved
+     manager_new_request template with the complaint spelled out in the issue
+     line. notifications.js still falls back to plain text if the template is
+     rejected, so an open window loses nothing.
+
+     The bot keeps answering meanwhile: the AI is switched off from the dashboard
+     toggle, never automatically. */
   const ref = ticket?.ticket_number ? ` (${ticket.ticket_number})` : "";
+  const what = details || "customer is unhappy with the service";
+  const body = `COMPLAINT from ${ctx.phone}${ref}${reopened ? " [reopened]" : ""}: ${what}`;
+  // The template needs the customer's name and address; ctx carries neither.
+  const { data: who } = await supabase
+    .from("customers").select("full_name, address").eq("phone", ctx.phone).maybeSingle();
+  const tpl = managerNewRequest({
+    ticketNumber: ticket?.ticket_number || "—",
+    customerName: who?.full_name || "Customer",
+    customerPhone: ctx.phone,
+    address: who?.address || "N/A",
+    issue: `COMPLAINT${reopened ? " (reopened)" : ""}: ${what}`,
+  });
   for (const phone of await managerPhones()) {
     await queueNotification({
       recipient: phone, audience: "manager", ticketId: ticket?.id || null,
-      body: `COMPLAINT from ${ctx.phone}${ref}${reopened ? " [reopened]" : ""}: ${details || "customer is unhappy with the service"}`,
+      body, template: ticket?.ticket_number ? tpl.template : undefined,
     });
   }
   ctx.handedOff = true;

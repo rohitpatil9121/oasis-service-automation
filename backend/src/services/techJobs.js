@@ -543,6 +543,21 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
   // Stored (pre-step) work: the message blocks below fall back to it when the
   // incoming payload doesn't carry a field (e.g. payment sent without a total).
   const tech_work = ticket.tech_work || {};
+
+  /* Is this step actually MOVING the job, or re-saving where it already is?
+
+     The app lets a technician walk back into a finished screen to correct the
+     bill, and saving there re-sends the CURRENT step — by design, because the
+     step machine only moves forward. What must not repeat is the one-time
+     WhatsApp that rides along with it. Kshitij Gadwe (OG-140826-0009) was told
+     "Work completed. Please pay Rs. 1,400" four times in six minutes because
+     each correction fired the message again; from the customer's side that is
+     the shop demanding money over and over.
+
+     The client_id guard above does not cover this: each save is a genuinely new
+     write, not a replay of an old one. The work still saves — only the
+     announcement is held back. */
+  const repeatStep = tech_work.tech_status === spec.status;
   const techName = ticket.technician?.full_name || "our technician";
 
   // Estimate guard: a part's price must stay between its minimum price
@@ -606,7 +621,7 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
 
   // Estimate → send the customer the itemised bill as a RECORD of what the
   // technician showed them on site. No reply is expected: work starts immediately.
-  if (action === "estimate" && cust?.phone && CUSTOMER_NOTIFY.estimate) {
+  if (action === "estimate" && !repeatStep && cust?.phone && CUSTOMER_NOTIFY.estimate) {
     // Collapse the itemised bill into fixed template variables (charges as one
     // comma-joined line, since a Meta template can't have a variable count of
     // parts). The full readable bill stays as the fallback body.
@@ -632,7 +647,7 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
   }
 
   // Work done → tell the customer the amount due and to pay in the tech's presence.
-  if (action === "workdone" && cust?.phone && CUSTOMER_NOTIFY.workCompleted) {
+  if (action === "workdone" && !repeatStep && cust?.phone && CUSTOMER_NOTIFY.workCompleted) {
     const due = Number(work.total ?? tech_work.total ?? 0);
     const tpl = work.visitOnly
       ? customerVisitCharge({ ticketNumber: ticket.ticket_number, amount: rupees(due) })
@@ -644,7 +659,7 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
   }
 
   // Payment collected → confirm to the customer with amount + mode (not if pending).
-  if (action === "payment" && cust?.phone && !work.pending) {
+  if (action === "payment" && !repeatStep && cust?.phone && !work.pending) {
     // A split payment must read "Cash + UPI", not just the first method — the app
     // already sends the combined label, so prefer it and only derive as a fallback.
     let mode = work.mode
