@@ -116,62 +116,74 @@ export default function TicketView() {
         </div>
       )}
 
-      {/* Details */}
-      <Card className="mb-5">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Details</span>
-          <button onClick={() => setShowEditCustomer(true)}
-            className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
-            <Icon name="edit" className="h-3.5 w-3.5" /> Edit
-          </button>
-        </div>
-        <dl className="grid sm:grid-cols-2">
-          <Row label="Customer" value={ticket.customer?.full_name || "—"} />
-          <Row label="Phone" value={ticket.customer?.phone} mono />
-          <Row label="Address" value={ticket.customer?.address || "—"} />
-          <Row label="Appliance" value={ticket.appliance || "—"} />
-          <Row label="Source" value={ticket.source === "whatsapp" ? "WhatsApp" : "Manual entry"} />
-          <Row label="Lead source" value={ticket.lead_source === "KENT" ? "KENT" : "Oasis Globe (our service team)"} />
-          <Row label="Technician" value={ticket.technician?.full_name || "Unassigned"} />
-          <Row label="Created" value={fmt(ticket.created_at)} />
-          {ticket.closed_at && <Row label="Closed" value={fmt(ticket.closed_at)} />}
-          {(ticket.rating != null || ticket.status === "CLOSED") && (
-            <Row label="Rating" value={ticket.rating != null
-              ? <RatingStars value={ticket.rating} showLabel />
-              : <span className="text-slate-400">Awaiting customer rating…</span>} />
-          )}
-        </dl>
-      </Card>
-
-      {/* Issue + Customer chat side by side */}
-      <div className="mb-5 grid gap-5 lg:grid-cols-2">
-        <Card className="p-5">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Issue</h3>
-            {!editIssue && (
-              <button onClick={startEditIssue}
-                className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
-                <Icon name="edit" className="h-3.5 w-3.5" /> Edit
-              </button>
+      {/* Details + customer chat, side by side.
+          The details used to be a full-width two-column grid with the issue in a card of
+          its own below it, which left the chat squeezed into a quarter of the screen and
+          spread eleven short facts across a lot of empty space. One column of facts on the
+          left, the conversation full-height on the right: the two things an agent actually
+          reads while deciding who to send. */}
+      <div className="mb-5 grid gap-5 lg:grid-cols-2 lg:items-start">
+        <Card>
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Details</span>
+            <button onClick={() => setShowEditCustomer(true)}
+              className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
+              <Icon name="edit" className="h-3.5 w-3.5" /> Edit
+            </button>
+          </div>
+          <dl>
+            <Row label="Customer" value={ticket.customer?.full_name || "—"} />
+            <Row label="Address" value={ticket.customer?.address || "—"} />
+            <Row label="Source" value={ticket.source === "whatsapp" ? "WhatsApp" : "Manual entry"} />
+            <Row label="Technician" value={ticket.technician?.full_name || "Unassigned"} />
+            <Row label="Phone" value={ticket.customer?.phone} mono />
+            <Row label="Appliance" value={ticket.appliance || "—"} />
+            <Row label="Lead source" value={ticket.lead_source === "KENT" ? "KENT" : "Oasis Globe (our service team)"} />
+            <Row label="Created" value={fmt(ticket.created_at)} />
+            {ticket.closed_at && <Row label="Closed" value={fmt(ticket.closed_at)} />}
+            {(ticket.rating != null || ticket.status === "CLOSED") && (
+              <Row label="Rating" value={ticket.rating != null
+                ? <RatingStars value={ticket.rating} showLabel />
+                : <span className="text-slate-400">Awaiting customer rating…</span>} />
             )}
-          </div>
-          {editIssue ? (
-            <div>
-              <Textarea value={issueText} onChange={(e) => setIssueText(e.target.value)} rows={4} autoFocus />
-              {issueErr && <p className="mt-1 text-xs text-red-600">{issueErr}</p>}
-              <div className="mt-2 flex justify-end gap-2">
-                <Button variant="ghost" onClick={() => setEditIssue(false)}>Cancel</Button>
-                <Button onClick={saveIssue} disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
+
+            {/* The issue is the one fact here the agent edits rather than reads, so it keeps
+                its own control — but it is still a fact about this request, and it belongs
+                in the list with the rest of them. It only breaks out of the row when it is
+                being edited, because a textarea does not fit in a right-aligned cell. */}
+            {editIssue ? (
+              <div className="border-b border-slate-100 px-5 py-3">
+                <div className="mb-2 text-sm text-slate-400">Issue</div>
+                <Textarea value={issueText} onChange={(e) => setIssueText(e.target.value)} rows={3} autoFocus />
+                {issueErr && <p className="mt-1 text-xs text-red-600">{issueErr}</p>}
+                <div className="mt-2 flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => setEditIssue(false)}>Cancel</Button>
+                  <Button onClick={saveIssue} disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <p className="whitespace-pre-wrap text-slate-700">{ticket.issue_description}</p>
-          )}
-          <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-400">
+            ) : (
+              <Row
+                label="Issue"
+                value={
+                  <span className="inline-flex items-start gap-2">
+                    <span className="whitespace-pre-wrap">{ticket.issue_description || "—"}</span>
+                    <button onClick={startEditIssue} aria-label="Edit issue"
+                      className="mt-0.5 shrink-0 text-brand hover:underline">
+                      <Icon name="edit" className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                }
+              />
+            )}
+          </dl>
+          <p className="px-5 py-3 text-xs text-slate-400">
             Missing or unclear details? Message the customer on the right to confirm before assigning.
-          </div>
+          </p>
         </Card>
-        <ChatPanel ticket={ticket} />
+
+        {/* Taller: the conversation is what the details are drawn from, and at h-72 it
+            showed about two messages before scrolling. */}
+        <ChatPanel ticket={ticket} heightClass="h-[440px]" />
       </div>
 
       {/* Customer notes — extra info shared on WhatsApp (timings, access, etc.).
@@ -294,11 +306,13 @@ function BackLink() {
   );
 }
 
+// One column now, so the odd-child right border that separated the two columns is gone —
+// left as-is it drew a rule down the middle of a list that no longer has a middle.
 function Row({ label, value, mono }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-3 sm:odd:border-r">
+    <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-3">
       <dt className="shrink-0 text-sm text-slate-400">{label}</dt>
-      <dd className={`text-right text-sm text-slate-700 ${mono ? "font-mono" : ""}`}>{value}</dd>
+      <dd className={`min-w-0 text-right text-sm text-slate-700 ${mono ? "font-mono" : ""}`}>{value}</dd>
     </div>
   );
 }
