@@ -16,7 +16,6 @@ export const CUSTOMER_NOTIFY = {
   // ---- Kept: the four milestones the customer asked to keep ----
   requestReceived: true,     // "Your service request has been logged" + ticket number
   technicianAssigned: true,  // "Technician assigned: <name>"
-  workCompleted: true,       // "Work completed. Please pay ₹X to the technician now"
   invoice: true,             // the tax invoice / bill (with PDF)
 
   // ---- Kept: not informational, these do a job ----
@@ -25,6 +24,23 @@ export const CUSTOMER_NOTIFY = {
   ratingRequest: true,       // the only source of service feedback and star ratings
 
   // ---- Turned off ----
+
+  /* "Work completed. Please pay ₹X to the technician now."
+     (owner's decision, 15 Aug 2026)
+
+     The technician is standing in front of the customer with the bill open when
+     this fires, so it told nobody anything they could not already see — and it
+     went wrong in the one way that matters, asking for money. Kshitij Gadwe
+     (OG-140826-0009) was sent "please pay ₹1,400" four times in six minutes
+     because every correction to the bill re-fired it.
+
+     The customer is not left in the dark: the invoice above still goes, with the
+     amount and the PDF, once the payment is recorded.
+
+     The delivery machinery is left in place and inert — techJobs.js only
+     schedules when this is true, and sendDuePayMessages() only sends when it is
+     true — so this line is all there is to flip if it is ever wanted back. */
+  workCompleted: false,
 
   // "Visit scheduled for <when>". The customer already knows a technician is coming
   // from technicianAssigned; the slot is confirmed by the technician directly.

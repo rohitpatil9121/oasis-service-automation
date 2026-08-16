@@ -40,6 +40,14 @@ const ACTIONS = {
 
 const CHARGE_FREE = new Set(["warranty", "repeat"]);
 
+/* How long the "please pay" message waits for the technician to stop editing.
+   Two minutes is longer than the gap between two corrections (the reported case
+   ran 11:35 → 11:41 in roughly three-minute steps) and short enough that the
+   customer has the figure while the technician is still in front of him. The
+   cap stops a long editing session from starving the message completely. */
+const PAY_DEBOUNCE_MS = 2 * 60 * 1000;
+const PAY_MAX_WAIT_MS = 10 * 60 * 1000;
+
 // Writes made offline are replayed from the phone's outbox and can arrive twice
 // (the first attempt may have reached us before the connection dropped). Each
 // carries a client_id; we keep the recent ones so a repeat is ignored rather
@@ -646,15 +654,28 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
     });
   }
 
-  // Work done → tell the customer the amount due and to pay in the tech's presence.
-  if (action === "workdone" && !repeatStep && cust?.phone && CUSTOMER_NOTIFY.workCompleted) {
-    const due = Number(work.total ?? tech_work.total ?? 0);
-    const tpl = work.visitOnly
-      ? customerVisitCharge({ ticketNumber: ticket.ticket_number, amount: rupees(due) })
-      : customerWorkCompleted({ amount: rupees(due) });
-    await queueNotification({
-      recipient: cust.phone, audience: "customer", ticketId,
-      body: tpl.body, template: tpl.template,
+  /* Work done → tell the customer what to pay. NOT right now.
+
+     The technician is standing in the kitchen with the bill open, and he edits
+     it: a part he forgot, a price he mistyped, a charge waived. Every save used
+     to fire the message, so Kshitij Gadwe was asked for Rs. 1,400 four times in
+     six minutes. Sending only the first is no better — correct the bill upward
+     and the customer is left holding a figure nobody is asking for any more.
+
+     So the message waits. Each save pushes the wait out again; when the edits
+     stop, ONE message goes with whatever the bill finally says. If he keeps
+     editing, PAY_MAX_WAIT_MS stops the customer from being kept waiting for
+     ever — the message goes with the best figure available at that moment, and
+     any later change still sends its own update.
+
+     Delivery is sendDuePayMessages(), polled from index.js like the rating ask. */
+  if (action === "workdone" && cust?.phone && CUSTOMER_NOTIFY.workCompleted) {
+    const firstAt = tech_work.pay_first_at || new Date().toISOString();
+    const capped = Date.now() - new Date(firstAt).getTime() >= PAY_MAX_WAIT_MS;
+    await mergeTechWork(ticketId, {
+      pay_first_at: firstAt,
+      pay_due_at: new Date(Date.now() + (capped ? 0 : PAY_DEBOUNCE_MS)).toISOString(),
+      pay_visit_only: !!(work.visitOnly ?? tech_work.visitOnly),
     });
   }
 
@@ -778,6 +799,48 @@ export async function saveJobPhoto(techId, ticketId, dataUrl, clientId) {
     ...(clientId ? { applied_client_ids: rememberClientId(ticket.tech_work, clientId) } : {}),
   });
   return { ok: true, job: toJob(await loadOwned(techId, ticketId)) };
+}
+
+/* Deliver the pay messages whose editing window has closed.
+
+   Polled once a minute from index.js, exactly like the rating ask, and for the
+   same reason: the state lives in the database, so a restart resumes instead of
+   dropping the message.
+
+   The amount is read HERE, not when the step ran — that is the whole point. Ten
+   saves between 1,400 and 1,650 produce one message, and it carries whatever the
+   bill says when the technician finally stops. */
+export async function sendDuePayMessages() {
+  const { data: due } = await supabase
+    .from("tickets")
+    .select("id, ticket_number, tech_work, customer:customers(phone)")
+    .not("tech_work->>pay_due_at", "is", null)
+    .lte("tech_work->>pay_due_at", new Date().toISOString())
+    .limit(50);
+
+  let sent = 0;
+  for (const t of due || []) {
+    const w = t.tech_work || {};
+    // Claim it first: clearing the stamp means the next tick cannot send it again.
+    await mergeTechWork(t.id, { pay_due_at: null, pay_sent_at: new Date().toISOString() });
+
+    const phone = t.customer?.phone;
+    if (!phone || !CUSTOMER_NOTIFY.workCompleted) continue;
+    try {
+      const amount = rupees(Number(w.total || 0));
+      const tpl = w.pay_visit_only
+        ? customerVisitCharge({ ticketNumber: t.ticket_number, amount })
+        : customerWorkCompleted({ amount });
+      await queueNotification({
+        recipient: phone, audience: "customer", ticketId: t.id,
+        body: tpl.body, template: tpl.template,
+      });
+      sent += 1;
+    } catch (e) {
+      log.error(`pay message ${t.ticket_number}:`, e.message);
+    }
+  }
+  return sent;
 }
 
 // Store the technician's latest GPS fix (live location for the dashboard).
