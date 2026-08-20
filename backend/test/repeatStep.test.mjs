@@ -18,6 +18,8 @@ const TICKET_ID = "t-1";
 const TECH_ID = "tech-1";
 
 let ticket, notifCalls;
+const events = [];          // rows appended to ticket_events
+let eventsFail = false;
 
 function resetWorld(tech_status = "DIAGNOSED") {
   ticket = {
@@ -31,6 +33,7 @@ function resetWorld(tech_status = "DIAGNOSED") {
     tech_work: { tech_status, total: 1400 },
   };
   notifCalls = [];
+  events.length = 0;
 }
 
 function exec(st) {
@@ -44,6 +47,11 @@ function exec(st) {
     return { data: { ...ticket }, error: null };
   }
   if (st.table === "users") return { data: [], error: null };
+  if (st.table === "ticket_events") {
+    if (eventsFail) return { data: null, error: { message: "invalid input value for enum" } };
+    if (st.op === "insert") events.push(st.data);
+    return { data: null, error: null };
+  }
   return { data: null, error: null };
 }
 
@@ -235,4 +243,39 @@ test("a job billed with no location at all is still billed", async () => {
   await runStep(TECH_ID, TICKET_ID, "workdone", { total: 1400, bill_location: null });
   assert.equal(ticket.tech_work.total, 1400);
   assert.equal(ticket.tech_work.bill_location, undefined, "nothing stored, nothing broken");
+});
+
+/* Nothing old is ever lost — the owner's rule, 20 Aug 2026.
+
+   tech_work holds ONE bill and every save overwrites it, so a job billed at
+   Rs. 2,550 and later changed to Rs. 375 kept no trace of the first figure: not
+   for the office, not for a dispute, not for the commission calculated on it.
+   Each change is now appended to ticket_events, which nothing rewrites. */
+test("changing the bill writes a history row with both figures", async () => {
+  await runStep(TECH_ID, TICKET_ID, "workdone", { total: 1400 });
+  events.length = 0;
+  await runStep(TECH_ID, TICKET_ID, "workdone", { total: 1650 });
+
+  const row = events.find((e) => e.meta?.bill_changed);
+  assert.ok(row, "the change is recorded");
+  assert.equal(row.meta.from_total, 1400, "what it was");
+  assert.equal(row.meta.to_total, 1650, "what it became");
+  assert.equal(row.ticket_id, TICKET_ID);
+});
+
+test("saving the same amount writes no noise", async () => {
+  await runStep(TECH_ID, TICKET_ID, "workdone", { total: 1400 });
+  events.length = 0;
+  await runStep(TECH_ID, TICKET_ID, "workdone", { total: 1400 });
+  assert.equal(events.filter((e) => e.meta?.bill_changed).length, 0);
+});
+
+test("a rejected history row never costs the bill", async () => {
+  // event_type is a constrained enum; if the insert is refused the money must
+  // still be recorded. Losing the bill to protect its audit trail is backwards.
+  eventsFail = true;
+  await runStep(TECH_ID, TICKET_ID, "workdone", { total: 1400 });
+  await runStep(TECH_ID, TICKET_ID, "workdone", { total: 1650 });
+  assert.equal(ticket.tech_work.total, 1650);
+  eventsFail = false;
 });

@@ -30,8 +30,13 @@ console.log(`${ids.length} distinct media ids on record`);
    rate limit from a deletion, wrote off everything after that as gone. So: pace
    the requests, and stop entirely after a run of transient failures rather than
    marching through the rest of the list destroying nothing but the truth. */
-const GAP_MS = 400;
-const STOP_AFTER_TRANSIENT = 8;
+/* Deliberately slow. This shares one Meta quota with the live dashboard, and a
+   fast run exhausted it — the office opened a chat mid-rescue and got "WhatsApp
+   is rate-limiting us" on images that were perfectly fine. Two seconds a photo
+   is unhurried enough to leave the quota to the people using the system, and
+   still clears a few hundred images in an evening. Best run out of hours. */
+const GAP_MS = 2000;
+const STOP_AFTER_TRANSIENT = 4;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let saved = 0, already = 0, gone = 0, transient = 0, run = 0;

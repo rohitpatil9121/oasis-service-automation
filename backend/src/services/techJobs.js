@@ -612,6 +612,35 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
      with no fix, then steps outside and corrects a price — that second save
      carries null, and without this the office would lose the only location the
      job ever had. First fix wins; a later one only replaces it if it is real. */
+  /* Keep every version of the bill.
+
+     tech_work holds ONE bill and each save overwrites it, so a technician who
+     billed Rs. 2,550 and later changed it to Rs. 375 left no trace of the first
+     figure — not for the office, not for a dispute, not for the commission that
+     was calculated on it. The owner's rule is that nothing old is ever lost, and
+     a silent overwrite loses it just as surely as a delete.
+
+     So each change is appended to ticket_events, which nothing ever rewrites.
+     Best-effort: a bill must still save if the audit row is rejected. */
+  const priorTotal = tech_work.total;
+  const nextTotal = work.total;
+  if (nextTotal != null && priorTotal != null && Number(priorTotal) !== Number(nextTotal)) {
+    const { error: auditErr } = await supabase.from("ticket_events").insert({
+      ticket_id: ticketId,
+      event_type: "note",
+      actor_id: techId,
+      meta: {
+        bill_changed: true,
+        from_total: Number(priorTotal),
+        to_total: Number(nextTotal),
+        from_parts: (tech_work.parts || []).length,
+        to_parts: (work.parts || tech_work.parts || []).length,
+        step: action,
+      },
+    });
+    if (auditErr) log.error(`bill history row skipped for ${ticketId}:`, auditErr.message);
+  }
+
   const bill_location = work.bill_location ?? tech_work.bill_location ?? null;
   // Pulled out of the spread below so an empty reading writes no key at all,
   // rather than parking a null on the job for every later reader to check.
