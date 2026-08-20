@@ -333,25 +333,53 @@ async function requestReschedule(ctx, { ticket_number, preferred_time } = {}) {
   });
   if (error) log.error("reschedule note skipped:", error.message);
 
-  for (const phone of await managerPhones()) {
+  await alertOffice({
+    ticket, phone: ctx.phone,
+    line: `RESCHEDULE request for ${ticket.ticket_number} from ${ctx.phone}. Preferred: ${when}`,
+  });
+  return { ok: true, ticket_number: ticket.ticket_number, preferred: when };
+}
+
+
+/* Alert the office in a way that can actually arrive.
+
+   Plain text only reaches a phone that has messaged the business in the last 24
+   hours, and staff almost never do — so these died silently with "131047
+   Re-engagement message". Rahul Wandile asked for a callback and, three days
+   later, for an 8 pm slot; neither alert reached anybody, and the bot had
+   already promised him the team would confirm.
+
+   Everything the office is told about a customer now rides the approved
+   manager_new_request template, with the real message in the issue line.
+   notifications.js still falls back to plain text if the template is rejected,
+   so an open window loses nothing. */
+async function alertOffice({ ticket, phone, ticketId, line }) {
+  const { data: who } = await supabase
+    .from("customers").select("full_name, address").eq("phone", phone).maybeSingle();
+  const tpl = managerNewRequest({
+    ticketNumber: ticket?.ticket_number || "—",
+    customerName: who?.full_name || "Customer",
+    customerPhone: phone,
+    address: who?.address || "N/A",
+    issue: line,
+  });
+  for (const to of await managerPhones()) {
     await queueNotification({
-      recipient: phone, audience: "manager", ticketId: ticket.id,
-      body: `RESCHEDULE request for ${ticket.ticket_number} from ${ctx.phone}. Preferred: ${when}`,
+      recipient: to, audience: "manager", ticketId: ticketId ?? ticket?.id ?? null,
+      body: line, template: ticket?.ticket_number ? tpl.template : undefined,
     });
   }
-  return { ok: true, ticket_number: ticket.ticket_number, preferred: when };
 }
 
 async function escalateToHuman(ctx, reason) {
   // Alert managers, but leave the bot running. Owner's rule: the AI is only ever
   // switched off by the dashboard toggle, so an escalation never silently
   // disables it — a manager turns it off if they want to take the chat over.
-  for (const phone of await managerPhones()) {
-    await queueNotification({
-      recipient: phone, audience: "manager", ticketId: ctx.ticketId || null,
-      body: `Handoff requested for ${ctx.phone}. Reason: ${reason || "customer asked for a person"}`,
-    });
-  }
+  await alertOffice({
+    ticket: ctx.ticketNumber ? { ticket_number: ctx.ticketNumber, id: ctx.ticketId } : null,
+    phone: ctx.phone, ticketId: ctx.ticketId || null,
+    line: `Handoff requested for ${ctx.phone}. Reason: ${reason || "customer asked for a person"}`,
+  });
   ctx.handedOff = true;
   return { ok: true };
 }

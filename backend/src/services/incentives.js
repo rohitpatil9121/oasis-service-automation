@@ -55,7 +55,17 @@ async function loadCatalog() {
    (owner, 12 Aug 2026).
 
    `mode` is accepted for callers that still pass it, but no longer affects
-   anything. */
+   anything.
+
+   WHAT base_cost IS. Not what we paid a supplier — that is `purchase_price`,
+   which nothing here reads. base_cost is the price we GIVE the part to the
+   technician at ("Minimum price" on the stock screen: the lowest he may charge).
+   He may sell anywhere between that and the MRP, and what he makes above it is
+   his margin. Confirmed by the owner, 18 Aug 2026, in exactly those words:
+   "jo apan amount daalte hai, ki kitne me de rahe hai woh".
+
+   The distinction matters when the field is blank: the whole selling price then
+   counts as margin, which is why an unset one pays out so much. */
 export function partIncentive(part, catalog, brandRate, mode) {
   const meta = catalog.get(part.id) || {};
   // `part.price` is the per-piece rate; two membranes earn two membranes' worth.

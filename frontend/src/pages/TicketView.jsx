@@ -190,6 +190,45 @@ export default function TicketView() {
           happens when the technician records payment. */}
       <InvoiceCard ticketId={ticket.id} />
 
+      {/* Where the bill was written.
+
+          The office asked for this to place a job: the request says Wakad, so
+          the bill should have been written in Wakad. It is captured once, when
+          the technician saves the bill, and it is for the office only — nothing
+          here is ever sent to the customer.
+
+          Absent on older jobs, and on any phone that had no fix or refused the
+          permission, so the card only appears when there is something to show
+          rather than printing "unknown" on half the tickets. */}
+      {ticket.tech_work?.bill_location?.lat != null && (
+        <Card className="mb-5 p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Where the bill was made
+          </h3>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-medium tabular-nums text-slate-700">
+                {Number(ticket.tech_work.bill_location.lat).toFixed(5)},{" "}
+                {Number(ticket.tech_work.bill_location.lng).toFixed(5)}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {ticket.tech_work.bill_location.at ? fmt(ticket.tech_work.bill_location.at) : "—"}
+                {ticket.tech_work.bill_location.accuracy != null &&
+                  ` · accurate to about ${Math.round(ticket.tech_work.bill_location.accuracy)} m`}
+              </p>
+            </div>
+            {/* A real anchor, not the Button component — that renders a <button>,
+                which cannot carry an href. */}
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${ticket.tech_work.bill_location.lat},${ticket.tech_work.bill_location.lng}`}
+              target="_blank" rel="noreferrer"
+              className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 sm:min-h-[38px]">
+              <Icon name="pin" /> Open in Maps
+            </a>
+          </div>
+        </Card>
+      )}
+
       {/* Technician photos captured on site */}
       {ticket.tech_work?.tech_photos?.length > 0 && (
         <Card className="mb-5 p-5">

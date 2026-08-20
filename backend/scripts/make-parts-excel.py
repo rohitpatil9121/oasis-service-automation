@@ -70,9 +70,43 @@ def style_row(ws, r, ncols, money_cols, banded, warn=False):
 
 wb = Workbook()
 
+BRAND_SHEETS = [("oasis", "Oasis"), ("kent", "Kent"), ("aquaguard", "Aquaguard"), ("other", "No brand")]
+
+
+def brand_sheet(wb, key, title, rows_all):
+    """One sheet per brand.
+
+    The owner asked for the list "oasis ka alag" — a single filtered sheet is
+    fine for someone who knows to click the filter, and useless to someone who
+    was sent the file on WhatsApp. Each brand gets its own tab, in the order
+    they matter: Oasis first, because that is the list with prices to fill in.
+    """
+    rows_b = [r for r in rows_all if r["brand"] == key]
+    if not rows_b:
+        return
+    ws = wb.create_sheet(title)
+    cols = ["Part", "MRP", "Given to tech at", "What applies",
+            "Pays normally", f"Pays after a Rs {rules['DAILY_TARGET']:,} day"]
+    header(ws, cols, [42, 12, 17, 24, 15, 22])
+    for n, r in enumerate(sorted(rows_b, key=lambda x: x["name"].lower())):
+        ws.append([
+            r["name"], r["price"],
+            "not set" if r["cost_missing"] else r["cost"],
+            r["rule"], r["pays_6_cash"], r["pays_10_cash"],
+        ])
+        style_row(ws, ws.max_row, len(cols), {2, 3, 5, 6}, banded=(n % 2 == 1),
+                  warn=r["cost_missing"])
+        if r["cost_missing"]:
+            c = ws.cell(row=ws.max_row, column=3)
+            c.number_format = "General"
+            c.alignment = Alignment(horizontal="right")
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{ws.max_row}"
+    ws.freeze_panes = "A2"
+
+
 # ---------------------------------------------------------------- Parts sheet
 ws = wb.active
-ws.title = "Parts"
+ws.title = "All parts"
 # Cash and online pay the same now, so a third payout column would just repeat
 # the second. What still differs is the daily rate — and only for branded parts.
 cols = ["Part", "Brand", "MRP", "Given to tech at", "What applies",
@@ -96,6 +130,10 @@ for n, r in enumerate(rows_sorted):
         c.alignment = Alignment(horizontal="right")
 
 ws.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{ws.max_row}"
+ws.freeze_panes = "A2"
+
+for key, title in BRAND_SHEETS:
+    brand_sheet(wb, key, title, rows_sorted)
 
 # ---------------------------------------------------------- Fill-costs sheet
 missing = [r for r in rows_sorted if r["cost_missing"]]

@@ -27,6 +27,45 @@ const isOpenStatus = (s) => s && s !== "CLOSED" && s !== "CANCELLED";
    last job had closed said "hi" and got asked for their name and address all over
    again, as though we had never served them. Letting the model handle it instead
    means it calls identify_customer and confirms what we have. */
+/* What we already know about this number, written into the conversation as fact.
+
+   The model only learned who it was talking to by CALLING identify_customer, and
+   nothing forced it to. On 17 Aug it skipped the call and asked Rahul Wandile —
+   a customer of nine days, with his name, his address and a Google Maps pin on
+   file — for his name and address again, right after he had said what was wrong.
+   To him that reads as "they have lost my details".
+
+   Knowledge we already hold must not depend on the model remembering to ask for
+   it. One query, stated as fact at the top of every conversation. The tool stays
+   for everything this line does not carry (request history, statuses).
+
+   Costs one small query per inbound message, which is the price of never asking
+   a returning customer who they are. */
+export async function knownCustomerNote(phone) {
+  try {
+    const [{ data: cust }, latest] = await Promise.all([
+      supabase.from("customers").select("full_name, address").eq("phone", phone).maybeSingle(),
+      getLatestTicketByCustomerPhone(phone),
+    ]);
+    if (!cust?.full_name && !cust?.address) return null;
+
+    const bits = [];
+    if (cust.full_name) bits.push(`name: ${cust.full_name}`);
+    // The address is often a pasted map link plus a line or two; keep it short
+    // enough not to swamp the prompt, whole enough to be recognisable.
+    if (cust.address) bits.push(`address: ${String(cust.address).replace(/\s+/g, " ").trim().slice(0, 120)}`);
+    if (latest?.ticket_number) {
+      bits.push(`most recent request: ${latest.ticket_number} (${String(latest.status).toLowerCase()})`);
+    }
+
+    return "ON FILE for this number — " + bits.join("; ") +
+      ". Never ask for anything listed here; use it. Greet them by name.";
+  } catch (e) {
+    log.error("knownCustomerNote:", e.message);
+    return null;   // on error the model simply behaves as it did before
+  }
+}
+
 async function hasSavedDetails(phone) {
   try {
     const [{ data: cust }, latest] = await Promise.all([
@@ -423,8 +462,10 @@ export async function runAgent({ fromPhone, text }) {
     return OFF_TOPIC_REPLY;
   }
 
+  const known = await knownCustomerNote(phone);
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
+    ...(known ? [{ role: "system", content: known }] : []),
     ...history,
     { role: "user", content: userText || "(no text)" },
   ];

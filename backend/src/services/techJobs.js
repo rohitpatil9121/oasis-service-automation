@@ -605,10 +605,23 @@ export async function runStep(techId, ticketId, action, work = {}, clientId) {
     }
   }
 
+  /* Where the technician stood when he wrote the bill. The app reads it once, at
+     that moment, and sends it with the step.
+
+     A null must never overwrite a real reading. He saves the bill in a basement
+     with no fix, then steps outside and corrects a price — that second save
+     carries null, and without this the office would lose the only location the
+     job ever had. First fix wins; a later one only replaces it if it is real. */
+  const bill_location = work.bill_location ?? tech_work.bill_location ?? null;
+  // Pulled out of the spread below so an empty reading writes no key at all,
+  // rather than parking a null on the job for every later reader to check.
+  const { bill_location: _sent, ...stepWork } = work;
+
   // Only the keys this step changes — a full spread of the tech_work we read
   // above would overwrite anything written since (e.g. the arrival OTP).
   await mergeTechWork(ticketId, {
-    ...work,
+    ...stepWork,
+    ...(bill_location ? { bill_location } : {}),
     tech_status: spec.status,
     [spec.ts]: new Date().toISOString(),
     ...(clientId ? { applied_client_ids: rememberClientId(ticket.tech_work, clientId) } : {}),

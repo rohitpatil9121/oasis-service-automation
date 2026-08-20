@@ -198,3 +198,41 @@ test("switched off: a ticket already in the queue is cleared, not delivered", as
   assert.equal(toCustomer().length, 0, "the switch wins over the queue");
   assert.equal(ticket.tech_work.pay_due_at, null, "and the stamp is cleared so it stops polling");
 });
+
+/* Where the bill was written — the office's own record, never the customer's.
+
+   The reading comes from the app with the step, taken once at that moment.
+   These pin the one rule that is easy to get wrong: a later save with no fix
+   must not erase the fix already on the job. */
+test("the bill's location is stored with the job", async () => {
+  const at = new Date().toISOString();
+  await runStep(TECH_ID, TICKET_ID, "workdone", {
+    total: 1400, bill_location: { lat: 18.5913, lng: 73.7389, accuracy: 12, at },
+  });
+  assert.deepEqual(ticket.tech_work.bill_location, { lat: 18.5913, lng: 73.7389, accuracy: 12, at });
+});
+
+test("a later save with no fix does not erase it", async () => {
+  // Bill written in a basement, corrected out on the street — or the other way
+  // round. Whichever came first, the office must keep the reading it got.
+  await runStep(TECH_ID, TICKET_ID, "workdone", {
+    total: 1400, bill_location: { lat: 18.5913, lng: 73.7389, accuracy: 12, at: new Date().toISOString() },
+  });
+  await runStep(TECH_ID, TICKET_ID, "workdone", { total: 1650, bill_location: null });
+  assert.equal(ticket.tech_work.bill_location?.lat, 18.5913, "the only location the job had survives");
+  assert.equal(ticket.tech_work.total, 1650, "and the correction still lands");
+});
+
+test("a real fix arriving later does replace an empty one", async () => {
+  await runStep(TECH_ID, TICKET_ID, "workdone", { total: 1400, bill_location: null });
+  await runStep(TECH_ID, TICKET_ID, "workdone", {
+    total: 1400, bill_location: { lat: 18.6011, lng: 73.7500, accuracy: 8, at: new Date().toISOString() },
+  });
+  assert.equal(ticket.tech_work.bill_location?.lat, 18.6011);
+});
+
+test("a job billed with no location at all is still billed", async () => {
+  await runStep(TECH_ID, TICKET_ID, "workdone", { total: 1400, bill_location: null });
+  assert.equal(ticket.tech_work.total, 1400);
+  assert.equal(ticket.tech_work.bill_location, undefined, "nothing stored, nothing broken");
+});

@@ -6,6 +6,7 @@ import { sendPush } from "./push.js";
 import { getTicket } from "./tickets.js";
 import { normalizePhone, isValidPhone } from "../lib/phone.js";
 import { log } from "../lib/logger.js";
+import { mergeTechWork } from "../lib/techWork.js";
 import { CUSTOMER_NOTIFY } from "../config/notify.js";
 
 export async function listTechnicians() {
@@ -131,11 +132,29 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
   if (!String(ticket.issue_description ?? "").trim())
     log.warn(`Ticket ${ticket.ticket_number} assigned with NO issue recorded`);
 
-  if (CUSTOMER_NOTIFY.technicianAssigned) {
-    const assignedTpl = customerTechnicianAssigned({ techName: tech.full_name });
-    await queueNotification({
-      recipient: ticket.customer.phone, audience: "customer", ticketId,
-      body: assignedTpl.body, template: assignedTpl.template,
+  /* Tell the customer who is coming — but not yet.
+
+     Reassigning is normal office work: someone is closer, someone is ill, the
+     first choice is still on another job. The customer does not need to watch it
+     happen. Rahul Wandile was told "Technician assigned: Chhagan Bhamre", then
+     "Shubham Jadhav", then "Chhagan Bhamre" again for one installation, and 8
+     jobs in the last week had the same churn.
+
+     So the message waits, and each reassignment pushes the wait out again; when
+     the office settles, ONE message goes with whoever is actually coming.
+     Delivered by sendDueAssignmentMessages(), polled from index.js — the same
+     shape as the rating ask and the pay message.
+
+     A reassignment hours later, after the customer has already been told, is a
+     real change and does send: the drain compares against the name they last
+     heard, not against "have we ever written". */
+  if (CUSTOMER_NOTIFY.technicianAssigned && ticket.customer?.phone) {
+    const w = ticket.tech_work || {};
+    const firstAt = w.assign_first_at || new Date().toISOString();
+    const capped = Date.now() - new Date(firstAt).getTime() >= ASSIGN_MAX_WAIT_MS;
+    await mergeTechWork(ticketId, {
+      assign_first_at: firstAt,
+      assign_due_at: new Date(Date.now() + (capped ? 0 : ASSIGN_DEBOUNCE_MS)).toISOString(),
     });
   }
 
@@ -148,4 +167,51 @@ export async function assignTechnician({ ticketId, technicianId, assignedBy, not
 
   log.info(`Ticket ${ticket.ticket_number} assigned to ${tech.full_name}`);
   return { ...updated, technician: tech };
+}
+
+
+/* How long the "technician assigned" message waits for the office to settle.
+   Five minutes covers a change of mind; the cap stops a busy morning of
+   shuffling from leaving the customer with no idea who is coming at all. */
+const ASSIGN_DEBOUNCE_MS = 5 * 60 * 1000;
+const ASSIGN_MAX_WAIT_MS = 20 * 60 * 1000;
+
+/* Deliver the assignment messages whose window has closed.
+
+   The technician is read HERE, not when the assignment happened — that is the
+   point. Three reassignments produce one message, naming whoever the job
+   actually ended up with. */
+export async function sendDueAssignmentMessages() {
+  const { data: due } = await supabase
+    .from("tickets")
+    .select("id, ticket_number, tech_work, assigned_technician_id, customer:customers(phone), technician:users!tickets_assigned_technician_id_fkey(full_name)")
+    .not("tech_work->>assign_due_at", "is", null)
+    .lte("tech_work->>assign_due_at", new Date().toISOString())
+    .limit(50);
+
+  let sent = 0;
+  for (const t of due || []) {
+    const w = t.tech_work || {};
+    const name = t.technician?.full_name || null;
+    // Claim first, so a second poller cannot send the same one.
+    await mergeTechWork(t.id, { assign_due_at: null });
+
+    const phone = t.customer?.phone;
+    if (!phone || !name || !CUSTOMER_NOTIFY.technicianAssigned) continue;
+    // Already told them this exact name — the shuffle ended where it started.
+    if (w.assign_told === name) continue;
+
+    try {
+      const tpl = customerTechnicianAssigned({ techName: name });
+      await queueNotification({
+        recipient: phone, audience: "customer", ticketId: t.id,
+        body: tpl.body, template: tpl.template,
+      });
+      await mergeTechWork(t.id, { assign_told: name });
+      sent += 1;
+    } catch (e) {
+      log.error(`assignment message ${t.ticket_number}:`, e.message);
+    }
+  }
+  return sent;
 }

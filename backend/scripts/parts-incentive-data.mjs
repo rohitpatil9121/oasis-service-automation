@@ -24,7 +24,7 @@ const catalog = new Map(parts.map((p) => [p.id, {
 const RULE_TEXT = {
   kent: `${RULES.BRAND_RATE * 100}% / ${RULES.BRAND_RATE_BONUS * 100}% of price`,
   aquaguard: `${RULES.BRAND_RATE * 100}% / ${RULES.BRAND_RATE_BONUS * 100}% of price`,
-  oasis: "Margin (price - cost)",
+  oasis: "Margin (price − floor)",
   other: "No incentive",
 };
 

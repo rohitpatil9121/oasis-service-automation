@@ -3,6 +3,7 @@ import { env, checkEnv } from "./config/env.js";
 import { log } from "./lib/logger.js";
 import { sendDueRatingRequests } from "./services/tickets.js";
 import { sendDuePayMessages } from "./services/techJobs.js";
+import { sendDueAssignmentMessages } from "./services/assignment.js";
 
 checkEnv(log);
 const app = createApp();
@@ -16,6 +17,9 @@ setInterval(() => {
   // The "please pay" message waits for the technician to stop editing the bill;
   // this is what delivers it. Same tick, same reasoning — see sendDuePayMessages.
   sendDuePayMessages().catch((e) => log.error("pay message poll:", e.message));
+  // "Technician assigned" waits for the office to stop reassigning; this is what
+  // delivers it, naming whoever the job actually ended up with.
+  sendDueAssignmentMessages().catch((e) => log.error("assignment message poll:", e.message));
 }, RATING_POLL_MS).unref?.();
 
 // Render's free tier spins the instance down after ~15 min without inbound

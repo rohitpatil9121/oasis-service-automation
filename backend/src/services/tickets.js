@@ -213,9 +213,25 @@ export function isFragmentOf(next, stored) {
   return !!a && !!b && b.includes(a);
 }
 
+/* A phone number is not a name.
+
+   One customer is on record as "7798705160" — his own number, typed into the
+   name field — so the cancellation he received opened "Hi 7798705160". It
+   happens when someone answers "name?" with their number, or pastes a contact.
+   Better to hold no name at all: every message that greets by name already
+   copes with a blank one, and the office can see the field is empty and ask. */
+export function looksLikePhoneNumber(v) {
+  const digits = String(v || "").replace(/\D/g, "");
+  const noise = String(v || "").replace(/[\d\s+()-]/g, "");
+  return digits.length >= 7 && noise.length === 0;
+}
+
 export async function upsertCustomerByPhone(phone, { full_name, address } = {}) {
   const { data: existing } = await supabase
     .from("customers").select("*").eq("phone", phone).maybeSingle();
+  // Never let a number in, however it arrived.
+  if (looksLikePhoneNumber(full_name)) full_name = null;
+
   if (existing) {
     const patch = {};
     if (full_name && full_name !== existing.full_name && !isFragmentOf(full_name, existing.full_name)) {

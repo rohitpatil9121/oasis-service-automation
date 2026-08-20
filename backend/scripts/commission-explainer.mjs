@@ -32,15 +32,19 @@ const pc = (r) => Math.round(r * 100) + "%";
 
 /* ---------------------------------------------------------------- data ---- */
 
-const { data: stock } = await supabase.from("stock_items").select("id, name, brand, base_cost");
+const { data: stock } = await supabase.from("stock_items").select("id, name, brand, base_cost, is_active");
 const catalog = new Map((stock || []).map((i) => [i.id, {
   name: i.name, brand: i.brand || null, base_cost: Number(i.base_cost || 0),
 }]));
 
-const oasisParts = (stock || []).filter((i) => String(i.brand).toLowerCase() === "oasis");
+/* Only parts that can still be sold. A deactivated part with no floor price
+   costs nobody anything, and counting them made the gap look half again as
+   large as it is — 32 rather than the 19 that actually need filling in. */
+const active = (stock || []).filter((i) => i.is_active !== false);
+const oasisParts = active.filter((i) => String(i.brand).toLowerCase() === "oasis");
 const oasisNoCost = oasisParts.filter((i) => !Number(i.base_cost));
 // No brand means no rule, which means no commission — see section 7.
-const brandless = (stock || []).filter((i) => !i.brand);
+const brandless = active.filter((i) => !i.brand);
 
 const { data: closed } = await supabase
   .from("tickets")
@@ -91,9 +95,9 @@ function billSection(t) {
     if (r.brand === "kent" || r.brand === "aquaguard") {
       working = `${rs(r.price)} x ${pc(RULES.BRAND_RATE)} = ${rs(r.gross)}, less ${pc(RULES.GST_RATE)} GST`;
     } else if (r.brand === "oasis") {
-      working = `${rs(Number(p.price || 0))} sold - ${rs(meta.base_cost)} cost = ${rs(r.margin)} margin${qty > 1 ? ` x ${qty}` : ""}, less ${pc(RULES.GST_RATE)} GST`;
+      working = `${rs(Number(p.price || 0))} sold - ${rs(meta.base_cost)} floor = ${rs(r.margin)} margin${qty > 1 ? ` x ${qty}` : ""}, less ${pc(RULES.GST_RATE)} GST`;
       if (!Number(meta.base_cost)) {
-        working += "   << no cost on file, so the WHOLE price counts as margin (section 6)";
+        working += "   << no floor price set, so the WHOLE price counts as margin (section 6)";
         zeroCostLines.push(`${t.ticket_number}: ${p.name} - sold ${rs(p.price)}, paid ${rs(r.payout)} commission`);
       }
     } else {
@@ -156,13 +160,13 @@ const doc = {
     P("Every part on a bill earns the technician something, and how much depends entirely on whose part it is. The catalogue records a brand against each part, and that brand picks the rule. Nothing else about the job changes it."),
     {
       ul: [
-        { text: [{ text: "Kent and Aquaguard parts ", bold: true }, `earn a percentage of what the customer paid for them: ${pc(RULES.BRAND_RATE)} normally, ${pc(RULES.BRAND_RATE_BONUS)} on a day the target is met. What the part cost us does not come into it.`] },
-        { text: [{ text: "Oasis parts ", bold: true }, "earn the margin — what the customer paid, minus what the part cost us. Sell an Oasis filter for Rs. 450 that cost Rs. 350, and the Rs. 100 difference is what the commission is worked out on."] },
+        { text: [{ text: "Kent and Aquaguard parts ", bold: true }, `earn a percentage of what the customer paid for them: ${pc(RULES.BRAND_RATE)} normally, ${pc(RULES.BRAND_RATE_BONUS)} on a day the target is met. Neither the floor price nor what we paid for it comes into it.`] },
+        { text: [{ text: "Oasis parts ", bold: true }, "earn the margin — what the customer paid, minus the price we give the part to the technician at. Sell an Oasis filter for Rs. 450 that we give him at Rs. 350, and the Rs. 100 difference is what the commission is worked out on."] },
         { text: [{ text: "A part with no brand written against it ", bold: true }, "earns nothing — not because such parts are meant to be unpaid, but because with no brand there is no rule to apply. See section 7: seven parts are in that state today, and three of them are Kent parts."] },
       ],
       margin: [0, 0, 0, 6],
     },
-    P("The reasoning behind the split: on another company's product we are a service channel earning a slice of the sale, while on our own product the money we actually make is the margin, so that is what gets shared."),
+    P("The reasoning behind the split: on another company's product we are a service channel earning a slice of the sale, while on our own product the technician is given a floor price and keeps what he sells above it."),
 
     H("2. GST comes off every payout"),
     P(`Part prices are MRP, and MRP already contains ${pc(RULES.GST_RATE)} GST. That tax is owed to the government on the sale whichever way the customer pays, so it was never ours to share. Commission is therefore worked out first and then reduced by ${pc(RULES.GST_RATE)} — on both rules, cash or online alike.`),
@@ -187,20 +191,20 @@ const doc = {
     ...bills.flatMap(billSection),
 
     { text: "", pageBreak: "before" },
-    H("6. Missing costs, and what they do to the payout"),
-    P(`The Oasis rule pays on the margin, so it needs to know what a part cost us. Of ${oasisParts.length} Oasis parts in the catalogue, ${oasisNoCost.length} have no cost recorded against them.`),
-    P("Where the cost is missing it reads as zero, so the whole selling price is treated as margin and the technician is paid on all of it. Both worked examples above contain such a line:"),
+    H("6. Missing floor prices, and what they do to the payout"),
+    P(`The Oasis rule pays on the margin, so it needs the floor — the price we give the part to the technician at ("Minimum price" on the stock screen). Of ${oasisParts.length} Oasis parts, ${oasisNoCost.length} have it blank.`),
+    P("A blank floor reads as zero, so the whole selling price is treated as margin and the technician is paid on all of it. The examples above contain such a line:"),
     { ul: zeroCostLines, style: "note", margin: [0, 0, 0, 8] },
     {
       text: "This may be exactly what was intended for parts we assemble ourselves. If it is not, filling in the cost against those parts changes the payout immediately — nothing else has to be altered.",
       style: "note", margin: [0, 4, 0, 8],
     },
-    P("Kent and Aquaguard parts also show no cost, but that is harmless: their rule is a percentage of the selling price and never looks at cost."),
+    P("Kent and Aquaguard parts have it blank too, but that is harmless: their rule is a percentage of the selling price and never looks at the floor."),
     {
       table: {
         headerRows: 1, widths: ["*", 90],
         body: [
-          [{ text: "Oasis parts with no cost recorded", style: "th" }, { text: "", style: "th" }],
+          [{ text: "Oasis parts with no floor price set", style: "th" }, { text: "", style: "th" }],
           ...oasisNoCost.slice(0, 34).map((p) => [{ text: p.name, style: "td" }, { text: "", style: "td" }]),
         ],
       },
@@ -249,6 +253,6 @@ pdf.on("end", () => {
   writeFileSync(OUT, Buffer.concat(chunks));
   console.log(`wrote ${OUT}`);
   console.log(`  bills explained : ${bills.map((b) => b.ticket_number).join(", ")}`);
-  console.log(`  oasis parts     : ${oasisParts.length}, of which ${oasisNoCost.length} have no cost on file`);
+  console.log(`  oasis parts     : ${oasisParts.length}, of which ${oasisNoCost.length} have no floor price`);
 });
 pdf.end();

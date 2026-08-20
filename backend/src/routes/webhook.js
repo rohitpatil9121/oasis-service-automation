@@ -9,6 +9,7 @@ import { handleRatingReply, handleTypedRating } from "../services/rating.js";
 import { sendRatingListForPayload } from "../services/tickets.js";
 import { supabase } from "../config/supabase.js";
 import { normalizePhone } from "../lib/phone.js";
+import { cacheInboundMedia } from "../services/waMedia.js";
 import { env } from "../config/env.js";
 import { log } from "../lib/logger.js";
 
@@ -98,7 +99,16 @@ async function logInbound(from, text, { mediaId, mediaType, waMessageId, replyTo
   }
 
   const row = { from_phone: phone, body: text };
-  if (mediaId) { row.media_id = mediaId; row.media_type = mediaType || null; }
+  if (mediaId) {
+    row.media_id = mediaId;
+    row.media_type = mediaType || null;
+    /* Take our own copy now, while Meta still has it. Meta deletes media after
+       about a month, and until this existed a customer's photograph simply
+       disappeared from the thread — the office clicked it and got "Media not
+       found". Not awaited: a slow copy must never hold up the reply, and if it
+       fails the media route will try again the first time somebody looks. */
+    cacheInboundMedia(mediaId).catch(() => {});
+  }
   if (waMessageId) row.wa_message_id = waMessageId; // for native WhatsApp "reply" quoting
   if (replyToWamid) row.reply_to_wamid = replyToWamid; // the message THIS one quotes (customer/tech tagged a reply)
   let { error } = await supabase.from("wa_inbound").insert(row);
